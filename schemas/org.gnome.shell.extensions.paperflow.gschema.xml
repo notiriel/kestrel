@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.paperflow"
+          path="/org/gnome/shell/extensions/paperflow@paperflow.github.com/">
+    <key name="gap-size" type="i">
+      <default>8</default>
+      <summary>Gap between windows</summary>
+      <description>Size of the gap between tiled windows in pixels</description>
+    </key>
+    <key name="edge-gap" type="i">
+      <default>8</default>
+      <summary>Gap at screen edges</summary>
+      <description>Size of the gap at the edges of the screen in pixels</description>
+    </key>
+  </schema>
+</schemalist>
