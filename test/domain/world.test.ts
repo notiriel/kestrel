@@ -3,12 +3,13 @@ import type { WindowId, PaperFlowConfig, MonitorInfo } from '../../src/domain/ty
 import { createWorld, addWindow, removeWindow } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 
-const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8 };
+const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
     totalHeight: 1080,
     slotWidth: 960,
+    workAreaY: 0,
 };
 
 function wid(n: number): WindowId {
@@ -58,6 +59,40 @@ describe('World', () => {
             addWindow(world, wid(1));
             expect(world.workspaces[0]!.windows).toHaveLength(0);
             expect(world.focusedWindow).toBeNull();
+        });
+
+        it('scrolls viewport to reveal third window when it is off-screen', () => {
+            // Monitor: 1920px wide, slotWidth: 960px, gap: 8, edgeGap: 8, focusBorder: 3
+            // Layout starts x at edgeGap (8), not effectiveEdge (11)
+            // Win1: x=8, width=952 (right=960)
+            // Win2: x=968, width=952 (right=1920)
+            // Win3: x=1928, width=952 (right=2880) — off-screen at scrollX=0
+            const { world: w1 } = addWindow(world, wid(1));
+            const { world: w2 } = addWindow(w1, wid(2));
+            const { world: w3, layout: l3 } = addWindow(w2, wid(3));
+
+            // Focus should be on win-3
+            expect(w3.focusedWindow).toBe(wid(3));
+
+            // Viewport must have scrolled so win-3 is visible with edge gap
+            // win-3 right edge is 2880, so scrollX = 2880 + 8 (edgeGap) - 1920 = 968
+            expect(w3.viewport.scrollX).toBe(968);
+
+            // Layout should reflect the scroll
+            expect(l3.scrollX).toBe(968);
+
+            // Win-3 should be visible in the layout
+            const win3Layout = l3.windows.find(w => w.windowId === wid(3));
+            expect(win3Layout).toBeDefined();
+            expect(win3Layout!.visible).toBe(true);
+
+            // Win-1 should now be off-screen (right=960, scrollX=968 → not visible)
+            const win1Layout = l3.windows.find(w => w.windowId === wid(1));
+            expect(win1Layout!.visible).toBe(false);
+
+            // Win-2 should still be visible (x=968, right=1920, viewport=968..2888)
+            const win2Layout = l3.windows.find(w => w.windowId === wid(2));
+            expect(win2Layout!.visible).toBe(true);
         });
     });
 

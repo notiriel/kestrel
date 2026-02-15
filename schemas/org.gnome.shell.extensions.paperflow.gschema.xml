@@ -12,5 +12,15 @@
       <summary>Gap at screen edges</summary>
       <description>Size of the gap at the edges of the screen in pixels</description>
     </key>
+    <key name="focus-right" type="as">
+      <default>['&lt;Super&gt;Right']</default>
+      <summary>Focus window to the right</summary>
+      <description>Move focus to the next window on the right</description>
+    </key>
+    <key name="focus-left" type="as">
+      <default>['&lt;Super&gt;Left']</default>
+      <summary>Focus window to the left</summary>
+      <description>Move focus to the next window on the left</description>
+    </key>
   </schema>
 </schemalist>

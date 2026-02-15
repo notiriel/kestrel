@@ -1,36 +1,49 @@
-import type { PaperFlowConfig, MonitorInfo, WindowLayout, LayoutState } from './types.js';
-import type { Workspace } from './workspace.js';
+import type { WindowLayout, LayoutState } from './types.js';
+import type { World } from './world.js';
 
 /**
- * Computes pixel positions for all windows in a workspace.
+ * Computes pixel positions for all windows in the current workspace.
  * Windows tile horizontally: each occupies slotSpan * slotWidth pixels,
  * with gaps between them and at edges.
+ *
+ * Viewport visibility: windows whose x-range falls entirely outside
+ * the visible viewport (scrollX .. scrollX + viewportWidth) are marked invisible.
  */
-export function computeLayout(
-    workspace: Workspace,
-    config: PaperFlowConfig,
-    monitor: MonitorInfo,
-): LayoutState {
-    const { gapSize, edgeGap } = config;
+export function computeLayout(world: World): LayoutState {
+    const { config, monitor, viewport, focusedWindow } = world;
+    const { gapSize, edgeGap, focusBorderWidth } = config;
     const { slotWidth, totalHeight } = monitor;
-    const windowHeight = totalHeight - edgeGap * 2;
-    const windowY = edgeGap;
+    const effectiveEdge = edgeGap + focusBorderWidth;
+    const windowHeight = totalHeight - effectiveEdge * 2;
+    const windowY = effectiveEdge;
 
+    const ws = world.workspaces[viewport.workspaceIndex]!;
     const windows: WindowLayout[] = [];
     let x = edgeGap;
 
-    for (const win of workspace.windows) {
-        const windowWidth = win.slotSpan * slotWidth - gapSize - edgeGap;
+    for (const win of ws.windows) {
+        const windowWidth = win.slotSpan * slotWidth - gapSize;
+        const rightEdge = x + windowWidth;
+        const leftEdge = x;
+        // Window is visible if it overlaps with the viewport
+        const visible =
+            rightEdge > viewport.scrollX &&
+            leftEdge < viewport.scrollX + viewport.widthPx;
+
         windows.push({
             windowId: win.id,
             x,
             y: windowY,
             width: windowWidth,
             height: windowHeight,
-            visible: true,
+            visible,
         });
-        x += win.slotSpan * slotWidth;
+        x += windowWidth + gapSize;
     }
 
-    return { windows };
+    return {
+        windows,
+        scrollX: viewport.scrollX,
+        focusedWindowId: focusedWindow,
+    };
 }

@@ -50,7 +50,7 @@ export function withMonitor(world: World, monitor: MonitorInfo): World {
     };
 }
 
-function currentWorkspace(world: World): Workspace {
+export function currentWorkspace(world: World): Workspace {
     return world.workspaces[world.viewport.workspaceIndex]!;
 }
 
@@ -61,10 +61,44 @@ function replaceCurrentWorkspace(world: World, ws: Workspace): World {
     return { ...world, workspaces };
 }
 
-function buildUpdate(world: World): WorldUpdate {
-    const ws = currentWorkspace(world);
-    const layout = computeLayout(ws, world.config, world.monitor);
+export function buildUpdate(world: World): WorldUpdate {
+    const layout = computeLayout(world);
     return { world, layout };
+}
+
+/**
+ * Adjust viewport.scrollX so the focused window is fully visible.
+ * Scrolls by minimum amount needed.
+ */
+export function adjustViewport(world: World): World {
+    if (!world.focusedWindow) return world;
+
+    const layout = computeLayout(world);
+    const focusedLayout = layout.windows.find(
+        w => w.windowId === world.focusedWindow,
+    );
+    if (!focusedLayout) return world;
+
+    const { viewport, config: { edgeGap } } = world;
+    const winLeft = focusedLayout.x;
+    const winRight = focusedLayout.x + focusedLayout.width;
+
+    let newScrollX = viewport.scrollX;
+
+    // Ensure focused window + edge gap padding is visible in viewport
+    if (winRight + edgeGap > viewport.scrollX + viewport.widthPx) {
+        newScrollX = winRight + edgeGap - viewport.widthPx;
+    }
+    if (winLeft - edgeGap < newScrollX) {
+        newScrollX = winLeft - edgeGap;
+    }
+
+    if (newScrollX === viewport.scrollX) return world;
+
+    return {
+        ...world,
+        viewport: { ...viewport, scrollX: newScrollX },
+    };
 }
 
 export function addWindow(world: World, windowId: WindowId): WorldUpdate {
@@ -75,7 +109,7 @@ export function addWindow(world: World, windowId: WindowId): WorldUpdate {
         { ...world, focusedWindow: windowId },
         newWs,
     );
-    return buildUpdate(newWorld);
+    return buildUpdate(adjustViewport(newWorld));
 }
 
 export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
@@ -96,5 +130,5 @@ export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
         { ...world, focusedWindow: newFocus },
         newWs,
     );
-    return buildUpdate(newWorld);
+    return buildUpdate(adjustViewport(newWorld));
 }

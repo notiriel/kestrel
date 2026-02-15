@@ -3,6 +3,11 @@ import Meta from 'gi://Meta';
 
 export class WindowAdapter {
     private _windows: Map<WindowId, Meta.Window> = new Map();
+    private _workAreaY: number = 0;
+
+    setWorkAreaY(workAreaY: number): void {
+        this._workAreaY = workAreaY;
+    }
 
     track(windowId: WindowId, metaWindow: Meta.Window): void {
         this._windows.set(windowId, metaWindow);
@@ -17,17 +22,19 @@ export class WindowAdapter {
             const metaWindow = this._windows.get(wl.windowId);
             if (!metaWindow) continue;
             try {
-                metaWindow.move_resize_frame(false, wl.x, wl.y, wl.width, wl.height);
+                // Subtract scrollX so real windows match their visual clone positions
+                const screenX = wl.x - layout.scrollX;
+                // Layout Y is workArea-relative; add workAreaY to convert to stage coords
+                const screenY = wl.y + this._workAreaY;
+                metaWindow.move_resize_frame(false, screenX, screenY, wl.width, wl.height);
             } catch (e) {
-                // move_resize_frame can be rejected — not critical since clones are the visual layer
                 console.debug('[PaperFlow] move_resize_frame rejected:', e);
             }
         }
     }
 
     showAll(): void {
-        // Restore normal GNOME positioning on disable — nothing to undo for 1b
-        // since we don't hide real actors (the paperflow-layer occludes them)
+        // Real actor visibility is restored by CloneAdapter.destroy()
     }
 
     destroy(): void {

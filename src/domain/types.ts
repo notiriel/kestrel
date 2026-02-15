@@ -7,6 +7,7 @@ export type WorkspaceId = string & { readonly __brand: 'WorkspaceId' };
 export interface PaperFlowConfig {
     readonly gapSize: number;
     readonly edgeGap: number;
+    readonly focusBorderWidth: number;
 }
 
 export interface MonitorInfo {
@@ -14,6 +15,8 @@ export interface MonitorInfo {
     readonly totalWidth: number;
     readonly totalHeight: number;
     readonly slotWidth: number;
+    /** Y offset of usable work area (below GNOME top panel) in stage coords */
+    readonly workAreaY: number;
 }
 
 export interface WindowLayout {
@@ -27,6 +30,8 @@ export interface WindowLayout {
 
 export interface LayoutState {
     readonly windows: readonly WindowLayout[];
+    readonly scrollX: number;
+    readonly focusedWindowId: WindowId | null;
 }
 
 export interface WorldUpdate {

@@ -19,10 +19,6 @@ export function removeWindow(ws: Workspace, windowId: WindowId): Workspace {
     return { ...ws, windows: ws.windows.filter(w => w.id !== windowId) };
 }
 
-export function findWindow(ws: Workspace, windowId: WindowId): TiledWindow | undefined {
-    return ws.windows.find(w => w.id === windowId);
-}
-
 export function windowAfter(ws: Workspace, windowId: WindowId): TiledWindow | undefined {
     const idx = ws.windows.findIndex(w => w.id === windowId);
     if (idx === -1 || idx >= ws.windows.length - 1) return undefined;
