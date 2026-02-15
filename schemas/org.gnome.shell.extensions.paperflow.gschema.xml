@@ -32,5 +32,30 @@
       <summary>Focus workspace above</summary>
       <description>Move focus to the workspace above</description>
     </key>
+    <key name="move-left" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;Left']</default>
+      <summary>Move window left</summary>
+      <description>Swap the focused window with the one to its left</description>
+    </key>
+    <key name="move-right" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;Right']</default>
+      <summary>Move window right</summary>
+      <description>Swap the focused window with the one to its right</description>
+    </key>
+    <key name="move-down" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;Down']</default>
+      <summary>Move window to workspace below</summary>
+      <description>Move the focused window to the workspace below</description>
+    </key>
+    <key name="move-up" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;Up']</default>
+      <summary>Move window to workspace above</summary>
+      <description>Move the focused window to the workspace above</description>
+    </key>
+    <key name="toggle-size" type="as">
+      <default>['&lt;Super&gt;f']</default>
+      <summary>Toggle window size</summary>
+      <description>Toggle the focused window between half and full width</description>
+    </key>
   </schema>
 </schemalist>

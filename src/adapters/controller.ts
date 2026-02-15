@@ -1,7 +1,9 @@
-import type { WindowId, PaperFlowConfig, MonitorInfo } from '../domain/types.js';
+import type { WindowId, WorkspaceId, PaperFlowConfig, MonitorInfo } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate } from '../domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
+import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from '../domain/window-operations.js';
+import { computeLayoutForWorkspace } from '../domain/layout.js';
 import { MonitorAdapter } from './monitor-adapter.js';
 import { WindowEventAdapter } from './window-event-adapter.js';
 import { CloneAdapter } from './clone-adapter.js';
@@ -57,9 +59,7 @@ export class PaperFlowController {
             // 4. Create adapters
             this._cloneAdapter = new CloneAdapter();
             this._cloneAdapter.init(monitor.workAreaY, monitor.totalHeight);
-            this._cloneAdapter.connectCloneClicked((windowId: WindowId) => {
-                this._handleCloneClicked(windowId);
-            });
+            this._cloneAdapter.syncWorkspaces(this._world.workspaces);
 
             this._windowAdapter = new WindowAdapter();
             this._windowAdapter.setWorkAreaY(monitor.workAreaY);
@@ -72,6 +72,11 @@ export class PaperFlowController {
                 onFocusLeft: () => this._handleFocusLeft(),
                 onFocusDown: () => this._handleFocusDown(),
                 onFocusUp: () => this._handleFocusUp(),
+                onMoveLeft: () => this._handleMoveLeft(),
+                onMoveRight: () => this._handleMoveRight(),
+                onMoveDown: () => this._handleMoveDown(),
+                onMoveUp: () => this._handleMoveUp(),
+                onToggleSize: () => this._handleToggleSize(),
             });
 
             // 6. Connect external focus changes (click-to-focus)
@@ -196,6 +201,21 @@ export class PaperFlowController {
         };
     }
 
+    /** Find which workspace contains a given window and return its ID. */
+    private _findWorkspaceIdForWindow(world: World, windowId: WindowId): WorkspaceId | null {
+        for (const ws of world.workspaces) {
+            if (ws.windows.some(w => w.id === windowId)) {
+                return ws.id;
+            }
+        }
+        return null;
+    }
+
+    /** Get the workspace ID at a given viewport index. */
+    private _wsIdAt(world: World, index: number): WorkspaceId | null {
+        return world.workspaces[index]?.id ?? null;
+    }
+
     private _handleWindowReady(windowId: WindowId, rawMetaWindow: Meta.Window): void {
         try {
             if (!this._world) return;
@@ -207,10 +227,10 @@ export class PaperFlowController {
             const metaWindow = safeWindow(rawMetaWindow);
 
             // Track in adapters — clone goes to the current workspace's scroll container
-            const wsIndex = this._world.viewport.workspaceIndex;
+            const wsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex)!;
             this._windowAdapter?.track(windowId, metaWindow);
             this._focusAdapter?.track(windowId, metaWindow);
-            this._cloneAdapter?.addClone(windowId, metaWindow, wsIndex);
+            this._cloneAdapter?.addClone(windowId, metaWindow, wsId);
 
             // Save old scroll position for viewport animation
             const oldScrollX = this._world.viewport.scrollX;
@@ -218,6 +238,9 @@ export class PaperFlowController {
             // Update domain
             const update = addWindow(this._world, windowId);
             this._world = update.world;
+
+            // Sync workspace containers (ensureTrailingEmpty may have added one)
+            this._cloneAdapter?.syncWorkspaces(update.world.workspaces);
 
             // Apply layout — snap all positions immediately
             this._windowAdapter?.applyLayout(update.layout);
@@ -243,7 +266,7 @@ export class PaperFlowController {
             console.log(`[PaperFlow] window removed: ${windowId}`);
 
             const oldScrollX = this._world.viewport.scrollX;
-            const oldWsIndex = this._world.viewport.workspaceIndex;
+            const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
 
             // Update domain — prunes empty workspaces, navigates if needed
             const update = removeWindow(this._world, windowId);
@@ -253,12 +276,12 @@ export class PaperFlowController {
             this._cloneAdapter?.removeClone(windowId);
             this._windowAdapter?.untrack(windowId);
             this._focusAdapter?.untrack(windowId);
-            this._cloneAdapter?.syncWorkspaces(update.world.workspaces.length);
+            this._cloneAdapter?.syncWorkspaces(update.world.workspaces);
 
             // If workspace changed, sync scroll before animating
-            const newWsIndex = update.world.viewport.workspaceIndex;
-            if (newWsIndex !== oldWsIndex) {
-                this._cloneAdapter?.setScrollForWorkspace(newWsIndex, oldScrollX);
+            const newWsId = this._wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            if (newWsId && newWsId !== oldWsId) {
+                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
             this._windowAdapter?.applyLayout(update.layout);
@@ -308,15 +331,15 @@ export class PaperFlowController {
             if (!this._world) return;
 
             const oldScrollX = this._world.viewport.scrollX;
-            const oldWsIndex = this._world.viewport.workspaceIndex;
+            const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
 
             const update = focusDown(this._world);
             this._world = update.world;
 
             // Sync arriving workspace's scroll to departing position before animating
-            const newWsIndex = update.world.viewport.workspaceIndex;
-            if (newWsIndex !== oldWsIndex) {
-                this._cloneAdapter?.setScrollForWorkspace(newWsIndex, oldScrollX);
+            const newWsId = this._wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            if (newWsId && newWsId !== oldWsId) {
+                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
             this._windowAdapter?.applyLayout(update.layout);
@@ -333,15 +356,15 @@ export class PaperFlowController {
             if (!this._world) return;
 
             const oldScrollX = this._world.viewport.scrollX;
-            const oldWsIndex = this._world.viewport.workspaceIndex;
+            const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
 
             const update = focusUp(this._world);
             this._world = update.world;
 
             // Sync arriving workspace's scroll to departing position before animating
-            const newWsIndex = update.world.viewport.workspaceIndex;
-            if (newWsIndex !== oldWsIndex) {
-                this._cloneAdapter?.setScrollForWorkspace(newWsIndex, oldScrollX);
+            const newWsId = this._wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            if (newWsId && newWsId !== oldWsId) {
+                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
             this._windowAdapter?.applyLayout(update.layout);
@@ -353,27 +376,161 @@ export class PaperFlowController {
         }
     }
 
+    private _handleMoveRight(): void {
+        try {
+            if (!this._world) return;
+
+            const update = moveRight(this._world);
+            this._world = update.world;
+
+            this._windowAdapter?.applyLayout(update.layout);
+            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._focusWindow(this._world.focusedWindow);
+
+        } catch (e) {
+            console.error('[PaperFlow] Error handling move right:', e);
+        }
+    }
+
+    private _handleMoveLeft(): void {
+        try {
+            if (!this._world) return;
+
+            const update = moveLeft(this._world);
+            this._world = update.world;
+
+            this._windowAdapter?.applyLayout(update.layout);
+            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._focusWindow(this._world.focusedWindow);
+
+        } catch (e) {
+            console.error('[PaperFlow] Error handling move left:', e);
+        }
+    }
+
+    private _handleMoveDown(): void {
+        try {
+            if (!this._world) return;
+
+            const oldScrollX = this._world.viewport.scrollX;
+            const windowId = this._world.focusedWindow;
+            const sourceWsIndex = this._world.viewport.workspaceIndex;
+            const sourceWsId = this._wsIdAt(this._world, sourceWsIndex);
+
+            const update = moveDown(this._world);
+            this._world = update.world;
+
+            // Reparent clone if window moved cross-workspace (detected by workspace ID)
+            if (windowId && sourceWsId) {
+                const targetWsId = this._findWorkspaceIdForWindow(update.world, windowId);
+                if (targetWsId && targetWsId !== sourceWsId) {
+                    this._cloneAdapter?.moveCloneToWorkspace(windowId, targetWsId);
+                }
+            }
+            this._cloneAdapter?.syncWorkspaces(update.world.workspaces);
+
+            // Sync arriving workspace's scroll before animating
+            const newWsId = this._wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            if (newWsId && newWsId !== sourceWsId) {
+                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
+            }
+
+            this._windowAdapter?.applyLayout(update.layout);
+            this._cloneAdapter?.applyLayout(update.layout, true);
+
+            // Reposition remaining windows on source workspace so they close the gap.
+            // Override workspaceIndex so applyLayout doesn't re-animate the workspace
+            // strip back to the source workspace position.
+            if (sourceWsId) {
+                const sourceWsNewIndex = update.world.workspaces.findIndex(ws => ws.id === sourceWsId);
+                if (sourceWsNewIndex >= 0) {
+                    const sourceLayout = computeLayoutForWorkspace(update.world, sourceWsNewIndex);
+                    this._cloneAdapter?.applyLayout(
+                        { ...sourceLayout, workspaceIndex: update.world.viewport.workspaceIndex },
+                        true,
+                    );
+                }
+            }
+
+            this._focusWindow(this._world.focusedWindow);
+
+        } catch (e) {
+            console.error('[PaperFlow] Error handling move down:', e);
+        }
+    }
+
+    private _handleMoveUp(): void {
+        try {
+            if (!this._world) return;
+
+            const oldScrollX = this._world.viewport.scrollX;
+            const windowId = this._world.focusedWindow;
+            const sourceWsIndex = this._world.viewport.workspaceIndex;
+            const sourceWsId = this._wsIdAt(this._world, sourceWsIndex);
+
+            const update = moveUp(this._world);
+            this._world = update.world;
+
+            // Reparent clone if window moved cross-workspace (detected by workspace ID)
+            if (windowId && sourceWsId) {
+                const targetWsId = this._findWorkspaceIdForWindow(update.world, windowId);
+                if (targetWsId && targetWsId !== sourceWsId) {
+                    this._cloneAdapter?.moveCloneToWorkspace(windowId, targetWsId);
+                }
+            }
+            this._cloneAdapter?.syncWorkspaces(update.world.workspaces);
+
+            // Sync arriving workspace's scroll before animating
+            const newWsId = this._wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            if (newWsId && newWsId !== sourceWsId) {
+                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
+            }
+
+            this._windowAdapter?.applyLayout(update.layout);
+            this._cloneAdapter?.applyLayout(update.layout, true);
+
+            // Reposition remaining windows on source workspace so they close the gap.
+            // Override workspaceIndex so applyLayout doesn't re-animate the workspace
+            // strip back to the source workspace position.
+            if (sourceWsId) {
+                const sourceWsNewIndex = update.world.workspaces.findIndex(ws => ws.id === sourceWsId);
+                if (sourceWsNewIndex >= 0) {
+                    const sourceLayout = computeLayoutForWorkspace(update.world, sourceWsNewIndex);
+                    this._cloneAdapter?.applyLayout(
+                        { ...sourceLayout, workspaceIndex: update.world.viewport.workspaceIndex },
+                        true,
+                    );
+                }
+            }
+
+            this._focusWindow(this._world.focusedWindow);
+
+        } catch (e) {
+            console.error('[PaperFlow] Error handling move up:', e);
+        }
+    }
+
+    private _handleToggleSize(): void {
+        try {
+            if (!this._world) return;
+
+            const update = toggleSize(this._world);
+            this._world = update.world;
+
+            this._windowAdapter?.applyLayout(update.layout);
+            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._focusWindow(this._world.focusedWindow);
+
+        } catch (e) {
+            console.error('[PaperFlow] Error handling toggle size:', e);
+        }
+    }
+
     private _focusWindow(windowId: WindowId | null): void {
         if (!windowId) return;
         this._internalFocusChange = true;
         this._focusAdapter?.focus(windowId);
         this._internalFocusChange = false;
-    }
-
-    private _handleCloneClicked(windowId: WindowId): void {
-        try {
-            if (!this._world) return;
-            if (this._world.focusedWindow === windowId) return;
-
-            const update = setFocus(this._world, windowId);
-            this._world = update.world;
-
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
-            this._focusWindow(windowId);
-        } catch (e) {
-            console.error('[PaperFlow] Error handling clone click:', e);
-        }
     }
 
     private _handleExternalFocus(windowId: WindowId): void {
@@ -383,15 +540,15 @@ export class PaperFlowController {
             if (this._world.focusedWindow === windowId) return;
 
             const oldScrollX = this._world.viewport.scrollX;
-            const oldWsIndex = this._world.viewport.workspaceIndex;
+            const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
 
             const update = setFocus(this._world, windowId);
             this._world = update.world;
 
             // Sync arriving workspace's scroll to departing position before animating
-            const newWsIndex = update.world.viewport.workspaceIndex;
-            if (newWsIndex !== oldWsIndex) {
-                this._cloneAdapter?.setScrollForWorkspace(newWsIndex, oldScrollX);
+            const newWsId = this._wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            if (newWsId && newWsId !== oldWsId) {
+                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
             this._windowAdapter?.applyLayout(update.layout);

@@ -97,6 +97,23 @@ describe('World', () => {
             const win2Layout = l3.windows.find(w => w.windowId === wid(2));
             expect(win2Layout!.visible).toBe(true);
         });
+
+        it('does not scroll when new window fits in viewport alongside existing', () => {
+            // <[A] > + add D → <A[D]> (both visible, no scroll)
+            const { world: w1 } = addWindow(world, wid(1));
+            expect(w1.viewport.scrollX).toBe(0);
+
+            const { world: w2, layout: l2 } = addWindow(w1, wid(2));
+            // Win-2 right edge (1920) fits in viewport (1920px) — no scroll needed
+            expect(w2.viewport.scrollX).toBe(0);
+            expect(w2.focusedWindow).toBe(wid(2));
+
+            // Both windows should be visible
+            const win1 = l2.windows.find(w => w.windowId === wid(1));
+            const win2 = l2.windows.find(w => w.windowId === wid(2));
+            expect(win1!.visible).toBe(true);
+            expect(win2!.visible).toBe(true);
+        });
     });
 
     describe('removeWindow', () => {

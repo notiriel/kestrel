@@ -57,7 +57,7 @@ export function currentWorkspace(world: World): Workspace {
     return world.workspaces[world.viewport.workspaceIndex]!;
 }
 
-function replaceCurrentWorkspace(world: World, ws: Workspace): World {
+export function replaceCurrentWorkspace(world: World, ws: Workspace): World {
     const workspaces = world.workspaces.map((w, i) =>
         i === world.viewport.workspaceIndex ? ws : w,
     );
@@ -70,7 +70,7 @@ export function buildUpdate(world: World): WorldUpdate {
 }
 
 /** Ensure there is always exactly one empty workspace at the bottom. */
-function ensureTrailingEmpty(world: World): World {
+export function ensureTrailingEmpty(world: World): World {
     const last = world.workspaces[world.workspaces.length - 1];
     if (!last || last.windows.length > 0) {
         return {
@@ -82,7 +82,7 @@ function ensureTrailingEmpty(world: World): World {
 }
 
 /** Remove empty workspaces except the trailing one. Adjust viewport if needed. */
-function pruneEmptyWorkspaces(world: World): World {
+export function pruneEmptyWorkspaces(world: World): World {
     const workspaces: Workspace[] = [];
     let newWsIndex = world.viewport.workspaceIndex;
     let removedBeforeCurrent = 0;
@@ -193,7 +193,43 @@ export function addWindow(world: World, windowId: WindowId): WorldUpdate {
         newWs,
     );
     newWorld = ensureTrailingEmpty(newWorld);
-    return buildUpdate(adjustViewport(newWorld));
+    return buildUpdate(adjustViewportMinimal(newWorld));
+}
+
+/**
+ * Like adjustViewport but only scrolls when the focused window is actually
+ * off-screen (not merely missing edge-gap padding). Used by addWindow so
+ * that opening a new window doesn't push existing visible windows out.
+ */
+function adjustViewportMinimal(world: World): World {
+    if (!world.focusedWindow) return world;
+
+    const layout = computeLayout(world);
+    const focusedLayout = layout.windows.find(
+        w => w.windowId === world.focusedWindow,
+    );
+    if (!focusedLayout) return world;
+
+    const { viewport, config: { edgeGap } } = world;
+    const winLeft = focusedLayout.x;
+    const winRight = focusedLayout.x + focusedLayout.width;
+
+    let newScrollX = viewport.scrollX;
+
+    // Only scroll when window extends past viewport edge (not for padding)
+    if (winRight > newScrollX + viewport.widthPx) {
+        newScrollX = winRight + edgeGap - viewport.widthPx;
+    }
+    if (winLeft < newScrollX) {
+        newScrollX = winLeft - edgeGap;
+    }
+
+    if (newScrollX === viewport.scrollX) return world;
+
+    return {
+        ...world,
+        viewport: { ...viewport, scrollX: newScrollX },
+    };
 }
 
 export function removeWindow(world: World, windowId: WindowId): WorldUpdate {

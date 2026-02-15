@@ -41,6 +41,36 @@ export function slotIndexOf(ws: Workspace, windowId: WindowId): number {
     return -1;
 }
 
+/** Swap a window with the one after it; return unchanged ws if at end. */
+export function swapWithNext(ws: Workspace, windowId: WindowId): Workspace {
+    const idx = ws.windows.findIndex(w => w.id === windowId);
+    if (idx === -1 || idx >= ws.windows.length - 1) return ws;
+    const windows = [...ws.windows];
+    [windows[idx], windows[idx + 1]] = [windows[idx + 1]!, windows[idx]!];
+    return { ...ws, windows };
+}
+
+/** Swap a window with the one before it; return unchanged ws if at start. */
+export function swapWithPrev(ws: Workspace, windowId: WindowId): Workspace {
+    const idx = ws.windows.findIndex(w => w.id === windowId);
+    if (idx <= 0) return ws;
+    const windows = [...ws.windows];
+    [windows[idx - 1], windows[idx]] = [windows[idx]!, windows[idx - 1]!];
+    return { ...ws, windows };
+}
+
+/** Insert a window at the given index. */
+export function insertWindowAt(ws: Workspace, window: TiledWindow, index: number): Workspace {
+    const windows = [...ws.windows];
+    windows.splice(index, 0, window);
+    return { ...ws, windows };
+}
+
+/** Replace a window by ID (e.g. to change slotSpan). */
+export function replaceWindow(ws: Workspace, windowId: WindowId, newWindow: TiledWindow): Workspace {
+    return { ...ws, windows: ws.windows.map(w => w.id === windowId ? newWindow : w) };
+}
+
 /** Finds the window whose slot range contains the given 1-based slot index. */
 export function windowAtSlot(ws: Workspace, slotIndex: number): TiledWindow | undefined {
     let slot = 1;

@@ -48,3 +48,42 @@ export function computeLayout(world: World): LayoutState {
         focusedWindowId: focusedWindow,
     };
 }
+
+/**
+ * Compute layout for a specific workspace (not necessarily the current one).
+ * Used to reposition windows on non-current workspaces after cross-workspace moves.
+ */
+export function computeLayoutForWorkspace(world: World, wsIndex: number): LayoutState {
+    const { config, monitor, viewport, focusedWindow } = world;
+    const { gapSize, edgeGap, focusBorderWidth } = config;
+    const { slotWidth, totalHeight } = monitor;
+    const effectiveEdge = edgeGap + focusBorderWidth;
+    const windowHeight = totalHeight - effectiveEdge * 2;
+    const windowY = effectiveEdge;
+
+    const ws = world.workspaces[wsIndex];
+    if (!ws) return { windows: [], scrollX: viewport.scrollX, workspaceIndex: wsIndex, focusedWindowId: null };
+
+    const windows: WindowLayout[] = [];
+    let x = edgeGap;
+
+    for (const win of ws.windows) {
+        const windowWidth = win.slotSpan * slotWidth - gapSize;
+        windows.push({
+            windowId: win.id,
+            x,
+            y: windowY,
+            width: windowWidth,
+            height: windowHeight,
+            visible: true, // Non-current workspaces: mark all visible for positioning
+        });
+        x += windowWidth + gapSize;
+    }
+
+    return {
+        windows,
+        scrollX: viewport.scrollX,
+        workspaceIndex: wsIndex,
+        focusedWindowId: focusedWindow,
+    };
+}

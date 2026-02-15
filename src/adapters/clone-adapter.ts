@@ -1,4 +1,4 @@
-import type { WindowId, LayoutState } from '../domain/types.js';
+import type { WindowId, WorkspaceId, LayoutState } from '../domain/types.js';
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import Meta from 'gi://Meta';
@@ -14,10 +14,12 @@ interface CloneEntry {
     metaWindow: Meta.Window;
     sourceActor: Meta.WindowActor;
     sizeChangedId: number;
-    showId: number;
     sourceDestroyId: number;
     sourceDestroyed: boolean;
-    workspaceIndex: number;
+    workspaceId: WorkspaceId;
+    /** Layout target size — used by _allocateClone to center oversized CSD clones */
+    layoutWidth: number;
+    layoutHeight: number;
 }
 
 interface FloatCloneEntry {
@@ -27,7 +29,6 @@ interface FloatCloneEntry {
     sourceActor: Meta.WindowActor;
     positionChangedId: number;
     sizeChangedId: number;
-    showId: number;
     sourceDestroyId: number;
     sourceDestroyed: boolean;
 }
@@ -46,13 +47,14 @@ export class CloneAdapter {
     private _floatLayer: Clutter.Actor | null = null;
     private _workspaceStrip: Clutter.Actor | null = null;
     private _focusIndicator: St.Widget | null = null;
-    private _workspaceContainers: Map<number, WorkspaceContainer> = new Map();
+    private _workspaceContainers: Map<WorkspaceId, WorkspaceContainer> = new Map();
+    /** Ordered list of workspace IDs matching domain workspace indices. */
+    private _workspaceOrder: WorkspaceId[] = [];
     private _clones: Map<WindowId, CloneEntry> = new Map();
     private _floatClones: Map<WindowId, FloatCloneEntry> = new Map();
     private _workAreaY: number = 0;
     private _monitorHeight: number = 0;
-    private _currentWorkspaceIndex: number = 0;
-    private _onCloneClicked: ((windowId: WindowId) => void) | null = null;
+    private _currentWorkspaceId: WorkspaceId | null = null;
 
     init(workAreaY: number, monitorHeight: number): void {
         this._workAreaY = workAreaY;
@@ -80,19 +82,12 @@ export class CloneAdapter {
         });
         this._layer.add_child(this._focusIndicator);
 
-        // Create workspace 0
-        this._getOrCreateWorkspaceContainer(0);
-
         parent.insert_child_above(this._layer, global.window_group);
 
         this._floatLayer = new Clutter.Actor({ name: 'paperflow-float-layer' });
         parent.insert_child_above(this._floatLayer, this._layer);
 
         console.log(`[PaperFlow] clone-adapter init: workAreaY=${workAreaY}, monitorHeight=${monitorHeight}, layer.position=(${this._layer.x},${this._layer.y})`);
-    }
-
-    connectCloneClicked(callback: (windowId: WindowId) => void): void {
-        this._onCloneClicked = callback;
     }
 
     updateWorkArea(workAreaY: number, monitorHeight?: number): void {
@@ -104,52 +99,46 @@ export class CloneAdapter {
             this._layer.set_position(0, this._workAreaY);
             this._layer.set_size(global.stage.width, this._monitorHeight);
         }
-        // Reposition workspace containers
-        for (const [idx, wc] of this._workspaceContainers) {
-            wc.container.set_position(0, idx * this._monitorHeight);
+        // Reposition workspace containers using current ordering
+        for (let i = 0; i < this._workspaceOrder.length; i++) {
+            const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+            if (!wc) continue;
+            wc.container.set_position(0, i * this._monitorHeight);
             wc.container.set_size(global.stage.width, this._monitorHeight);
         }
     }
 
-    private _getOrCreateWorkspaceContainer(wsIndex: number): WorkspaceContainer {
-        const existing = this._workspaceContainers.get(wsIndex);
+    private _getOrCreateWorkspaceContainer(wsId: WorkspaceId): WorkspaceContainer {
+        const existing = this._workspaceContainers.get(wsId);
         if (existing) return existing;
 
         const container = new Clutter.Actor({
-            name: `paperflow-ws-${wsIndex}`,
+            name: `paperflow-ws-${wsId}`,
         });
-        container.set_position(0, wsIndex * this._monitorHeight);
         container.set_size(global.stage.width, this._monitorHeight);
 
         const scrollContainer = new Clutter.Actor({
-            name: `paperflow-scroll-${wsIndex}`,
+            name: `paperflow-scroll-${wsId}`,
         });
         container.add_child(scrollContainer);
 
         this._workspaceStrip!.add_child(container);
 
         const wc: WorkspaceContainer = { container, scrollContainer };
-        this._workspaceContainers.set(wsIndex, wc);
+        this._workspaceContainers.set(wsId, wc);
         return wc;
     }
 
-    addClone(windowId: WindowId, metaWindow: Meta.Window, workspaceIndex: number): void {
+    addClone(windowId: WindowId, metaWindow: Meta.Window, workspaceId: WorkspaceId): void {
         const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
         if (!actor || !this._workspaceStrip) return;
 
-        const wc = this._getOrCreateWorkspaceContainer(workspaceIndex);
+        const wc = this._getOrCreateWorkspaceContainer(workspaceId);
 
         const wrapper = new Clutter.Actor({
             name: `paperflow-clone-${windowId}`,
-            reactive: true,
-        });
-        wrapper.connect('button-press-event', () => {
-            try {
-                this._onCloneClicked?.(windowId);
-            } catch (e) {
-                console.error('[PaperFlow] Error in clone click handler:', e);
-            }
-            return Clutter.EVENT_STOP;
+            reactive: false,
+            clip_to_allocation: true,
         });
         const clone = new Clutter.Clone({ source: actor });
         wrapper.add_child(clone);
@@ -164,17 +153,15 @@ export class CloneAdapter {
             }
         });
 
-        // Hide the real WindowActor. Clutter.Clone can still paint a hidden source.
-        actor.hide();
-        const showId = actor.connect('show', () => {
-            actor.hide();
-        });
+        // Real WindowActors stay visible — they sit below the clone layer
+        // in z-order so clones paint on top, but being visible means they
+        // participate in Clutter pick() and receive mouse/keyboard input.
 
         // Track actor destruction
         const entry: CloneEntry = {
             wrapper, clone, metaWindow, sourceActor: actor,
-            sizeChangedId, showId, sourceDestroyId: 0, sourceDestroyed: false,
-            workspaceIndex,
+            sizeChangedId, sourceDestroyId: 0, sourceDestroyed: false,
+            workspaceId, layoutWidth: 0, layoutHeight: 0,
         };
         entry.sourceDestroyId = actor.connect('destroy', () => {
             entry.sourceDestroyed = true;
@@ -192,9 +179,7 @@ export class CloneAdapter {
         try { entry.metaWindow.disconnect(entry.sizeChangedId); } catch { /* window already gone */ }
 
         if (!entry.sourceDestroyed) {
-            entry.sourceActor.disconnect(entry.showId);
             entry.sourceActor.disconnect(entry.sourceDestroyId);
-            entry.sourceActor.show();
         }
 
         entry.wrapper.destroy();
@@ -212,11 +197,7 @@ export class CloneAdapter {
         // Position at the window's current screen position
         this._syncFloatClone(wrapper, clone, metaWindow);
 
-        // Hide the real actor (same pattern as tiled clones)
-        actor.hide();
-        const showId = actor.connect('show', () => {
-            actor.hide();
-        });
+        // Real actor stays visible for input (same as tiled clones)
 
         // Track position and size changes
         const positionChangedId = metaWindow.connect('position-changed', () => {
@@ -237,7 +218,7 @@ export class CloneAdapter {
 
         const entry: FloatCloneEntry = {
             wrapper, clone, metaWindow, sourceActor: actor,
-            positionChangedId, sizeChangedId, showId,
+            positionChangedId, sizeChangedId,
             sourceDestroyId: 0, sourceDestroyed: false,
         };
         entry.sourceDestroyId = actor.connect('destroy', () => {
@@ -256,9 +237,7 @@ export class CloneAdapter {
         try { entry.metaWindow.disconnect(entry.sizeChangedId); } catch { /* already gone */ }
 
         if (!entry.sourceDestroyed) {
-            entry.sourceActor.disconnect(entry.showId);
             entry.sourceActor.disconnect(entry.sourceDestroyId);
-            entry.sourceActor.show();
         }
 
         entry.wrapper.destroy();
@@ -303,12 +282,33 @@ export class CloneAdapter {
             return;
         }
 
+        // Offset clone so the frame origin aligns with the wrapper origin.
+        // This matches the real WindowActor's clip origin (PaperWM pattern).
+        // Oversized windows are NOT centered — content is top-left aligned
+        // and clip_to_allocation crops the overflow from right/bottom.
         const cloneOffX = buffer.x - frame.x;
         const cloneOffY = buffer.y - frame.y;
+
         entry.clone.set_position(cloneOffX, cloneOffY);
         entry.clone.set_size(buffer.width, buffer.height);
+    }
 
-        entry.wrapper.set_size(frame.width, frame.height);
+    /**
+     * Reparent a clone's wrapper from one workspace scroll container to another.
+     * Must be called before syncWorkspaces to prevent the source container
+     * from being wrongly pruned.
+     */
+    moveCloneToWorkspace(windowId: WindowId, targetWsId: WorkspaceId): void {
+        const entry = this._clones.get(windowId);
+        if (!entry) return;
+
+        const targetWc = this._getOrCreateWorkspaceContainer(targetWsId);
+        const oldParent = entry.wrapper.get_parent();
+        if (oldParent) {
+            oldParent.remove_child(entry.wrapper);
+        }
+        targetWc.scrollContainer.add_child(entry.wrapper);
+        entry.workspaceId = targetWsId;
     }
 
     applyLayout(layout: LayoutState, animate: boolean): void {
@@ -328,13 +328,17 @@ export class CloneAdapter {
                 this._workspaceStrip.set_position(0, targetY);
             }
         }
-        this._currentWorkspaceIndex = layout.workspaceIndex;
+        if (this._workspaceOrder[layout.workspaceIndex]) {
+            this._currentWorkspaceId = this._workspaceOrder[layout.workspaceIndex]!;
+        }
 
         // Animate workspace containers to their correct Y positions.
         // After syncWorkspaces re-indexes, containers keep their old Y;
         // this animates them into place (e.g. workspace below slides up).
-        for (const [idx, wc] of this._workspaceContainers) {
-            const targetContainerY = idx * this._monitorHeight;
+        for (let i = 0; i < this._workspaceOrder.length; i++) {
+            const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+            if (!wc) continue;
+            const targetContainerY = i * this._monitorHeight;
             if (duration > 0) {
                 (wc.container as unknown as Easeable).ease({
                     y: targetContainerY,
@@ -366,6 +370,9 @@ export class CloneAdapter {
             const entry = this._clones.get(wl.windowId);
             if (!entry) continue;
 
+            // Store layout target so _allocateClone can center oversized CSD clones
+            entry.layoutWidth = wl.width;
+            entry.layoutHeight = wl.height;
             this._allocateClone(wl.windowId);
 
             // Y position is relative to the workspace container (no workAreaY offset needed,
@@ -374,11 +381,14 @@ export class CloneAdapter {
                 (entry.wrapper as unknown as Easeable).ease({
                     x: wl.x,
                     y: wl.y,
+                    width: wl.width,
+                    height: wl.height,
                     duration,
                     mode: easeMode,
                 });
             } else {
                 entry.wrapper.set_position(wl.x, wl.y);
+                entry.wrapper.set_size(wl.width, wl.height);
             }
         }
 
@@ -430,7 +440,8 @@ export class CloneAdapter {
      * Snap active workspace's scroll container to a position without animation.
      */
     setScroll(scrollX: number): void {
-        const wc = this._workspaceContainers.get(this._currentWorkspaceIndex);
+        if (!this._currentWorkspaceId) return;
+        const wc = this._workspaceContainers.get(this._currentWorkspaceId);
         wc?.scrollContainer.set_position(-scrollX, 0);
     }
 
@@ -438,76 +449,45 @@ export class CloneAdapter {
      * Snap a specific workspace's scroll container to a position without animation.
      * Used before workspace switch to sync the arriving workspace to the departing one's position.
      */
-    setScrollForWorkspace(wsIndex: number, scrollX: number): void {
-        const wc = this._getOrCreateWorkspaceContainer(wsIndex);
+    setScrollForWorkspace(wsId: WorkspaceId, scrollX: number): void {
+        const wc = this._workspaceContainers.get(wsId);
+        if (!wc) return;
         wc.scrollContainer.set_position(-scrollX, 0);
     }
 
     /**
-     * Reconcile workspace containers to match the domain's workspace count.
-     * Removes empty containers for pruned workspaces and re-indexes the rest.
+     * Reconcile workspace containers to match the domain's workspace list.
+     * Creates containers for new workspaces, removes containers for pruned ones.
+     * Workspace IDs are stable across pruning, so no re-indexing ambiguity.
      */
-    syncWorkspaces(workspaceCount: number): void {
+    syncWorkspaces(workspaces: readonly { readonly id: WorkspaceId }[]): void {
         if (!this._workspaceStrip) return;
 
-        // Collect containers sorted by current index
-        const sorted = [...this._workspaceContainers.entries()]
-            .sort(([a], [b]) => a - b);
+        const validIds = new Set(workspaces.map(ws => ws.id));
 
-        // Remove containers that have no clones (pruned workspaces)
-        const keep: WorkspaceContainer[] = [];
-        for (const [idx, wc] of sorted) {
-            const hasClones = [...this._clones.values()]
-                .some(e => e.workspaceIndex === idx);
-            if (hasClones) {
-                keep.push(wc);
-            } else {
+        // Remove containers for workspaces that no longer exist
+        for (const [id, wc] of this._workspaceContainers) {
+            if (!validIds.has(id)) {
                 wc.container.destroy();
+                this._workspaceContainers.delete(id);
             }
         }
 
-        // Ensure we have enough containers (e.g. for trailing empty workspace)
-        while (keep.length < workspaceCount) {
-            const container = new Clutter.Actor({
-                name: `paperflow-ws-${keep.length}`,
-            });
-            container.set_size(global.stage.width, this._monitorHeight);
-            const scrollContainer = new Clutter.Actor({
-                name: `paperflow-scroll-${keep.length}`,
-            });
-            container.add_child(scrollContainer);
-            this._workspaceStrip.add_child(container);
-            keep.push({ container, scrollContainer });
+        // Ensure containers exist for all workspaces
+        for (const ws of workspaces) {
+            this._getOrCreateWorkspaceContainer(ws.id);
         }
 
-        // Rebuild map with correct indices — but DON'T reposition containers.
-        // applyLayout will animate them to their correct Y positions.
-        this._workspaceContainers.clear();
-        for (let i = 0; i < keep.length; i++) {
-            this._workspaceContainers.set(i, keep[i]!);
-        }
-
-        // Update clone entries to match new indices
-        for (const entry of this._clones.values()) {
-            for (const [idx, wc] of this._workspaceContainers) {
-                if (wc.scrollContainer === entry.wrapper.get_parent()) {
-                    entry.workspaceIndex = idx;
-                    break;
-                }
-            }
-        }
-
-        // Update current workspace index
-        if (this._currentWorkspaceIndex >= keep.length) {
-            this._currentWorkspaceIndex = keep.length - 1;
-        }
+        // Update ordering — applyLayout uses this for Y positioning
+        this._workspaceOrder = workspaces.map(ws => ws.id);
     }
 
     /**
      * Animate viewport scroll from current position to target.
      */
     animateViewport(targetScrollX: number): void {
-        const wc = this._workspaceContainers.get(this._currentWorkspaceIndex);
+        if (!this._currentWorkspaceId) return;
+        const wc = this._workspaceContainers.get(this._currentWorkspaceId);
         if (!wc) return;
         (wc.scrollContainer as unknown as Easeable).ease({
             x: -targetScrollX,
@@ -529,9 +509,7 @@ export class CloneAdapter {
             entry.wrapper.remove_all_transitions();
             try { entry.metaWindow.disconnect(entry.sizeChangedId); } catch { /* window already gone */ }
             if (!entry.sourceDestroyed) {
-                entry.sourceActor.disconnect(entry.showId);
                 entry.sourceActor.disconnect(entry.sourceDestroyId);
-                entry.sourceActor.show();
             }
         }
         this._clones.clear();
@@ -541,9 +519,7 @@ export class CloneAdapter {
             try { entry.metaWindow.disconnect(entry.positionChangedId); } catch { /* already gone */ }
             try { entry.metaWindow.disconnect(entry.sizeChangedId); } catch { /* already gone */ }
             if (!entry.sourceDestroyed) {
-                entry.sourceActor.disconnect(entry.showId);
                 entry.sourceActor.disconnect(entry.sourceDestroyId);
-                entry.sourceActor.show();
             }
         }
         this._floatClones.clear();
@@ -557,6 +533,7 @@ export class CloneAdapter {
             this._layer = null;
             this._workspaceStrip = null;
             this._workspaceContainers.clear();
+            this._workspaceOrder = [];
         }
     }
 }

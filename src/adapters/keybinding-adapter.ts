@@ -8,6 +8,11 @@ export interface KeybindingCallbacks {
     onFocusLeft: () => void;
     onFocusDown: () => void;
     onFocusUp: () => void;
+    onMoveLeft: () => void;
+    onMoveRight: () => void;
+    onMoveDown: () => void;
+    onMoveUp: () => void;
+    onToggleSize: () => void;
 }
 
 /** Mutter setting whose default ('Super_L') opens the Activities Overview. */
@@ -28,6 +33,10 @@ const CONFLICTING_WM_KEYS = [
     'switch-applications-backward', // <Shift><Super>Tab
     'maximize',                     // <Super>Up
     'unmaximize',                   // <Super>Down
+    'move-to-monitor-left',         // <Shift><Super>Left
+    'move-to-monitor-right',        // <Shift><Super>Right
+    'move-to-monitor-up',           // <Shift><Super>Up
+    'move-to-monitor-down',         // <Shift><Super>Down
 ] as const;
 
 export class KeybindingAdapter {
@@ -79,6 +88,11 @@ export class KeybindingAdapter {
             ['focus-left', callbacks.onFocusLeft],
             ['focus-down', callbacks.onFocusDown],
             ['focus-up', callbacks.onFocusUp],
+            ['move-left', callbacks.onMoveLeft],
+            ['move-right', callbacks.onMoveRight],
+            ['move-down', callbacks.onMoveDown],
+            ['move-up', callbacks.onMoveUp],
+            ['toggle-size', callbacks.onToggleSize],
         ];
 
         for (const [name, handler] of bindings) {
