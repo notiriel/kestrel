@@ -17,7 +17,7 @@ interface CloneEntry {
     sourceDestroyId: number;
     sourceDestroyed: boolean;
     workspaceId: WorkspaceId;
-    /** Layout target size — used by _allocateClone to center oversized CSD clones */
+    /** Layout target size — wrapper is capped to this when frame exceeds layout slot */
     layoutWidth: number;
     layoutHeight: number;
 }
@@ -55,6 +55,7 @@ export class CloneAdapter {
     private _workAreaY: number = 0;
     private _monitorHeight: number = 0;
     private _currentWorkspaceId: WorkspaceId | null = null;
+    private _lastLayout: LayoutState | null = null;
 
     init(workAreaY: number, monitorHeight: number): void {
         this._workAreaY = workAreaY;
@@ -148,6 +149,7 @@ export class CloneAdapter {
         const sizeChangedId = metaWindow.connect('size-changed', () => {
             try {
                 this._allocateClone(windowId);
+                this._refreshFocusIndicatorForWindow(windowId);
             } catch (e) {
                 console.error('[PaperFlow] Error in size-changed handler:', e);
             }
@@ -282,15 +284,27 @@ export class CloneAdapter {
             return;
         }
 
-        // Offset clone so the frame origin aligns with the wrapper origin.
-        // This matches the real WindowActor's clip origin (PaperWM pattern).
-        // Oversized windows are NOT centered — content is top-left aligned
-        // and clip_to_allocation crops the overflow from right/bottom.
-        const cloneOffX = buffer.x - frame.x;
-        const cloneOffY = buffer.y - frame.y;
+        // Base offset: align frame origin with wrapper origin
+        let cloneOffX = buffer.x - frame.x;
+        let cloneOffY = buffer.y - frame.y;
+
+        // When frame exceeds layout target (e.g. Chromium ignores resize request),
+        // center the frame content within the layout slot so clipping is symmetric.
+        if (entry.layoutWidth > 0 && frame.width > entry.layoutWidth) {
+            cloneOffX += Math.round((entry.layoutWidth - frame.width) / 2);
+        }
+        if (entry.layoutHeight > 0 && frame.height > entry.layoutHeight) {
+            cloneOffY += Math.round((entry.layoutHeight - frame.height) / 2);
+        }
 
         entry.clone.set_position(cloneOffX, cloneOffY);
         entry.clone.set_size(buffer.width, buffer.height);
+
+        // Wrapper is always layout-target sized (clip_to_allocation handles overflow).
+        // When layout is not yet set, fall back to frame size.
+        const wrapperW = entry.layoutWidth > 0 ? entry.layoutWidth : frame.width;
+        const wrapperH = entry.layoutHeight > 0 ? entry.layoutHeight : frame.height;
+        entry.wrapper.set_size(wrapperW, wrapperH);
     }
 
     /**
@@ -312,6 +326,7 @@ export class CloneAdapter {
     }
 
     applyLayout(layout: LayoutState, animate: boolean): void {
+        this._lastLayout = layout;
         const duration = animate ? ANIMATION_DURATION : 0;
         const easeMode = Clutter.AnimationMode.EASE_OUT_QUAD;
 
@@ -365,30 +380,25 @@ export class CloneAdapter {
             }
         }
 
-        // Position clone wrappers
+        // Position clone wrappers — only animate position.
+        // Wrapper size is owned by _allocateClone (frame_rect capped to layout target).
         for (const wl of layout.windows) {
             const entry = this._clones.get(wl.windowId);
             if (!entry) continue;
 
-            // Store layout target so _allocateClone can center oversized CSD clones
             entry.layoutWidth = wl.width;
             entry.layoutHeight = wl.height;
             this._allocateClone(wl.windowId);
 
-            // Y position is relative to the workspace container (no workAreaY offset needed,
-            // since the layer itself is positioned at workAreaY)
             if (duration > 0) {
                 (entry.wrapper as unknown as Easeable).ease({
                     x: wl.x,
                     y: wl.y,
-                    width: wl.width,
-                    height: wl.height,
                     duration,
                     mode: easeMode,
                 });
             } else {
                 entry.wrapper.set_position(wl.x, wl.y);
-                entry.wrapper.set_size(wl.width, wl.height);
             }
         }
 
@@ -418,7 +428,8 @@ export class CloneAdapter {
 
         this._focusIndicator.visible = true;
 
-        // Convert from scroll-container-relative to layer-relative coordinates
+        // Convert from scroll-container-relative to layer-relative coordinates.
+        // Use layout target dimensions — wrapper is always layout-sized.
         const x = focusedLayout.x - layout.scrollX - FOCUS_BORDER_WIDTH;
         const y = focusedLayout.y - FOCUS_BORDER_WIDTH;
         const width = focusedLayout.width + FOCUS_BORDER_WIDTH * 2;
@@ -434,6 +445,15 @@ export class CloneAdapter {
             this._focusIndicator.set_position(x, y);
             this._focusIndicator.set_size(width, height);
         }
+    }
+
+    /**
+     * Refresh the focus indicator if the given window is currently focused.
+     * Called from size-changed handler after _allocateClone updates wrapper size.
+     */
+    private _refreshFocusIndicatorForWindow(windowId: WindowId): void {
+        if (!this._lastLayout || this._lastLayout.focusedWindowId !== windowId) return;
+        this._updateFocusIndicator(this._lastLayout, 0, Clutter.AnimationMode.EASE_OUT_QUAD);
     }
 
     /**

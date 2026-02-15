@@ -14,6 +14,7 @@ import { ConflictDetector } from './conflict-detector.js';
 import { safeWindow } from './safe-window.js';
 import type Gio from 'gi://Gio';
 import type Meta from 'gi://Meta';
+import GLib from 'gi://GLib';
 
 export class PaperFlowController {
     private _settings: Gio.Settings;
@@ -27,6 +28,8 @@ export class PaperFlowController {
     private _conflictDetector: ConflictDetector | null = null;
     private _internalFocusChange: boolean = false;
     private _wmDestroyId: number | null = null;
+    private _settlementTimerId: number | null = null;
+    private _settlementStep: number = 0;
 
     constructor(settings: Gio.Settings) {
         this._settings = settings;
@@ -137,6 +140,11 @@ export class PaperFlowController {
             if (this._wmDestroyId !== null) {
                 global.window_manager.disconnect(this._wmDestroyId);
                 this._wmDestroyId = null;
+            }
+
+            if (this._settlementTimerId !== null) {
+                GLib.source_remove(this._settlementTimerId);
+                this._settlementTimerId = null;
             }
 
             this._windowEventAdapter?.destroy();
@@ -253,6 +261,12 @@ export class PaperFlowController {
             }
 
             this._focusWindow(this._world.focusedWindow);
+
+            // Start settlement retry: some apps (e.g. Chromium) don't
+            // process the Wayland configure immediately, so their frame rect
+            // is still at default size during the initial applyLayout.
+            // Retry with backoff until the window settles to target size.
+            this._startSettlementRetry();
 
         } catch (e) {
             console.error('[PaperFlow] Error handling window ready:', e);
@@ -524,6 +538,59 @@ export class PaperFlowController {
         } catch (e) {
             console.error('[PaperFlow] Error handling toggle size:', e);
         }
+    }
+
+    private static readonly SETTLEMENT_DELAYS = [100, 150, 200, 300, 400, 500, 750, 1000];
+
+    /**
+     * Start exponential-backoff retry to re-apply layout until all windows
+     * have settled (frame matches target). Some apps (e.g. Chromium) don't
+     * process Wayland configure events immediately after creation.
+     */
+    private _startSettlementRetry(): void {
+        // Cancel any running sequence and start fresh
+        if (this._settlementTimerId !== null) {
+            GLib.source_remove(this._settlementTimerId);
+            this._settlementTimerId = null;
+        }
+        this._settlementStep = 0;
+        this._scheduleNextSettlement();
+    }
+
+    private _scheduleNextSettlement(): void {
+        const delays = PaperFlowController.SETTLEMENT_DELAYS;
+        if (this._settlementStep >= delays.length) return;
+
+        const delay = delays[this._settlementStep]!;
+        this._settlementTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
+            this._settlementTimerId = null;
+            try {
+                if (!this._world) return GLib.SOURCE_REMOVE;
+
+                // Re-activate the focused window — some apps (e.g. Chromium)
+                // don't process the Wayland configure until re-activated.
+                this._focusWindow(this._world.focusedWindow);
+
+                // Re-apply layout — picks up current frame rects.
+                // Nudge unsettled windows by sending a 1px-different size
+                // first to force Mutter to emit a fresh Wayland configure.
+                const layout = buildUpdate(this._world).layout;
+                this._windowAdapter?.applyLayout(layout, true);
+                this._cloneAdapter?.applyLayout(layout, false);
+
+                // If all windows now match their targets, we're done.
+                if (!this._windowAdapter?.hasUnsettledWindows()) {
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                // Schedule next attempt
+                this._settlementStep++;
+                this._scheduleNextSettlement();
+            } catch (e) {
+                console.error('[PaperFlow] Error in settlement retry:', e);
+            }
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     private _focusWindow(windowId: WindowId | null): void {
