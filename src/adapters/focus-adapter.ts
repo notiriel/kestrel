@@ -4,6 +4,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 export class FocusAdapter {
     private _windows: Map<WindowId, Meta.Window> = new Map();
+    private _focusChangedId: number | null = null;
 
     track(windowId: WindowId, metaWindow: Meta.Window): void {
         this._windows.set(windowId, metaWindow);
@@ -21,10 +22,30 @@ export class FocusAdapter {
             Main.activateWindow(metaWindow);
         } catch (e) {
             console.error('[PaperFlow] Failed to activate window:', e);
+            this._windows.delete(windowId);
         }
     }
 
+    connectFocusChanged(callback: (windowId: WindowId) => void): void {
+        this._focusChangedId = global.display.connect('notify::focus-window', () => {
+            try {
+                const focusedWindow = global.display.get_focus_window();
+                if (!focusedWindow) return;
+                // Use stable sequence for lookup — avoids Proxy identity mismatch
+                const windowId = String(focusedWindow.get_stable_sequence()) as WindowId;
+                if (!this._windows.has(windowId)) return;
+                callback(windowId);
+            } catch (e) {
+                console.error('[PaperFlow] Error in focus-changed handler:', e);
+            }
+        });
+    }
+
     destroy(): void {
+        if (this._focusChangedId !== null) {
+            global.display.disconnect(this._focusChangedId);
+            this._focusChangedId = null;
+        }
         this._windows.clear();
     }
 }

@@ -31,6 +31,7 @@ export interface WindowLayout {
 export interface LayoutState {
     readonly windows: readonly WindowLayout[];
     readonly scrollX: number;
+    readonly workspaceIndex: number;
     readonly focusedWindowId: WindowId | null;
 }
 

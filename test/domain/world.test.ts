@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { WindowId, PaperFlowConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow, removeWindow } from '../../src/domain/world.js';
+import type { WindowId, WorkspaceId, PaperFlowConfig, MonitorInfo } from '../../src/domain/types.js';
+import { createWorld, addWindow, removeWindow, setFocus } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
+import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
+import { createTiledWindow } from '../../src/domain/window.js';
+import { createViewport } from '../../src/domain/viewport.js';
 
 const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
 const monitor: MonitorInfo = {
@@ -142,6 +145,169 @@ describe('World', () => {
             const { world: w1 } = addWindow(world, wid(1));
             removeWindow(w1, wid(1));
             expect(w1.workspaces[0]!.windows).toHaveLength(1);
+        });
+    });
+
+    describe('dynamic workspaces', () => {
+        it('addWindow creates a trailing empty workspace', () => {
+            const { world: w1 } = addWindow(world, wid(1));
+            expect(w1.workspaces).toHaveLength(2);
+            expect(w1.workspaces[0]!.windows).toHaveLength(1);
+            expect(w1.workspaces[1]!.windows).toHaveLength(0);
+        });
+
+        it('trailing empty workspace is always present', () => {
+            const { world: w1 } = addWindow(world, wid(1));
+            const { world: w2 } = addWindow(w1, wid(2));
+            // Still only 2 workspaces: one with windows, one trailing empty
+            expect(w2.workspaces).toHaveLength(2);
+            expect(w2.workspaces[1]!.windows).toHaveLength(0);
+        });
+
+        it('removeWindow prunes empty non-trailing workspaces', () => {
+            // Add windows to workspace 0, then remove all of them.
+            // Since ws0 becomes empty and is not trailing, it should be pruned.
+            const { world: w1 } = addWindow(world, wid(1));
+            // w1: [ws0(win-1), ws1(empty)]
+            // Now simulate having two populated workspaces by building manually
+            // For now, just test the simple case: remove only window
+            const { world: w2 } = removeWindow(w1, wid(1));
+            // Should have just one empty workspace (the trailing one)
+            expect(w2.workspaces).toHaveLength(1);
+            expect(w2.workspaces[0]!.windows).toHaveLength(0);
+        });
+
+        it('removeWindow finds window across workspaces', () => {
+            // Build a world with windows on workspace 0, then manually
+            // create a second workspace scenario
+            const { world: w1 } = addWindow(world, wid(1));
+            const { world: w2 } = addWindow(w1, wid(2));
+            // Both on workspace 0. Remove wid(1) — should find it
+            const { world: w3 } = removeWindow(w2, wid(1));
+            expect(w3.workspaces[0]!.windows).toHaveLength(1);
+            expect(w3.workspaces[0]!.windows[0]!.id).toBe(wid(2));
+        });
+    });
+
+    describe('removeWindow: last window on workspace', () => {
+        function wsId(n: number): WorkspaceId {
+            return `ws-${n}` as WorkspaceId;
+        }
+
+        function makeMultiWorld(
+            workspaceWindows: number[][],
+            viewportWsIndex: number,
+            focusedWindowId: number,
+        ): World {
+            const workspaces = workspaceWindows.map((ids, i) => {
+                let ws = createWorkspace(wsId(i));
+                for (const id of ids) {
+                    ws = wsAddWindow(ws, createTiledWindow(wid(id)));
+                }
+                return ws;
+            });
+            return {
+                workspaces,
+                viewport: { workspaceIndex: viewportWsIndex, scrollX: 0, widthPx: monitor.totalWidth },
+                focusedWindow: wid(focusedWindowId),
+                config,
+                monitor,
+            };
+        }
+
+        it('navigates to workspace below when current empties', () => {
+            // WS0: [A], WS1(current): [B], WS2: [C, D], WS3: [] (trailing)
+            const w = makeMultiWorld([[1], [2], [3, 4], []], 1, 2);
+            const { world: result } = removeWindow(w, wid(2));
+
+            // Should navigate to WS2 (below), which is now at index 1 after pruning
+            expect(result.focusedWindow).toBe(wid(3)); // slot 1 → C
+            // WS1 was pruned: [WS0, WS2, trailing]
+            expect(result.workspaces.filter(ws => ws.windows.length > 0)).toHaveLength(2);
+        });
+
+        it('navigates to workspace above when nothing below', () => {
+            // WS0: [A, B], WS1(current): [C], WS2: [] (trailing)
+            const w = makeMultiWorld([[1, 2], [3], []], 1, 3);
+            const { world: result } = removeWindow(w, wid(3));
+
+            // No populated workspace below → go to WS0 (above)
+            expect(result.viewport.workspaceIndex).toBe(0);
+            expect(result.focusedWindow).toBe(wid(1)); // slot 1 → A
+        });
+
+        it('uses slot-based targeting on the target workspace', () => {
+            // WS0: [A], WS1(current): [B, C], WS2: [D, E], WS3: []
+            // C is focused (slot 2), close C → B remains. Not the "last window" case.
+            // Instead: focus B at slot 1, only B on WS1, close B
+            // Wait — need WS1 to have one window at slot 2 to test targeting.
+            // Let's do: WS0(current): [A, B], WS1: [C, D], WS2: []
+            // B focused (slot 2), remove A, then remove B
+            // Simpler: WS0(current) has only B at slot 1 (after A removed)...
+            //
+            // Best test: WS0(current) has [A(full-width, span=2)] at slots 1-2,
+            // WS1 has [C, D], trailing.
+            // Close A → navigate below → slot 1 targets C.
+            // But let's test slot 2 targeting:
+            // WS0: [A, B] current, B focused (slot 2). Close A → B still exists. Not last.
+            //
+            // Use: WS1(current) has one window B. WS2 has [D(full), E]. trailing.
+            // B is at slot 1. Close B → navigate to WS2, slot 1 → D (full covers 1-2).
+            const ws0 = wsAddWindow(createWorkspace(wsId(0)), createTiledWindow(wid(1)));
+            const ws1 = wsAddWindow(createWorkspace(wsId(1)), createTiledWindow(wid(2)));
+            const ws2 = wsAddWindow(
+                wsAddWindow(createWorkspace(wsId(2)), createTiledWindow(wid(3), 2)),
+                createTiledWindow(wid(4)),
+            );
+            const trailing = createWorkspace(wsId(3));
+            const w: World = {
+                workspaces: [ws0, ws1, ws2, trailing],
+                viewport: { workspaceIndex: 1, scrollX: 0, widthPx: monitor.totalWidth },
+                focusedWindow: wid(2),
+                config,
+                monitor,
+            };
+            const { world: result } = removeWindow(w, wid(2));
+            // Slot 1 on WS2 → D (full-width, spans 1-2)
+            expect(result.focusedWindow).toBe(wid(3));
+        });
+
+        it('prunes the emptied workspace', () => {
+            const w = makeMultiWorld([[1, 2], [3], []], 1, 3);
+            const { world: result } = removeWindow(w, wid(3));
+            // WS1 should be gone — only WS0 + trailing remain
+            expect(result.workspaces).toHaveLength(2);
+            expect(result.workspaces[0]!.windows.map(w => w.id)).toEqual([wid(1), wid(2)]);
+            expect(result.workspaces[1]!.windows).toHaveLength(0); // trailing
+        });
+
+        it('setFocus switches workspace when target is on a different workspace', () => {
+            // WS0: [A, B], WS1(current): [C], WS2: [] (trailing)
+            // Focus is on C. setFocus(A) should switch viewport to WS0.
+            const w = makeMultiWorld([[1, 2], [3], []], 1, 3);
+            const { world: result } = setFocus(w, wid(1));
+
+            expect(result.focusedWindow).toBe(wid(1));
+            expect(result.viewport.workspaceIndex).toBe(0);
+        });
+
+        it('setFocus stays on same workspace when target is on current workspace', () => {
+            // WS0(current): [A, B], WS1: [C], WS2: [] (trailing)
+            // Focus is on A. setFocus(B) should stay on WS0.
+            const w = makeMultiWorld([[1, 2], [3], []], 0, 1);
+            const { world: result } = setFocus(w, wid(2));
+
+            expect(result.focusedWindow).toBe(wid(2));
+            expect(result.viewport.workspaceIndex).toBe(0);
+        });
+
+        it('stays on trailing empty when no populated workspaces exist', () => {
+            // Only one workspace with one window + trailing
+            const w = makeMultiWorld([[1], []], 0, 1);
+            const { world: result } = removeWindow(w, wid(1));
+            expect(result.focusedWindow).toBeNull();
+            expect(result.workspaces).toHaveLength(1);
+            expect(result.workspaces[0]!.windows).toHaveLength(0);
         });
     });
 });

@@ -28,7 +28,8 @@ export class WindowAdapter {
                 const screenY = wl.y + this._workAreaY;
                 metaWindow.move_resize_frame(false, screenX, screenY, wl.width, wl.height);
             } catch (e) {
-                console.debug('[PaperFlow] move_resize_frame rejected:', e);
+                console.debug('[PaperFlow] move_resize_frame skipped (dead window?):', e);
+                this._windows.delete(wl.windowId);
             }
         }
     }

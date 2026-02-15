@@ -14,6 +14,8 @@ import {
     removeWindow as wsRemoveWindow,
     windowAfter,
     windowBefore,
+    slotIndexOf,
+    windowAtSlot,
 } from './workspace.js';
 import { createViewport, type Viewport } from './viewport.js';
 import { computeLayout } from './layout.js';
@@ -42,12 +44,13 @@ export function createWorld(config: PaperFlowConfig, monitor: MonitorInfo): Worl
     };
 }
 
-export function withMonitor(world: World, monitor: MonitorInfo): World {
-    return {
+export function updateMonitor(world: World, monitor: MonitorInfo): WorldUpdate {
+    const newWorld: World = {
         ...world,
         monitor,
         viewport: { ...world.viewport, widthPx: monitor.totalWidth },
     };
+    return buildUpdate(adjustViewport(newWorld));
 }
 
 export function currentWorkspace(world: World): Workspace {
@@ -64,6 +67,63 @@ function replaceCurrentWorkspace(world: World, ws: Workspace): World {
 export function buildUpdate(world: World): WorldUpdate {
     const layout = computeLayout(world);
     return { world, layout };
+}
+
+/** Ensure there is always exactly one empty workspace at the bottom. */
+function ensureTrailingEmpty(world: World): World {
+    const last = world.workspaces[world.workspaces.length - 1];
+    if (!last || last.windows.length > 0) {
+        return {
+            ...world,
+            workspaces: [...world.workspaces, createWorkspace(nextWorkspaceId())],
+        };
+    }
+    return world;
+}
+
+/** Remove empty workspaces except the trailing one. Adjust viewport if needed. */
+function pruneEmptyWorkspaces(world: World): World {
+    const workspaces: Workspace[] = [];
+    let newWsIndex = world.viewport.workspaceIndex;
+    let removedBeforeCurrent = 0;
+
+    for (let i = 0; i < world.workspaces.length; i++) {
+        const ws = world.workspaces[i]!;
+        const isLast = i === world.workspaces.length - 1;
+        // Keep non-empty workspaces and the trailing empty one
+        if (ws.windows.length > 0 || isLast) {
+            workspaces.push(ws);
+        } else {
+            // Track if we removed a workspace before the current viewport
+            if (i < world.viewport.workspaceIndex) {
+                removedBeforeCurrent++;
+            }
+        }
+    }
+
+    newWsIndex -= removedBeforeCurrent;
+    // Clamp to valid range
+    if (newWsIndex >= workspaces.length) {
+        newWsIndex = workspaces.length - 1;
+    }
+    if (newWsIndex < 0) newWsIndex = 0;
+
+    // If current workspace changed, adjust focus
+    let focusedWindow = world.focusedWindow;
+    const currentWs = workspaces[newWsIndex];
+    if (currentWs && focusedWindow) {
+        const exists = currentWs.windows.some(w => w.id === focusedWindow);
+        if (!exists) {
+            focusedWindow = currentWs.windows[0]?.id ?? null;
+        }
+    }
+
+    return {
+        ...world,
+        workspaces,
+        viewport: { ...world.viewport, workspaceIndex: newWsIndex },
+        focusedWindow,
+    };
 }
 
 /**
@@ -101,19 +161,55 @@ export function adjustViewport(world: World): World {
     };
 }
 
+/**
+ * Set focus to a specific window and adjust viewport.
+ * Used for click-to-focus and external focus sync.
+ * Switches workspace if the window lives on a different one.
+ */
+export function setFocus(world: World, windowId: WindowId): WorldUpdate {
+    // Find which workspace contains the target window
+    let targetWsIndex = world.viewport.workspaceIndex;
+    for (let i = 0; i < world.workspaces.length; i++) {
+        if (world.workspaces[i]!.windows.some(w => w.id === windowId)) {
+            targetWsIndex = i;
+            break;
+        }
+    }
+
+    const newWorld: World = {
+        ...world,
+        focusedWindow: windowId,
+        viewport: { ...world.viewport, workspaceIndex: targetWsIndex },
+    };
+    return buildUpdate(adjustViewport(newWorld));
+}
+
 export function addWindow(world: World, windowId: WindowId): WorldUpdate {
     const ws = currentWorkspace(world);
     const tiledWindow = createTiledWindow(windowId);
     const newWs = wsAddWindow(ws, tiledWindow);
-    const newWorld = replaceCurrentWorkspace(
+    let newWorld = replaceCurrentWorkspace(
         { ...world, focusedWindow: windowId },
         newWs,
     );
+    newWorld = ensureTrailingEmpty(newWorld);
     return buildUpdate(adjustViewport(newWorld));
 }
 
 export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
-    const ws = currentWorkspace(world);
+    // Find which workspace contains this window
+    let wsIndex = -1;
+    for (let i = 0; i < world.workspaces.length; i++) {
+        if (world.workspaces[i]!.windows.some(w => w.id === windowId)) {
+            wsIndex = i;
+            break;
+        }
+    }
+    if (wsIndex === -1) return buildUpdate(world);
+
+    const ws = world.workspaces[wsIndex]!;
+    const isCurrentWorkspace = wsIndex === world.viewport.workspaceIndex;
+    const removedSlot = slotIndexOf(ws, windowId);
 
     // Determine new focus before removing
     let newFocus: WindowId | null = null;
@@ -126,9 +222,58 @@ export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
     }
 
     const newWs = wsRemoveWindow(ws, windowId);
-    const newWorld = replaceCurrentWorkspace(
-        { ...world, focusedWindow: newFocus },
-        newWs,
+    const workspaces = world.workspaces.map((w, i) =>
+        i === wsIndex ? newWs : w,
     );
+    let newWorld: World = { ...world, workspaces, focusedWindow: newFocus };
+
+    // If current workspace just emptied, navigate to an adjacent populated workspace
+    if (isCurrentWorkspace && newWs.windows.length === 0 && newFocus === null) {
+        newWorld = navigateFromEmptyWorkspace(newWorld, removedSlot);
+    }
+
+    newWorld = pruneEmptyWorkspaces(newWorld);
+    newWorld = ensureTrailingEmpty(newWorld);
     return buildUpdate(adjustViewport(newWorld));
+}
+
+/**
+ * When the current workspace becomes empty after a window close,
+ * move viewport to an adjacent populated workspace.
+ * Prefers the workspace below; falls back to above.
+ * Uses slot-based targeting from the removed window's position.
+ */
+function navigateFromEmptyWorkspace(world: World, sourceSlot: number): World {
+    const wsIndex = world.viewport.workspaceIndex;
+
+    // Try workspace below first (skip trailing empty)
+    for (let i = wsIndex + 1; i < world.workspaces.length; i++) {
+        const ws = world.workspaces[i]!;
+        if (ws.windows.length > 0) {
+            const target = windowAtSlot(ws, sourceSlot)
+                ?? ws.windows[ws.windows.length - 1];
+            return {
+                ...world,
+                viewport: { ...world.viewport, workspaceIndex: i, scrollX: 0 },
+                focusedWindow: target?.id ?? null,
+            };
+        }
+    }
+
+    // Try workspace above
+    for (let i = wsIndex - 1; i >= 0; i--) {
+        const ws = world.workspaces[i]!;
+        if (ws.windows.length > 0) {
+            const target = windowAtSlot(ws, sourceSlot)
+                ?? ws.windows[ws.windows.length - 1];
+            return {
+                ...world,
+                viewport: { ...world.viewport, workspaceIndex: i, scrollX: 0 },
+                focusedWindow: target?.id ?? null,
+            };
+        }
+    }
+
+    // No populated workspace — stay on trailing empty
+    return world;
 }

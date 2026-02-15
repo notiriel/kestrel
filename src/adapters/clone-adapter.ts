@@ -17,6 +17,7 @@ interface CloneEntry {
     showId: number;
     sourceDestroyId: number;
     sourceDestroyed: boolean;
+    workspaceIndex: number;
 }
 
 interface FloatCloneEntry {
@@ -31,6 +32,11 @@ interface FloatCloneEntry {
     sourceDestroyed: boolean;
 }
 
+interface WorkspaceContainer {
+    container: Clutter.Actor;
+    scrollContainer: Clutter.Actor;
+}
+
 const ANIMATION_DURATION = 250;
 const FOCUS_BORDER_WIDTH = 3;
 const FOCUS_BORDER_COLOR = '#4caf50';
@@ -38,17 +44,33 @@ const FOCUS_BORDER_COLOR = '#4caf50';
 export class CloneAdapter {
     private _layer: Clutter.Actor | null = null;
     private _floatLayer: Clutter.Actor | null = null;
-    private _scrollContainer: Clutter.Actor | null = null;
+    private _workspaceStrip: Clutter.Actor | null = null;
     private _focusIndicator: St.Widget | null = null;
+    private _workspaceContainers: Map<number, WorkspaceContainer> = new Map();
     private _clones: Map<WindowId, CloneEntry> = new Map();
     private _floatClones: Map<WindowId, FloatCloneEntry> = new Map();
     private _workAreaY: number = 0;
+    private _monitorHeight: number = 0;
+    private _currentWorkspaceIndex: number = 0;
+    private _onCloneClicked: ((windowId: WindowId) => void) | null = null;
 
-    init(workAreaY: number): void {
+    init(workAreaY: number, monitorHeight: number): void {
         this._workAreaY = workAreaY;
-        this._layer = new Clutter.Actor({ name: 'paperflow-layer' });
-        this._scrollContainer = new Clutter.Actor({ name: 'paperflow-scroll' });
-        this._layer.add_child(this._scrollContainer);
+        this._monitorHeight = monitorHeight;
+
+        this._layer = new Clutter.Actor({
+            name: 'paperflow-layer',
+            clip_to_allocation: true,
+        });
+
+        // Size the layer to match the monitor so clipping works
+        const parent = global.window_group.get_parent()!;
+        const stage = global.stage;
+        this._layer.set_position(0, this._workAreaY);
+        this._layer.set_size(stage.width, monitorHeight);
+
+        this._workspaceStrip = new Clutter.Actor({ name: 'paperflow-strip' });
+        this._layer.add_child(this._workspaceStrip);
 
         this._focusIndicator = new St.Widget({
             name: 'paperflow-focus-indicator',
@@ -56,32 +78,84 @@ export class CloneAdapter {
             visible: false,
             reactive: false,
         });
-        this._scrollContainer.add_child(this._focusIndicator);
+        this._layer.add_child(this._focusIndicator);
 
-        const parent = global.window_group.get_parent()!;
+        // Create workspace 0
+        this._getOrCreateWorkspaceContainer(0);
+
         parent.insert_child_above(this._layer, global.window_group);
 
         this._floatLayer = new Clutter.Actor({ name: 'paperflow-float-layer' });
         parent.insert_child_above(this._floatLayer, this._layer);
 
-        console.log(`[PaperFlow] clone-adapter init: workAreaY=${workAreaY}, layer.position=(${this._layer.x},${this._layer.y}), parent=${parent.name}, parent.position=(${parent.x},${parent.y})`);
+        console.log(`[PaperFlow] clone-adapter init: workAreaY=${workAreaY}, monitorHeight=${monitorHeight}, layer.position=(${this._layer.x},${this._layer.y})`);
     }
 
-    updateWorkArea(workAreaY: number): void {
+    connectCloneClicked(callback: (windowId: WindowId) => void): void {
+        this._onCloneClicked = callback;
+    }
+
+    updateWorkArea(workAreaY: number, monitorHeight?: number): void {
         this._workAreaY = workAreaY;
+        if (monitorHeight !== undefined) {
+            this._monitorHeight = monitorHeight;
+        }
+        if (this._layer) {
+            this._layer.set_position(0, this._workAreaY);
+            this._layer.set_size(global.stage.width, this._monitorHeight);
+        }
+        // Reposition workspace containers
+        for (const [idx, wc] of this._workspaceContainers) {
+            wc.container.set_position(0, idx * this._monitorHeight);
+            wc.container.set_size(global.stage.width, this._monitorHeight);
+        }
     }
 
-    addClone(windowId: WindowId, metaWindow: Meta.Window): void {
-        const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
-        if (!actor || !this._scrollContainer) return;
+    private _getOrCreateWorkspaceContainer(wsIndex: number): WorkspaceContainer {
+        const existing = this._workspaceContainers.get(wsIndex);
+        if (existing) return existing;
 
-        const wrapper = new Clutter.Actor({ name: `paperflow-clone-${windowId}` });
+        const container = new Clutter.Actor({
+            name: `paperflow-ws-${wsIndex}`,
+        });
+        container.set_position(0, wsIndex * this._monitorHeight);
+        container.set_size(global.stage.width, this._monitorHeight);
+
+        const scrollContainer = new Clutter.Actor({
+            name: `paperflow-scroll-${wsIndex}`,
+        });
+        container.add_child(scrollContainer);
+
+        this._workspaceStrip!.add_child(container);
+
+        const wc: WorkspaceContainer = { container, scrollContainer };
+        this._workspaceContainers.set(wsIndex, wc);
+        return wc;
+    }
+
+    addClone(windowId: WindowId, metaWindow: Meta.Window, workspaceIndex: number): void {
+        const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
+        if (!actor || !this._workspaceStrip) return;
+
+        const wc = this._getOrCreateWorkspaceContainer(workspaceIndex);
+
+        const wrapper = new Clutter.Actor({
+            name: `paperflow-clone-${windowId}`,
+            reactive: true,
+        });
+        wrapper.connect('button-press-event', () => {
+            try {
+                this._onCloneClicked?.(windowId);
+            } catch (e) {
+                console.error('[PaperFlow] Error in clone click handler:', e);
+            }
+            return Clutter.EVENT_STOP;
+        });
         const clone = new Clutter.Clone({ source: actor });
         wrapper.add_child(clone);
-        this._scrollContainer.add_child(wrapper);
+        wc.scrollContainer.add_child(wrapper);
 
         // Listen for size changes to re-allocate clone geometry (PaperWM pattern).
-        // buffer_rect is only accurate AFTER the client processes the resize.
         const sizeChangedId = metaWindow.connect('size-changed', () => {
             try {
                 this._allocateClone(windowId);
@@ -90,30 +164,23 @@ export class CloneAdapter {
             }
         });
 
-        // Hide the real WindowActor. Clutter.Clone can still paint a hidden
-        // source. Intercept the 'show' signal to counter GNOME Shell's map
-        // animation which calls actor.show() asynchronously (PaperWM pattern).
+        // Hide the real WindowActor. Clutter.Clone can still paint a hidden source.
         actor.hide();
         const showId = actor.connect('show', () => {
             actor.hide();
         });
 
-        // Track actor destruction so we never call methods on a freed C object
-        // (try/catch cannot catch SIGSEGV from native calls on destroyed actors)
+        // Track actor destruction
         const entry: CloneEntry = {
             wrapper, clone, metaWindow, sourceActor: actor,
             sizeChangedId, showId, sourceDestroyId: 0, sourceDestroyed: false,
+            workspaceIndex,
         };
         entry.sourceDestroyId = actor.connect('destroy', () => {
             entry.sourceDestroyed = true;
         });
 
         this._clones.set(windowId, entry);
-
-        // Keep focus indicator on top
-        if (this._focusIndicator) {
-            this._scrollContainer.set_child_above_sibling(this._focusIndicator, null);
-        }
     }
 
     removeClone(windowId: WindowId): void {
@@ -121,11 +188,9 @@ export class CloneAdapter {
         if (!entry) return;
         this._clones.delete(windowId);
 
-        // Disconnect metaWindow signal (Meta.Window outlives its actor)
+        // Disconnect metaWindow signal
         try { entry.metaWindow.disconnect(entry.sizeChangedId); } catch { /* window already gone */ }
 
-        // Only touch sourceActor if it hasn't been destroyed — calling methods
-        // on a destroyed Clutter actor causes a native SIGSEGV that JS can't catch
         if (!entry.sourceDestroyed) {
             entry.sourceActor.disconnect(entry.showId);
             entry.sourceActor.disconnect(entry.sourceDestroyId);
@@ -220,10 +285,6 @@ export class CloneAdapter {
 
     /**
      * Allocate the inner clone's offset and size based on frame/buffer rects.
-     * Also updates the wrapper size to match the actual frame rect,
-     * since move_resize_frame() may not honor the exact requested size.
-     *
-     * Called from 'size-changed' signal AND from applyLayout.
      */
     private _allocateClone(windowId: WindowId): void {
         const entry = this._clones.get(windowId);
@@ -234,22 +295,19 @@ export class CloneAdapter {
             frame = entry.metaWindow.get_frame_rect();
             buffer = entry.metaWindow.get_buffer_rect();
         } catch {
-            return; // Window may be in a destroyed state
+            return;
         }
 
-        // Guard against invalid rects (window not yet fully realized)
         if (frame.width <= 0 || frame.height <= 0 ||
             buffer.width <= 0 || buffer.height <= 0) {
             return;
         }
 
-        // Position inner clone so its frame area aligns with wrapper origin
         const cloneOffX = buffer.x - frame.x;
         const cloneOffY = buffer.y - frame.y;
         entry.clone.set_position(cloneOffX, cloneOffY);
         entry.clone.set_size(buffer.width, buffer.height);
 
-        // Update wrapper to match actual frame size (Mutter may constrain)
         entry.wrapper.set_size(frame.width, frame.height);
     }
 
@@ -257,16 +315,49 @@ export class CloneAdapter {
         const duration = animate ? ANIMATION_DURATION : 0;
         const easeMode = Clutter.AnimationMode.EASE_OUT_QUAD;
 
-        // Scroll the container
-        if (this._scrollContainer) {
+        // Animate workspace strip Y for workspace switching
+        if (this._workspaceStrip) {
+            const targetY = -layout.workspaceIndex * this._monitorHeight;
             if (duration > 0) {
-                (this._scrollContainer as unknown as Easeable).ease({
+                (this._workspaceStrip as unknown as Easeable).ease({
+                    y: targetY,
+                    duration,
+                    mode: easeMode,
+                });
+            } else {
+                this._workspaceStrip.set_position(0, targetY);
+            }
+        }
+        this._currentWorkspaceIndex = layout.workspaceIndex;
+
+        // Animate workspace containers to their correct Y positions.
+        // After syncWorkspaces re-indexes, containers keep their old Y;
+        // this animates them into place (e.g. workspace below slides up).
+        for (const [idx, wc] of this._workspaceContainers) {
+            const targetContainerY = idx * this._monitorHeight;
+            if (duration > 0) {
+                (wc.container as unknown as Easeable).ease({
+                    y: targetContainerY,
+                    duration,
+                    mode: easeMode,
+                });
+            } else {
+                wc.container.set_position(0, targetContainerY);
+            }
+        }
+
+        // Scroll ALL workspace containers to the same scrollX —
+        // the viewport is a single camera over the 2D world, so all
+        // workspaces must move horizontally together.
+        for (const wc of this._workspaceContainers.values()) {
+            if (duration > 0) {
+                (wc.scrollContainer as unknown as Easeable).ease({
                     x: -layout.scrollX,
                     duration,
                     mode: easeMode,
                 });
             } else {
-                this._scrollContainer.set_position(-layout.scrollX, 0);
+                wc.scrollContainer.set_position(-layout.scrollX, 0);
             }
         }
 
@@ -275,23 +366,23 @@ export class CloneAdapter {
             const entry = this._clones.get(wl.windowId);
             if (!entry) continue;
 
-            // Re-allocate clone geometry (shadow offset + wrapper sizing from frame rect)
             this._allocateClone(wl.windowId);
 
-            const screenY = wl.y + this._workAreaY;
+            // Y position is relative to the workspace container (no workAreaY offset needed,
+            // since the layer itself is positioned at workAreaY)
             if (duration > 0) {
                 (entry.wrapper as unknown as Easeable).ease({
                     x: wl.x,
-                    y: screenY,
+                    y: wl.y,
                     duration,
                     mode: easeMode,
                 });
             } else {
-                entry.wrapper.set_position(wl.x, screenY);
+                entry.wrapper.set_position(wl.x, wl.y);
             }
         }
 
-        // Position focus indicator
+        // Position focus indicator on the active workspace
         this._updateFocusIndicator(layout, duration, easeMode);
     }
 
@@ -316,8 +407,10 @@ export class CloneAdapter {
         }
 
         this._focusIndicator.visible = true;
-        const x = focusedLayout.x - FOCUS_BORDER_WIDTH;
-        const y = focusedLayout.y + this._workAreaY - FOCUS_BORDER_WIDTH;
+
+        // Convert from scroll-container-relative to layer-relative coordinates
+        const x = focusedLayout.x - layout.scrollX - FOCUS_BORDER_WIDTH;
+        const y = focusedLayout.y - FOCUS_BORDER_WIDTH;
         const width = focusedLayout.width + FOCUS_BORDER_WIDTH * 2;
         const height = focusedLayout.height + FOCUS_BORDER_WIDTH * 2;
 
@@ -334,20 +427,89 @@ export class CloneAdapter {
     }
 
     /**
-     * Snap scroll container to a position without animation.
+     * Snap active workspace's scroll container to a position without animation.
      */
     setScroll(scrollX: number): void {
-        this._scrollContainer?.set_position(-scrollX, 0);
+        const wc = this._workspaceContainers.get(this._currentWorkspaceIndex);
+        wc?.scrollContainer.set_position(-scrollX, 0);
+    }
+
+    /**
+     * Snap a specific workspace's scroll container to a position without animation.
+     * Used before workspace switch to sync the arriving workspace to the departing one's position.
+     */
+    setScrollForWorkspace(wsIndex: number, scrollX: number): void {
+        const wc = this._getOrCreateWorkspaceContainer(wsIndex);
+        wc.scrollContainer.set_position(-scrollX, 0);
+    }
+
+    /**
+     * Reconcile workspace containers to match the domain's workspace count.
+     * Removes empty containers for pruned workspaces and re-indexes the rest.
+     */
+    syncWorkspaces(workspaceCount: number): void {
+        if (!this._workspaceStrip) return;
+
+        // Collect containers sorted by current index
+        const sorted = [...this._workspaceContainers.entries()]
+            .sort(([a], [b]) => a - b);
+
+        // Remove containers that have no clones (pruned workspaces)
+        const keep: WorkspaceContainer[] = [];
+        for (const [idx, wc] of sorted) {
+            const hasClones = [...this._clones.values()]
+                .some(e => e.workspaceIndex === idx);
+            if (hasClones) {
+                keep.push(wc);
+            } else {
+                wc.container.destroy();
+            }
+        }
+
+        // Ensure we have enough containers (e.g. for trailing empty workspace)
+        while (keep.length < workspaceCount) {
+            const container = new Clutter.Actor({
+                name: `paperflow-ws-${keep.length}`,
+            });
+            container.set_size(global.stage.width, this._monitorHeight);
+            const scrollContainer = new Clutter.Actor({
+                name: `paperflow-scroll-${keep.length}`,
+            });
+            container.add_child(scrollContainer);
+            this._workspaceStrip.add_child(container);
+            keep.push({ container, scrollContainer });
+        }
+
+        // Rebuild map with correct indices — but DON'T reposition containers.
+        // applyLayout will animate them to their correct Y positions.
+        this._workspaceContainers.clear();
+        for (let i = 0; i < keep.length; i++) {
+            this._workspaceContainers.set(i, keep[i]!);
+        }
+
+        // Update clone entries to match new indices
+        for (const entry of this._clones.values()) {
+            for (const [idx, wc] of this._workspaceContainers) {
+                if (wc.scrollContainer === entry.wrapper.get_parent()) {
+                    entry.workspaceIndex = idx;
+                    break;
+                }
+            }
+        }
+
+        // Update current workspace index
+        if (this._currentWorkspaceIndex >= keep.length) {
+            this._currentWorkspaceIndex = keep.length - 1;
+        }
     }
 
     /**
      * Animate viewport scroll from current position to target.
-     * Call after setScroll(oldScrollX) + applyLayout(_, false) to get a
-     * smooth viewport transition while window positions snap immediately.
      */
     animateViewport(targetScrollX: number): void {
-        if (!this._scrollContainer) return;
-        (this._scrollContainer as unknown as Easeable).ease({
+        const wc = this._workspaceContainers.get(this._currentWorkspaceIndex);
+        if (!wc) return;
+        (wc.scrollContainer as unknown as Easeable).ease({
             x: -targetScrollX,
             duration: ANIMATION_DURATION,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
@@ -355,7 +517,16 @@ export class CloneAdapter {
     }
 
     destroy(): void {
+        // Stop all running animations and clean up workspace containers
+        for (const wc of this._workspaceContainers.values()) {
+            wc.scrollContainer.remove_all_transitions();
+            wc.container.remove_all_transitions();
+        }
+        this._focusIndicator?.remove_all_transitions();
+        this._workspaceStrip?.remove_all_transitions();
+
         for (const entry of this._clones.values()) {
+            entry.wrapper.remove_all_transitions();
             try { entry.metaWindow.disconnect(entry.sizeChangedId); } catch { /* window already gone */ }
             if (!entry.sourceDestroyed) {
                 entry.sourceActor.disconnect(entry.showId);
@@ -366,6 +537,7 @@ export class CloneAdapter {
         this._clones.clear();
 
         for (const entry of this._floatClones.values()) {
+            entry.wrapper.remove_all_transitions();
             try { entry.metaWindow.disconnect(entry.positionChangedId); } catch { /* already gone */ }
             try { entry.metaWindow.disconnect(entry.sizeChangedId); } catch { /* already gone */ }
             if (!entry.sourceDestroyed) {
@@ -383,8 +555,8 @@ export class CloneAdapter {
         if (this._layer) {
             this._layer.destroy();
             this._layer = null;
-            this._scrollContainer = null;
-            this._focusIndicator = null;
+            this._workspaceStrip = null;
+            this._workspaceContainers.clear();
         }
     }
 }

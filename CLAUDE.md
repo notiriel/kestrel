@@ -12,6 +12,8 @@ make dev            # Install + show restart instructions
 npx vitest run test/domain/world.test.ts  # Run a single test file
 ```
 
+**Always run `make install` after making code changes.** This deploys to the GNOME extensions directory so changes take effect on next session restart.
+
 After `make install`, a Wayland session restart (log out/in) is required to pick up JS changes.
 
 View extension logs: `journalctl /usr/bin/gnome-shell --since "5 minutes ago" --no-pager`
@@ -22,13 +24,46 @@ If GNOME crashes, it sets `disable-user-extensions=true` in dconf — re-enable 
 
 Hexagonal architecture with a pure domain core and GNOME Shell adapters.
 
-**Domain core** (`src/domain/`): Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return new state. Key modules:
-- `world.ts` — Aggregate root. `addWindow`/`removeWindow` return `WorldUpdate { world, layout }`
+### Core data flow
+
+```
+Reality -(events)-> Domain -(new world model)-> Adapter -(animates)-> Reality
+```
+
+Adapters detect changes in reality (window created, window destroyed, key pressed, focus changed) and inform the domain. The domain computes the complete new world model. The adapter turns that model into reality (positions clones, animates transitions, activates focus). **The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output.
+
+This means operations like workspace pruning happen immediately in the domain. If a workspace empties, the domain removes it and adjusts all indices in the same operation. The adapter must reconcile its visual state (e.g. clone containers) to match.
+
+### Textual model notation
+
+When describing world state in tests and bug reports, use this notation:
+
+```
+<>  viewport (what's visible on screen)
+[]  focus indicator (which window has focus)
+
+Example — two workspaces, B focused on WS1:
+
+A
+<[B] C>
+D E
+
+Meaning: WS0 has A. WS1 (current) has B, C — viewport shows B and C,
+B is focused. WS2 has D, E.
+```
+
+### Domain core
+
+`src/domain/` — Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return `WorldUpdate { world, layout }`. Key modules:
+- `world.ts` — Aggregate root. `addWindow`/`removeWindow`/`setFocus`/`updateMonitor`
+- `navigation.ts` — `focusRight`/`focusLeft`/`focusDown`/`focusUp`
 - `workspace.ts` — Workspace-level window list operations
 - `layout.ts` — `computeLayout()` turns workspace + config + monitor into pixel positions (`LayoutState`)
 - `types.ts` — Branded types (`WindowId`, `WorkspaceId`), interfaces (`World`, `Workspace`, `TiledWindow`, `Viewport`)
 
-**Adapters** (`src/adapters/`): GNOME Shell integration via `gi://` imports.
+### Adapters
+
+`src/adapters/` — GNOME Shell integration via `gi://` imports.
 - `controller.ts` — Composition root; wires domain ↔ adapters in `enable()`/`disable()`
 - `window-event-adapter.ts` — Listens for `window-created`/`destroy` signals, waits for `first-frame`
 - `clone-adapter.ts` — Creates `Clutter.Clone` of `WindowActor`s on a custom layer above `global.window_group`

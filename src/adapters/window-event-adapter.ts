@@ -22,25 +22,29 @@ function shouldTile(metaWindow: Meta.Window): boolean {
     if (metaWindow.get_transient_for() !== null) return false;
     if (metaWindow.is_skip_taskbar()) return false;
     const wmClass = metaWindow.get_wm_class();
-    if (wmClass && WM_CLASS_BLOCKLIST.includes(wmClass)) return false;
+    if (!wmClass || wmClass === 'null') return false;
+    if (WM_CLASS_BLOCKLIST.includes(wmClass)) return false;
     return true;
 }
 
 function shouldFloat(metaWindow: Meta.Window): boolean {
     const type = metaWindow.get_window_type();
     const wmClass = metaWindow.get_wm_class();
-    if (wmClass && WM_CLASS_BLOCKLIST.includes(wmClass)) return false;
-    if (metaWindow.is_skip_taskbar()) return false;
+    if (!wmClass || wmClass === 'null') return false;
+    if (WM_CLASS_BLOCKLIST.includes(wmClass)) return false;
 
     // Dialog types always float
     if (type === Meta.WindowType.DIALOG ||
         type === Meta.WindowType.MODAL_DIALOG ||
         type === Meta.WindowType.UTILITY) return true;
 
-    // Normal windows that can't be tiled (transient, above) float
+    // Normal windows that can't be tiled (transient, above, skip-taskbar) float.
+    // skip-taskbar windows (e.g. ulauncher) must be floated so they render
+    // above the clone layer; otherwise they're stuck behind it in window_group.
     if (type === Meta.WindowType.NORMAL) {
         if (metaWindow.is_above()) return true;
         if (metaWindow.get_transient_for() !== null) return true;
+        if (metaWindow.is_skip_taskbar()) return true;
     }
 
     return false;
@@ -93,10 +97,6 @@ export class WindowEventAdapter {
     }
 
     private _handleWindowCreated(metaWindow: Meta.Window): void {
-        const tile = shouldTile(metaWindow);
-        const float = !tile && shouldFloat(metaWindow);
-        if (!tile && !float) return;
-
         const windowId = getWindowId(metaWindow);
         const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
 
@@ -105,8 +105,13 @@ export class WindowEventAdapter {
         // Guard against double-fire (first-frame + timeout)
         this._pendingWindows.add(windowId);
 
+        // Defer tile/float classification to after first-frame, when window
+        // properties (type, transient_for, wm_class) are finalized.
         const onReady = () => {
             if (!this._pendingWindows.delete(windowId)) return; // Already fired
+            const tile = shouldTile(metaWindow);
+            const float = !tile && shouldFloat(metaWindow);
+            if (!tile && !float) return;
             if (tile) {
                 this._callbacks?.onWindowReady(windowId, metaWindow);
                 this._watchActorDestroy(actor, windowId, false);
@@ -116,18 +121,22 @@ export class WindowEventAdapter {
             }
         };
 
-        // Wait for first-frame, with timeout
+        // Wait for first-frame, with timeout fallback.
+        // Use a fired flag to ensure we only disconnect once — calling
+        // actor.disconnect() on an already-disconnected signal emits a
+        // GLib C-level warning that JS try/catch cannot suppress.
+        let firstFrameFired = false;
         const firstFrameId = actor.connect('first-frame', () => {
+            if (firstFrameFired) return;
+            firstFrameFired = true;
             actor.disconnect(firstFrameId);
             onReady();
         });
 
-        // Timeout fallback
         const timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, FIRST_FRAME_TIMEOUT_MS, () => {
-            try {
+            if (!firstFrameFired) {
+                firstFrameFired = true;
                 actor.disconnect(firstFrameId);
-            } catch {
-                // Already disconnected
             }
             this._timeoutIds.delete(timeoutId);
             onReady();

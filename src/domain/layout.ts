@@ -44,6 +44,7 @@ export function computeLayout(world: World): LayoutState {
     return {
         windows,
         scrollX: viewport.scrollX,
+        workspaceIndex: viewport.workspaceIndex,
         focusedWindowId: focusedWindow,
     };
 }

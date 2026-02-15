@@ -600,24 +600,30 @@ This is a separate component, not part of the core extension. Communication coul
 
 ## Implementation Phases
 
-### Phase 1a: Build Pipeline
+### Phase 1a: Build Pipeline ✅
 - Project scaffolding: package.json, tsconfig.json, Makefile
 - TypeScript compilation working
 - metadata.json, empty extension.ts that enables/disables cleanly
 - `make install` deploys to GNOME extensions dir
 - Result: Extension appears in GNOME Extensions app, enables/disables without errors.
 
-### Phase 1b: First Window Tiles
+### Phase 1b: First Window Tiles ✅
 - Domain: World, Workspace, TiledWindow, Viewport, LayoutEngine
 - Adapters: WindowEventAdapter, CloneAdapter, MonitorAdapter, WindowAdapter
 - PaperFlowController wires everything
 - Result: Windows tile horizontally at half-width. No navigation, no animation yet — just correct positioning.
 
-### Phase 2: Navigation + Animation
-- Domain: NavigationEngine (focusRight/Left)
-- Adapters: KeybindingAdapter, AnimatorAdapter, FocusAdapter
-- GSettings schema for keybindings
-- Result: Super+Left/Right moves focus and scrolls viewport with smooth animation. Rapid input retargets smoothly.
+### Phase 2: Navigation + Animation ✅
+- ✅ Domain: NavigationEngine (focusRight/Left) with slot-based targeting
+- ✅ Adapters: KeybindingAdapter with gsettings-driven Super+Left/Right bindings
+- ✅ Adapters: ConflictDetector disables conflicting GNOME keybindings
+- ✅ GSettings schema for keybindings (focus-left, focus-right)
+- ✅ CloneAdapter rewrite: proper lifecycle, z-ordering, debug overlay
+- ✅ Layout: focused-window centering (active column)
+- ✅ Animation: Clutter.ease() on scroll container, clone wrappers, focus indicator (embedded in CloneAdapter — pragmatic deviation from separate AnimatorAdapter in original design)
+- ✅ FocusAdapter: Main.activateWindow() + external focus sync (notify::focus-window)
+- ✅ Rapid input retargeting (native Clutter.ease() retarget behavior)
+- Result: Super+Left/Right moves focus and scrolls viewport with smooth animation. Click-to-focus syncs domain state. Rapid input retargets smoothly.
 
 ### Phase 3: Virtual Workspaces
 - Domain: Multiple workspaces, focusDown/Up, slot-based vertical targeting

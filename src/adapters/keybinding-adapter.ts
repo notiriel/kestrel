@@ -6,6 +6,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 export interface KeybindingCallbacks {
     onFocusRight: () => void;
     onFocusLeft: () => void;
+    onFocusDown: () => void;
+    onFocusUp: () => void;
 }
 
 /** Mutter setting whose default ('Super_L') opens the Activities Overview. */
@@ -75,6 +77,8 @@ export class KeybindingAdapter {
         const bindings: Array<[string, () => void]> = [
             ['focus-right', callbacks.onFocusRight],
             ['focus-left', callbacks.onFocusLeft],
+            ['focus-down', callbacks.onFocusDown],
+            ['focus-up', callbacks.onFocusUp],
         ];
 
         for (const [name, handler] of bindings) {

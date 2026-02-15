@@ -30,3 +30,23 @@ export function windowBefore(ws: Workspace, windowId: WindowId): TiledWindow | u
     if (idx <= 0) return undefined;
     return ws.windows[idx - 1];
 }
+
+/** Returns the 1-based starting slot index of a window within its workspace. */
+export function slotIndexOf(ws: Workspace, windowId: WindowId): number {
+    let slot = 1;
+    for (const w of ws.windows) {
+        if (w.id === windowId) return slot;
+        slot += w.slotSpan;
+    }
+    return -1;
+}
+
+/** Finds the window whose slot range contains the given 1-based slot index. */
+export function windowAtSlot(ws: Workspace, slotIndex: number): TiledWindow | undefined {
+    let slot = 1;
+    for (const w of ws.windows) {
+        if (slotIndex >= slot && slotIndex < slot + w.slotSpan) return w;
+        slot += w.slotSpan;
+    }
+    return undefined;
+}

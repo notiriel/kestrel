@@ -22,5 +22,15 @@
       <summary>Focus window to the left</summary>
       <description>Move focus to the next window on the left</description>
     </key>
+    <key name="focus-down" type="as">
+      <default>['&lt;Super&gt;Down']</default>
+      <summary>Focus workspace below</summary>
+      <description>Move focus to the workspace below</description>
+    </key>
+    <key name="focus-up" type="as">
+      <default>['&lt;Super&gt;Up']</default>
+      <summary>Focus workspace above</summary>
+      <description>Move focus to the workspace above</description>
+    </key>
   </schema>
 </schemalist>

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { PaperFlowConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
-import { focusRight, focusLeft } from '../../src/domain/navigation.js';
+import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
 import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import type { World } from '../../src/domain/world.js';
 import { createViewport } from '../../src/domain/viewport.js';
 
-const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8 };
+const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -106,5 +106,111 @@ describe('focusLeft', () => {
         const update = focusLeft(world);
         expect(update.world.focusedWindow).toBe(wid(1));
         expect(update.world.viewport.scrollX).toBe(0);
+    });
+});
+
+/** Build a multi-workspace world for vertical navigation tests. */
+function makeMultiWorld(
+    workspaceWindows: number[][],
+    focusedWsIndex: number,
+    focusedWindowId: number | null,
+): World {
+    const workspaces = workspaceWindows.map((ids, i) => {
+        let ws = createWorkspace(wsId(i));
+        for (const id of ids) {
+            ws = addWindow(ws, createTiledWindow(wid(id)));
+        }
+        return ws;
+    });
+    return {
+        workspaces,
+        viewport: { workspaceIndex: focusedWsIndex, scrollX: 0, widthPx: monitor.totalWidth },
+        focusedWindow: focusedWindowId !== null ? wid(focusedWindowId) : null,
+        config,
+        monitor,
+    };
+}
+
+describe('focusDown', () => {
+    it('moves focus to workspace below with slot-based targeting', () => {
+        const world = makeMultiWorld([[1, 2], [3, 4], []], 0, 1);
+        const update = focusDown(world);
+        expect(update.world.viewport.workspaceIndex).toBe(1);
+        expect(update.world.focusedWindow).toBe(wid(3)); // slot 1 → slot 1
+    });
+
+    it('targets correct slot when moving down', () => {
+        const world = makeMultiWorld([[1, 2], [3, 4], []], 0, 2);
+        const update = focusDown(world);
+        expect(update.world.viewport.workspaceIndex).toBe(1);
+        expect(update.world.focusedWindow).toBe(wid(4)); // slot 2 → slot 2
+    });
+
+    it('targets double-width window spanning the slot', () => {
+        // ws0: win-1 (1 slot), win-2 (1 slot) — focus on win-2 (slot 2)
+        // ws1: win-3 (2 slots, spans 1-2)
+        const ws0 = addWindow(
+            addWindow(createWorkspace(wsId(0)), createTiledWindow(wid(1))),
+            createTiledWindow(wid(2)),
+        );
+        const ws1 = addWindow(createWorkspace(wsId(1)), createTiledWindow(wid(3), 2));
+        const empty = createWorkspace(wsId(2));
+        const world: World = {
+            workspaces: [ws0, ws1, empty],
+            viewport: { workspaceIndex: 0, scrollX: 0, widthPx: monitor.totalWidth },
+            focusedWindow: wid(2),
+            config,
+            monitor,
+        };
+        const update = focusDown(world);
+        expect(update.world.focusedWindow).toBe(wid(3)); // slot 2 hits double-width win-3
+    });
+
+    it('sets focus to null when entering empty workspace', () => {
+        const world = makeMultiWorld([[1, 2], []], 0, 1);
+        const update = focusDown(world);
+        expect(update.world.viewport.workspaceIndex).toBe(1);
+        expect(update.world.focusedWindow).toBeNull();
+    });
+
+    it('falls back to last window when target slot is past all windows', () => {
+        // ws0: win-1 (slot 1), win-2 (slot 2) — focus on win-2
+        // ws1: win-3 (slot 1 only)
+        // slot 2 is past ws1's windows → should fall back to win-3
+        const world = makeMultiWorld([[1, 2], [3], []], 0, 2);
+        const update = focusDown(world);
+        expect(update.world.viewport.workspaceIndex).toBe(1);
+        expect(update.world.focusedWindow).toBe(wid(3));
+    });
+
+    it('is no-op at bottom workspace', () => {
+        const world = makeMultiWorld([[1, 2], []], 1, null);
+        const update = focusDown(world);
+        expect(update.world.viewport.workspaceIndex).toBe(1);
+    });
+});
+
+describe('focusUp', () => {
+    it('moves focus to workspace above with slot-based targeting', () => {
+        const world = makeMultiWorld([[1, 2], [3, 4], []], 1, 3);
+        const update = focusUp(world);
+        expect(update.world.viewport.workspaceIndex).toBe(0);
+        expect(update.world.focusedWindow).toBe(wid(1)); // slot 1 → slot 1
+    });
+
+    it('is no-op at top workspace', () => {
+        const world = makeMultiWorld([[1, 2], []], 0, 1);
+        const update = focusUp(world);
+        expect(update.world.viewport.workspaceIndex).toBe(0);
+        expect(update.world.focusedWindow).toBe(wid(1));
+    });
+
+    it('round-trip: focusDown then focusUp returns to original', () => {
+        const world = makeMultiWorld([[1, 2], [3, 4], []], 0, 2);
+        const down = focusDown(world);
+        expect(down.world.focusedWindow).toBe(wid(4)); // slot 2 → win-4
+        const up = focusUp(down.world);
+        expect(up.world.viewport.workspaceIndex).toBe(0);
+        expect(up.world.focusedWindow).toBe(wid(2)); // slot 2 → win-2
     });
 });
