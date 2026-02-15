@@ -3,7 +3,7 @@ import type { World } from '../domain/world.js';
 import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate } from '../domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from '../domain/window-operations.js';
-import { computeLayoutForWorkspace } from '../domain/layout.js';
+import { computeLayout, computeLayoutForWorkspace } from '../domain/layout.js';
 import { MonitorAdapter } from './monitor-adapter.js';
 import { WindowEventAdapter } from './window-event-adapter.js';
 import { CloneAdapter } from './clone-adapter.js';
@@ -28,6 +28,8 @@ export class PaperFlowController {
     private _conflictDetector: ConflictDetector | null = null;
     private _internalFocusChange: boolean = false;
     private _wmDestroyId: number | null = null;
+    private _wmMinimizeId: number | null = null;
+    private _wmUnminimizeId: number | null = null;
     private _settlementTimerId: number | null = null;
     private _settlementStep: number = 0;
 
@@ -111,14 +113,34 @@ export class PaperFlowController {
                 },
             });
 
-            // 9. Skip GNOME's window close animation — actors are hidden anyway,
-            //    and the delayed destroy causes stale layout until the effect finishes.
+            // 9. Skip GNOME's window close and minimize animations — actors
+            //    are hidden/cloned anyway, and delayed effects cause stale state.
             this._wmDestroyId = global.window_manager.connect('destroy',
                 (shellWm: any, actor: Meta.WindowActor) => {
                     try {
                         shellWm.completed_destroy(actor);
                     } catch (e) {
                         console.error('[PaperFlow] Error completing destroy:', e);
+                    }
+                },
+            );
+
+            this._wmMinimizeId = global.window_manager.connect('minimize',
+                (shellWm: any, actor: Meta.WindowActor) => {
+                    try {
+                        shellWm.completed_minimize(actor);
+                    } catch (e) {
+                        console.error('[PaperFlow] Error completing minimize:', e);
+                    }
+                },
+            );
+
+            this._wmUnminimizeId = global.window_manager.connect('unminimize',
+                (shellWm: any, actor: Meta.WindowActor) => {
+                    try {
+                        shellWm.completed_unminimize(actor);
+                    } catch (e) {
+                        console.error('[PaperFlow] Error completing unminimize:', e);
                     }
                 },
             );
@@ -140,6 +162,14 @@ export class PaperFlowController {
             if (this._wmDestroyId !== null) {
                 global.window_manager.disconnect(this._wmDestroyId);
                 this._wmDestroyId = null;
+            }
+            if (this._wmMinimizeId !== null) {
+                global.window_manager.disconnect(this._wmMinimizeId);
+                this._wmMinimizeId = null;
+            }
+            if (this._wmUnminimizeId !== null) {
+                global.window_manager.disconnect(this._wmUnminimizeId);
+                this._wmUnminimizeId = null;
             }
 
             if (this._settlementTimerId !== null) {
@@ -574,7 +604,7 @@ export class PaperFlowController {
                 // Re-apply layout — picks up current frame rects.
                 // Nudge unsettled windows by sending a 1px-different size
                 // first to force Mutter to emit a fresh Wayland configure.
-                const layout = buildUpdate(this._world).layout;
+                const layout = computeLayout(this._world);
                 this._windowAdapter?.applyLayout(layout, true);
                 this._cloneAdapter?.applyLayout(layout, false);
 

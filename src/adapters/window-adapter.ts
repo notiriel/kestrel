@@ -13,6 +13,8 @@ interface TrackedWindow {
     /** Actual position after compensating for oversized frames (e.g. Chromium) */
     actualX: number;
     actualY: number;
+    /** True when the window has been moved offscreen (not on current workspace) */
+    offscreen: boolean;
 }
 
 export class WindowAdapter {
@@ -42,7 +44,7 @@ export class WindowAdapter {
         this._windows.set(windowId, {
             metaWindow, sizeChangedId, positionChangedId,
             targetX: 0, targetY: 0, targetWidth: 0, targetHeight: 0,
-            actualX: 0, actualY: 0,
+            actualX: 0, actualY: 0, offscreen: false,
         });
     }
 
@@ -52,6 +54,7 @@ export class WindowAdapter {
             try { tracked.metaWindow.disconnect(tracked.sizeChangedId); } catch { /* already gone */ }
             try { tracked.metaWindow.disconnect(tracked.positionChangedId); } catch { /* already gone */ }
             try {
+                if (tracked.offscreen) tracked.metaWindow.unminimize();
                 const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
                 actor?.remove_clip();
             } catch { /* already gone */ }
@@ -60,6 +63,9 @@ export class WindowAdapter {
     }
 
     applyLayout(layout: LayoutState, nudgeUnsettled: boolean = false): void {
+        // Collect window IDs present in this layout (current workspace)
+        const layoutWindowIds = new Set(layout.windows.map(wl => wl.windowId));
+
         for (const wl of layout.windows) {
             const tracked = this._windows.get(wl.windowId);
             if (!tracked) continue;
@@ -76,6 +82,12 @@ export class WindowAdapter {
                 tracked.targetHeight = wl.height;
                 tracked.actualX = screenX;
                 tracked.actualY = screenY;
+
+                // Restore visibility if window was minimized on another workspace
+                if (tracked.offscreen) {
+                    tracked.offscreen = false;
+                    tracked.metaWindow.unminimize();
+                }
 
                 const frame = tracked.metaWindow.get_frame_rect();
                 const needsResize = frame.width !== wl.width || frame.height !== wl.height;
@@ -113,6 +125,22 @@ export class WindowAdapter {
                 this.untrack(wl.windowId);
             }
         }
+
+        // Minimize tracked windows not in the current layout (other workspaces).
+        // Minimization is the only reliable way to fully remove Wayland keyboard
+        // focus — Mutter won't send wl_keyboard events to minimized windows.
+        // Clutter.Clone still renders minimized (unmapped) actors via its
+        // internal enable_paint_unmapped mechanism.
+        for (const [windowId, tracked] of this._windows) {
+            if (layoutWindowIds.has(windowId)) continue;
+            if (tracked.offscreen) continue;
+            try {
+                tracked.offscreen = true;
+                tracked.metaWindow.minimize();
+            } catch {
+                // Window already gone
+            }
+        }
     }
 
     /**
@@ -123,7 +151,7 @@ export class WindowAdapter {
         if (this._adjusting) return;
 
         const tracked = this._windows.get(windowId);
-        if (!tracked || tracked.targetWidth === 0) return;
+        if (!tracked || tracked.targetWidth === 0 || tracked.offscreen) return;
 
         this._adjusting = true;
         try {
@@ -149,7 +177,7 @@ export class WindowAdapter {
         if (this._adjusting) return;
 
         const tracked = this._windows.get(windowId);
-        if (!tracked || tracked.targetWidth === 0) return;
+        if (!tracked || tracked.targetWidth === 0 || tracked.offscreen) return;
 
         const frame = tracked.metaWindow.get_frame_rect();
         if (frame.x !== tracked.actualX || frame.y !== tracked.actualY) {
@@ -235,6 +263,7 @@ export class WindowAdapter {
             try { tracked.metaWindow.disconnect(tracked.sizeChangedId); } catch { /* already gone */ }
             try { tracked.metaWindow.disconnect(tracked.positionChangedId); } catch { /* already gone */ }
             try {
+                if (tracked.offscreen) tracked.metaWindow.unminimize();
                 const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
                 actor?.remove_clip();
             } catch { /* already gone */ }
