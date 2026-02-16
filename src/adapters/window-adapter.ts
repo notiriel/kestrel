@@ -20,10 +20,15 @@ interface TrackedWindow {
 export class WindowAdapter {
     private _windows: Map<WindowId, TrackedWindow> = new Map();
     private _workAreaY: number = 0;
+    private _monitorWidth: number = 0;
     private _adjusting: boolean = false;
 
     setWorkAreaY(workAreaY: number): void {
         this._workAreaY = workAreaY;
+    }
+
+    setMonitorWidth(monitorWidth: number): void {
+        this._monitorWidth = monitorWidth;
     }
 
     track(windowId: WindowId, metaWindow: Meta.Window): void {
@@ -46,6 +51,14 @@ export class WindowAdapter {
             targetX: 0, targetY: 0, targetWidth: 0, targetHeight: 0,
             actualX: 0, actualY: 0, offscreen: false,
         });
+
+        // Real window actors are always hidden — the clone layer handles
+        // all visual rendering. Actors remain at opacity=0 so they're
+        // invisible but still receive Wayland input (click-through).
+        try {
+            const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
+            if (actor) actor.set_opacity(0);
+        } catch { /* not ready yet */ }
     }
 
     untrack(windowId: WindowId): void {
@@ -56,9 +69,37 @@ export class WindowAdapter {
             try {
                 if (tracked.offscreen) tracked.metaWindow.unminimize();
                 const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                actor?.remove_clip();
+                if (actor) actor.set_opacity(255);
             } catch { /* already gone */ }
             this._windows.delete(windowId);
+        }
+    }
+
+    /** Set of window IDs currently fullscreen — skip positioning for these */
+    private _fullscreenWindows: Set<WindowId> = new Set();
+
+    setWindowFullscreen(windowId: WindowId, isFullscreen: boolean): void {
+        if (isFullscreen) {
+            this._fullscreenWindows.add(windowId);
+            // Unminimize if it was offscreen
+            const tracked = this._windows.get(windowId);
+            if (tracked?.offscreen) {
+                tracked.offscreen = false;
+                try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
+            }
+            // Fullscreen windows need to be visible (not cloned)
+            try {
+                const actor = tracked?.metaWindow.get_compositor_private() as Meta.WindowActor | null;
+                if (actor) actor.set_opacity(255);
+            } catch { /* already gone */ }
+        } else {
+            this._fullscreenWindows.delete(windowId);
+            // Re-hide when leaving fullscreen
+            const tracked = this._windows.get(windowId);
+            try {
+                const actor = tracked?.metaWindow.get_compositor_private() as Meta.WindowActor | null;
+                if (actor) actor.set_opacity(0);
+            } catch { /* already gone */ }
         }
     }
 
@@ -69,11 +110,25 @@ export class WindowAdapter {
         for (const wl of layout.windows) {
             const tracked = this._windows.get(wl.windowId);
             if (!tracked) continue;
+            // Fullscreen windows are positioned by GNOME — don't fight them
+            if (this._fullscreenWindows.has(wl.windowId)) {
+                if (tracked.offscreen) {
+                    tracked.offscreen = false;
+                    try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
+                }
+                continue;
+            }
             try {
                 // Subtract scrollX so real windows match their visual clone positions
-                const screenX = wl.x - layout.scrollX;
+                let screenX = wl.x - layout.scrollX;
                 // Layout Y is workArea-relative; add workAreaY to convert to stage coords
                 const screenY = wl.y + this._workAreaY;
+
+                // Clamp to monitor bounds — Mutter rejects positions that push
+                // windows beyond the monitor edge on Wayland.
+                if (this._monitorWidth > 0) {
+                    screenX = Math.max(0, Math.min(screenX, this._monitorWidth - wl.width));
+                }
 
                 // Store target for position-changed and size-changed handlers
                 tracked.targetX = screenX;
@@ -87,6 +142,9 @@ export class WindowAdapter {
                 if (tracked.offscreen) {
                     tracked.offscreen = false;
                     tracked.metaWindow.unminimize();
+                    // Ensure actor stays hidden after unminimize
+                    const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
+                    if (actor) actor.set_opacity(0);
                 }
 
                 const frame = tracked.metaWindow.get_frame_rect();
@@ -118,13 +176,6 @@ export class WindowAdapter {
                 } finally {
                     this._adjusting = false;
                 }
-
-                // Don't apply clip here — on Wayland, move_resize_frame() is
-                // async so the buffer rect is still at the OLD position.
-                // _applyClip reads the buffer rect, so calling it now would
-                // produce a stale clip that makes the clone render nothing.
-                // The position-changed / size-changed signal handlers already
-                // call _applyClip() once the buffer settles.
             } catch (e) {
                 console.debug('[PaperFlow] move_resize_frame skipped (dead window?):', e);
                 this.untrack(wl.windowId);
@@ -139,6 +190,7 @@ export class WindowAdapter {
         for (const [windowId, tracked] of this._windows) {
             if (layoutWindowIds.has(windowId)) continue;
             if (tracked.offscreen) continue;
+            if (this._fullscreenWindows.has(windowId)) continue;
             try {
                 tracked.offscreen = true;
                 tracked.metaWindow.minimize();
@@ -150,7 +202,7 @@ export class WindowAdapter {
 
     /**
      * When a window settles at a new size (async Wayland resize response),
-     * re-position at target and re-clip.
+     * re-position at target.
      */
     private _onSizeChanged(windowId: WindowId): void {
         if (this._adjusting) return;
@@ -170,8 +222,6 @@ export class WindowAdapter {
         } finally {
             this._adjusting = false;
         }
-
-        this._applyClip(tracked);
     }
 
     /**
@@ -193,8 +243,6 @@ export class WindowAdapter {
                 this._adjusting = false;
             }
         }
-
-        this._applyClip(tracked);
     }
 
     /**
@@ -224,23 +272,6 @@ export class WindowAdapter {
     }
 
     /**
-     * Clip the WindowActor to the layout slot bounds.
-     * The clip positions the visible region at targetX/targetY on screen,
-     * matching the clone's wrapper position. The clone-adapter handles visual
-     * centering for oversized frames — the real window clip only needs to
-     * align the visible area for correct input hit-testing.
-     */
-    private _applyClip(tracked: TrackedWindow): void {
-        const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-        if (!actor) return;
-
-        const buffer = tracked.metaWindow.get_buffer_rect();
-        const clipX = tracked.targetX - buffer.x;
-        const clipY = tracked.targetY - buffer.y;
-        actor.set_clip(clipX, clipY, tracked.targetWidth, tracked.targetHeight);
-    }
-
-    /**
      * Check if any tracked window's frame size doesn't match its layout target.
      * Used by the controller to detect when async Wayland configures have settled.
      */
@@ -259,8 +290,31 @@ export class WindowAdapter {
         return false;
     }
 
+    /**
+     * No-op. Real window actors are always hidden (opacity=0).
+     * Kept for API compatibility with controller animation flow.
+     */
+    hideActors(): void {
+        // Actors are always hidden — nothing to do.
+    }
+
+    /**
+     * No-op. Real window actors stay hidden; clones handle rendering.
+     * Kept for API compatibility with controller animation flow.
+     */
+    showActors(): void {
+        // Actors are always hidden — nothing to do.
+    }
+
+    /**
+     * No-op. Kept for API compatibility.
+     */
+    refreshClips(): void {
+        // No clips needed — actors are always hidden.
+    }
+
     showAll(): void {
-        // Real actor visibility is restored by CloneAdapter.destroy()
+        this.showActors();
     }
 
     destroy(): void {
@@ -270,7 +324,7 @@ export class WindowAdapter {
             try {
                 if (tracked.offscreen) tracked.metaWindow.unminimize();
                 const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                actor?.remove_clip();
+                if (actor) actor.set_opacity(255);
             } catch { /* already gone */ }
         }
         this._windows.clear();

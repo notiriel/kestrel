@@ -12,6 +12,7 @@ import {
     createWorkspace,
     addWindow as wsAddWindow,
     removeWindow as wsRemoveWindow,
+    replaceWindow as wsReplaceWindow,
     windowAfter,
     windowBefore,
     slotIndexOf,
@@ -186,9 +187,9 @@ export function setFocus(world: World, windowId: WindowId): WorldUpdate {
     return buildUpdate(adjustViewport(newWorld));
 }
 
-export function addWindow(world: World, windowId: WindowId): WorldUpdate {
+export function addWindow(world: World, windowId: WindowId, slotSpan: 1 | 2 = 1): WorldUpdate {
     const ws = currentWorkspace(world);
-    const tiledWindow = createTiledWindow(windowId);
+    const tiledWindow = createTiledWindow(windowId, slotSpan);
     const newWs = wsAddWindow(ws, tiledWindow);
     let newWorld = replaceCurrentWorkspace(
         { ...world, focusedWindow: windowId },
@@ -275,6 +276,38 @@ export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
     return buildUpdate(adjustViewport(newWorld));
 }
 
+export function enterFullscreen(world: World, windowId: WindowId): WorldUpdate {
+    // Find which workspace contains this window
+    for (let i = 0; i < world.workspaces.length; i++) {
+        const ws = world.workspaces[i]!;
+        const win = ws.windows.find(w => w.id === windowId);
+        if (win) {
+            const newWin = { ...win, fullscreen: true };
+            const newWs = wsReplaceWindow(ws, windowId, newWin);
+            const workspaces = world.workspaces.map((w, idx) => idx === i ? newWs : w);
+            const newWorld: World = { ...world, workspaces, focusedWindow: windowId };
+            return buildUpdate(adjustViewport(newWorld));
+        }
+    }
+    return buildUpdate(world);
+}
+
+export function exitFullscreen(world: World, windowId: WindowId): WorldUpdate {
+    // Find which workspace contains this window
+    for (let i = 0; i < world.workspaces.length; i++) {
+        const ws = world.workspaces[i]!;
+        const win = ws.windows.find(w => w.id === windowId);
+        if (win) {
+            const newWin = { ...win, fullscreen: false };
+            const newWs = wsReplaceWindow(ws, windowId, newWin);
+            const workspaces = world.workspaces.map((w, idx) => idx === i ? newWs : w);
+            const newWorld: World = { ...world, workspaces };
+            return buildUpdate(adjustViewport(newWorld));
+        }
+    }
+    return buildUpdate(world);
+}
+
 /**
  * When the current workspace becomes empty after a window close,
  * move viewport to an adjacent populated workspace.
@@ -313,5 +346,71 @@ function navigateFromEmptyWorkspace(world: World, sourceSlot: number): World {
     }
 
     // No populated workspace — stay on trailing empty
+    return world;
+}
+
+/**
+ * Set a window's slotSpan to 2 (maximize → wide tile).
+ * Finds the window across all workspaces.
+ */
+export function widenWindow(world: World, windowId: WindowId): WorldUpdate {
+    for (let i = 0; i < world.workspaces.length; i++) {
+        const ws = world.workspaces[i]!;
+        const win = ws.windows.find(w => w.id === windowId);
+        if (win) {
+            if (win.slotSpan === 2) return buildUpdate(world); // already wide
+            const newWin = { ...win, slotSpan: 2 as const };
+            const newWs = wsReplaceWindow(ws, windowId, newWin);
+            const workspaces = world.workspaces.map((w, idx) => idx === i ? newWs : w);
+            const newWorld: World = { ...world, workspaces };
+            return buildUpdate(adjustViewport(newWorld));
+        }
+    }
+    return buildUpdate(world);
+}
+
+export interface RestoreWorkspaceData {
+    readonly windows: readonly TiledWindow[];
+}
+
+/**
+ * Restore a world from saved state (e.g. after screen lock disable/enable cycle).
+ * Creates workspaces with pre-populated windows, restores viewport and focus.
+ */
+export function restoreWorld(
+    config: PaperFlowConfig,
+    monitor: MonitorInfo,
+    workspaceData: readonly RestoreWorkspaceData[],
+    viewportWorkspaceIndex: number,
+    viewportScrollX: number,
+    focusedWindow: WindowId | null,
+): World {
+    let workspaces: Workspace[] = workspaceData.map((data, i) => {
+        const ws = createWorkspace(nextWorkspaceId());
+        return { ...ws, windows: data.windows };
+    });
+
+    // Validate focus — ensure the focused window actually exists
+    if (focusedWindow) {
+        const exists = workspaces.some(ws => ws.windows.some(w => w.id === focusedWindow));
+        if (!exists) focusedWindow = null;
+    }
+
+    // Clamp viewport index
+    if (viewportWorkspaceIndex >= workspaces.length) {
+        viewportWorkspaceIndex = Math.max(0, workspaces.length - 1);
+    }
+
+    let world: World = {
+        workspaces,
+        viewport: { workspaceIndex: viewportWorkspaceIndex, scrollX: viewportScrollX, widthPx: monitor.totalWidth },
+        focusedWindow,
+        config,
+        monitor,
+        overviewActive: false,
+    };
+
+    world = pruneEmptyWorkspaces(world);
+    world = ensureTrailingEmpty(world);
     return world;
 }

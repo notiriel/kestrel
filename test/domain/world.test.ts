@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { WindowId, WorkspaceId, PaperFlowConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow, removeWindow, setFocus } from '../../src/domain/world.js';
+import { createWorld, addWindow, removeWindow, setFocus, restoreWorld } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
@@ -327,6 +327,73 @@ describe('World', () => {
             expect(result.focusedWindow).toBeNull();
             expect(result.workspaces).toHaveLength(1);
             expect(result.workspaces[0]!.windows).toHaveLength(0);
+        });
+    });
+
+    describe('restoreWorld', () => {
+        it('creates correct workspace structure', () => {
+            const result = restoreWorld(
+                config, monitor,
+                [
+                    { windows: [createTiledWindow(wid(1)), createTiledWindow(wid(2))] },
+                    { windows: [createTiledWindow(wid(3))] },
+                ],
+                0, 0, wid(1),
+            );
+            // 2 populated workspaces + 1 trailing empty
+            expect(result.workspaces).toHaveLength(3);
+            expect(result.workspaces[0]!.windows.map(w => w.id)).toEqual([wid(1), wid(2)]);
+            expect(result.workspaces[1]!.windows.map(w => w.id)).toEqual([wid(3)]);
+            expect(result.workspaces[2]!.windows).toHaveLength(0);
+            expect(result.focusedWindow).toBe(wid(1));
+        });
+
+        it('gracefully handles missing focused window', () => {
+            const result = restoreWorld(
+                config, monitor,
+                [{ windows: [createTiledWindow(wid(1))] }],
+                0, 0, wid(99), // non-existent
+            );
+            expect(result.focusedWindow).toBeNull();
+        });
+
+        it('prunes empty workspaces from saved state', () => {
+            const result = restoreWorld(
+                config, monitor,
+                [
+                    { windows: [createTiledWindow(wid(1))] },
+                    { windows: [] }, // empty — should be pruned
+                    { windows: [createTiledWindow(wid(2))] },
+                ],
+                0, 0, wid(1),
+            );
+            // Empty middle workspace pruned: [ws0, ws2, trailing]
+            expect(result.workspaces).toHaveLength(3);
+            expect(result.workspaces[0]!.windows[0]!.id).toBe(wid(1));
+            expect(result.workspaces[1]!.windows[0]!.id).toBe(wid(2));
+        });
+
+        it('restores viewport position', () => {
+            const result = restoreWorld(
+                config, monitor,
+                [
+                    { windows: [createTiledWindow(wid(1))] },
+                    { windows: [createTiledWindow(wid(2))] },
+                ],
+                1, 500, wid(2),
+            );
+            expect(result.viewport.workspaceIndex).toBe(1);
+            expect(result.viewport.scrollX).toBe(500);
+        });
+
+        it('clamps viewport index when out of range', () => {
+            const result = restoreWorld(
+                config, monitor,
+                [{ windows: [createTiledWindow(wid(1))] }],
+                99, 0, wid(1),
+            );
+            // Should be clamped to valid range
+            expect(result.viewport.workspaceIndex).toBeLessThan(result.workspaces.length);
         });
     });
 });

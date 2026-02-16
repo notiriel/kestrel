@@ -22,6 +22,19 @@ export function computeLayout(world: World): LayoutState {
     let x = edgeGap;
 
     for (const win of ws.windows) {
+        // Fullscreen windows get a full-monitor layout entry, not a strip position
+        if (win.fullscreen) {
+            windows.push({
+                windowId: win.id,
+                x: 0,
+                y: 0,
+                width: monitor.totalWidth,
+                height: monitor.totalHeight,
+                visible: true,
+            });
+            continue;
+        }
+
         const windowWidth = win.slotSpan * slotWidth - gapSize;
         const rightEdge = x + windowWidth;
         const leftEdge = x;
@@ -68,6 +81,18 @@ export function computeLayoutForWorkspace(world: World, wsIndex: number): Layout
     let x = edgeGap;
 
     for (const win of ws.windows) {
+        if (win.fullscreen) {
+            windows.push({
+                windowId: win.id,
+                x: 0,
+                y: 0,
+                width: monitor.totalWidth,
+                height: monitor.totalHeight,
+                visible: true,
+            });
+            continue;
+        }
+
         const windowWidth = win.slotSpan * slotWidth - gapSize;
         windows.push({
             windowId: win.id,
@@ -80,10 +105,13 @@ export function computeLayoutForWorkspace(world: World, wsIndex: number): Layout
         x += windowWidth + gapSize;
     }
 
+    // Only report focus if the focused window lives on this workspace
+    const hasFocus = focusedWindow && ws.windows.some(w => w.id === focusedWindow);
+
     return {
         windows,
         scrollX: viewport.scrollX,
         workspaceIndex: wsIndex,
-        focusedWindowId: focusedWindow,
+        focusedWindowId: hasFocus ? focusedWindow : null,
     };
 }

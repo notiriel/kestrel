@@ -4,6 +4,8 @@ import { Source, Notification, NotificationDestroyedReason } from 'resource:///o
 
 const CONFLICTING_EXTENSIONS = [
     'tiling-assistant@ubuntu.com',
+    'ding@rastersoft.com',
+    'ubuntu-dock@ubuntu.com',
 ] as const;
 
 /** Extension state value for ENABLED in GNOME Shell */

@@ -14,6 +14,10 @@ export class FocusAdapter {
         this._windows.delete(windowId);
     }
 
+    getMetaWindow(windowId: WindowId): Meta.Window | undefined {
+        return this._windows.get(windowId);
+    }
+
     focus(windowId: WindowId | null): void {
         if (!windowId) return;
         const metaWindow = this._windows.get(windowId);

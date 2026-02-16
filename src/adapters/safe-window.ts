@@ -19,17 +19,18 @@ export function safeWindow(metaWindow: Meta.Window): Meta.Window {
             // Allow access to raw underlying object for identity checks
             if (prop === RAW) return target;
 
-            const value = Reflect.get(target, prop, receiver);
+            // Check liveness before accessing anything (except the probe itself)
+            if (prop !== 'get_compositor_private' && !target.get_compositor_private()) {
+                throw new Error(
+                    `[PaperFlow] Dead Meta.Window: cannot access ${String(prop)}`,
+                );
+            }
+
+            // Get the value from the target (not the receiver) to avoid GObject getter issues
+            const value = Reflect.get(target, prop, target);
 
             if (typeof value === 'function') {
                 return function (this: unknown, ...args: unknown[]) {
-                    // get_compositor_private is our liveness probe — always allow
-                    if (prop !== 'get_compositor_private' &&
-                        !target.get_compositor_private()) {
-                        throw new Error(
-                            `[PaperFlow] Dead Meta.Window: cannot call ${String(prop)}`,
-                        );
-                    }
                     return value.apply(target, args);
                 };
             }

@@ -9,6 +9,8 @@ export interface WindowEventCallbacks {
     onWindowDestroyed: (windowId: WindowId) => void;
     onFloatWindowReady: (windowId: WindowId, metaWindow: Meta.Window) => void;
     onFloatWindowDestroyed: (windowId: WindowId) => void;
+    onWindowFullscreenChanged: (windowId: WindowId, isFullscreen: boolean) => void;
+    onWindowMaximized: (windowId: WindowId) => void;
 }
 
 export { shouldTile };
@@ -57,6 +59,8 @@ function getWindowId(metaWindow: Meta.Window): WindowId {
 export class WindowEventAdapter {
     private _windowCreatedId: number | null = null;
     private _actorDestroyIds: Map<WindowId, number> = new Map();
+    private _fullscreenSignalIds: Map<WindowId, { metaWindow: Meta.Window; signalId: number }> = new Map();
+    private _maximizeSignalIds: Map<WindowId, { metaWindow: Meta.Window; signalId: number }> = new Map();
     private _timeoutIds: Set<number> = new Set();
     private _pendingWindows: Set<WindowId> = new Set();
     private _callbacks: WindowEventCallbacks | null = null;
@@ -85,7 +89,7 @@ export class WindowEventAdapter {
                 const windowId = getWindowId(metaWindow);
                 if (shouldTile(metaWindow)) {
                     this._callbacks?.onWindowReady(windowId, metaWindow);
-                    this._watchActorDestroy(actor as Meta.WindowActor, windowId, false);
+                    this._watchActorDestroy(actor as Meta.WindowActor, windowId, false, metaWindow);
                 } else if (shouldFloat(metaWindow)) {
                     this._callbacks?.onFloatWindowReady(windowId, metaWindow);
                     this._watchActorDestroy(actor as Meta.WindowActor, windowId, true);
@@ -114,7 +118,7 @@ export class WindowEventAdapter {
             if (!tile && !float) return;
             if (tile) {
                 this._callbacks?.onWindowReady(windowId, metaWindow);
-                this._watchActorDestroy(actor, windowId, false);
+                this._watchActorDestroy(actor, windowId, false, metaWindow);
             } else {
                 this._callbacks?.onFloatWindowReady(windowId, metaWindow);
                 this._watchActorDestroy(actor, windowId, true);
@@ -145,10 +149,12 @@ export class WindowEventAdapter {
         this._timeoutIds.add(timeoutId);
     }
 
-    private _watchActorDestroy(actor: Meta.WindowActor, windowId: WindowId, isFloat: boolean): void {
+    private _watchActorDestroy(actor: Meta.WindowActor, windowId: WindowId, isFloat: boolean, metaWindow?: Meta.Window): void {
         const destroyId = actor.connect('destroy', () => {
             try {
                 this._actorDestroyIds.delete(windowId);
+                this._disconnectFullscreenSignal(windowId);
+                this._disconnectMaximizeSignal(windowId);
                 if (isFloat) {
                     this._callbacks?.onFloatWindowDestroyed(windowId);
                 } else {
@@ -159,6 +165,46 @@ export class WindowEventAdapter {
             }
         });
         this._actorDestroyIds.set(windowId, destroyId);
+
+        // Track fullscreen changes for tiled windows
+        if (!isFloat && metaWindow) {
+            const signalId = metaWindow.connect('notify::fullscreen', () => {
+                try {
+                    this._callbacks?.onWindowFullscreenChanged(windowId, metaWindow.fullscreen);
+                } catch (e) {
+                    console.error('[PaperFlow] Error in fullscreen handler:', e);
+                }
+            });
+            this._fullscreenSignalIds.set(windowId, { metaWindow, signalId });
+
+            // Track maximize changes — fire only when becoming maximized
+            const maxSignalId = metaWindow.connect('notify::maximized-horizontally', () => {
+                try {
+                    if (metaWindow.maximized_horizontally) {
+                        this._callbacks?.onWindowMaximized(windowId);
+                    }
+                } catch (e) {
+                    console.error('[PaperFlow] Error in maximize handler:', e);
+                }
+            });
+            this._maximizeSignalIds.set(windowId, { metaWindow, signalId: maxSignalId });
+        }
+    }
+
+    private _disconnectMaximizeSignal(windowId: WindowId): void {
+        const entry = this._maximizeSignalIds.get(windowId);
+        if (entry) {
+            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
+            this._maximizeSignalIds.delete(windowId);
+        }
+    }
+
+    private _disconnectFullscreenSignal(windowId: WindowId): void {
+        const entry = this._fullscreenSignalIds.get(windowId);
+        if (entry) {
+            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
+            this._fullscreenSignalIds.delete(windowId);
+        }
     }
 
     destroy(): void {
@@ -171,6 +217,16 @@ export class WindowEventAdapter {
             GLib.source_remove(timeoutId);
         }
         this._timeoutIds.clear();
+
+        for (const entry of this._fullscreenSignalIds.values()) {
+            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
+        }
+        this._fullscreenSignalIds.clear();
+
+        for (const entry of this._maximizeSignalIds.values()) {
+            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
+        }
+        this._maximizeSignalIds.clear();
 
         // Note: actor destroy signals are cleaned up when actors are destroyed
         this._actorDestroyIds.clear();

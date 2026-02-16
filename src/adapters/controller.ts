@@ -1,12 +1,14 @@
 import type { WindowId, WorkspaceId, PaperFlowConfig, MonitorInfo } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate } from '../domain/world.js';
+import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate, enterFullscreen, exitFullscreen, widenWindow, restoreWorld } from '../domain/world.js';
+import type { RestoreWorkspaceData } from '../domain/world.js';
+import { createTiledWindow } from '../domain/window.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from '../domain/window-operations.js';
 import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
 import { computeLayout, computeLayoutForWorkspace } from '../domain/layout.js';
 import { MonitorAdapter } from './monitor-adapter.js';
-import { WindowEventAdapter } from './window-event-adapter.js';
+import { WindowEventAdapter, shouldTile } from './window-event-adapter.js';
 import { CloneAdapter } from './clone-adapter.js';
 import { WindowAdapter } from './window-adapter.js';
 import { FocusAdapter } from './focus-adapter.js';
@@ -14,9 +16,10 @@ import { KeybindingAdapter } from './keybinding-adapter.js';
 import { OverviewInputAdapter } from './overview-input-adapter.js';
 import type { OverviewTransform } from './clone-adapter.js';
 import { ConflictDetector } from './conflict-detector.js';
+import { ReconciliationGuard } from './reconciliation-guard.js';
 import { safeWindow } from './safe-window.js';
 import type Gio from 'gi://Gio';
-import type Meta from 'gi://Meta';
+import Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
 
 export class PaperFlowController {
@@ -30,6 +33,7 @@ export class PaperFlowController {
     private _keybindingAdapter: KeybindingAdapter | null = null;
     private _overviewInputAdapter: OverviewInputAdapter | null = null;
     private _conflictDetector: ConflictDetector | null = null;
+    private _guard: ReconciliationGuard | null = null;
     /** State saved when entering overview, for Escape restore. */
     private _preOverviewState: { focusedWindow: WindowId | null; viewport: { workspaceIndex: number; scrollX: number } } | null = null;
     private _overviewTransform: OverviewTransform | null = null;
@@ -39,6 +43,7 @@ export class PaperFlowController {
     private _wmUnminimizeId: number | null = null;
     private _settlementTimerId: number | null = null;
     private _settlementStep: number = 0;
+    private _animationTimerId: number | null = null;
 
     constructor(settings: Gio.Settings) {
         this._settings = settings;
@@ -58,6 +63,8 @@ export class PaperFlowController {
             this._conflictDetector = new ConflictDetector();
             this._conflictDetector.detectConflicts();
 
+            this._guard = new ReconciliationGuard();
+
             // 1. Read config
             const config = this._readConfig();
 
@@ -75,6 +82,7 @@ export class PaperFlowController {
 
             this._windowAdapter = new WindowAdapter();
             this._windowAdapter.setWorkAreaY(monitor.workAreaY);
+            this._windowAdapter.setMonitorWidth(monitor.totalWidth);
             this._focusAdapter = new FocusAdapter();
 
             // 5. Connect keybindings
@@ -119,6 +127,12 @@ export class PaperFlowController {
                     console.log(`[PaperFlow] float window removed: ${windowId}`);
                     this._cloneAdapter?.removeFloatClone(windowId);
                 },
+                onWindowFullscreenChanged: (windowId: WindowId, isFullscreen: boolean) => {
+                    this._handleFullscreenChanged(windowId, isFullscreen);
+                },
+                onWindowMaximized: (windowId: WindowId) => {
+                    this._handleWindowMaximized(windowId);
+                },
             });
 
             // 9. Skip GNOME's window close and minimize animations — actors
@@ -153,7 +167,10 @@ export class PaperFlowController {
                 },
             );
 
-            // 10. Enumerate existing windows
+            // 10. Try restoring saved state, then enumerate existing windows.
+            // If restored, enumerateExisting will detect windows already in domain
+            // and only set up adapter tracking (no duplicate addWindow).
+            this._tryRestoreState(config, monitor);
             this._windowEventAdapter.enumerateExisting();
 
             console.log('[PaperFlow] enabled');
@@ -165,6 +182,9 @@ export class PaperFlowController {
     disable(): void {
         try {
             console.log('[PaperFlow] disabling...');
+
+            // Save world state before teardown (survives screen lock disable/enable)
+            this._saveState();
 
             // Reverse order
             if (this._wmDestroyId !== null) {
@@ -183,6 +203,10 @@ export class PaperFlowController {
             if (this._settlementTimerId !== null) {
                 GLib.source_remove(this._settlementTimerId);
                 this._settlementTimerId = null;
+            }
+            if (this._animationTimerId !== null) {
+                GLib.source_remove(this._animationTimerId);
+                this._animationTimerId = null;
             }
 
             this._windowEventAdapter?.destroy();
@@ -206,6 +230,9 @@ export class PaperFlowController {
 
             this._cloneAdapter?.destroy();
             this._cloneAdapter = null;
+
+            this._guard?.destroy();
+            this._guard = null;
 
             this._conflictDetector?.destroy();
             this._conflictDetector = null;
@@ -243,6 +270,90 @@ export class PaperFlowController {
         });
     }
 
+    private _saveState(): void {
+        try {
+            if (!this._world) return;
+            const state = {
+                version: 1,
+                workspaces: this._world.workspaces.map(ws => ({
+                    windowIds: ws.windows.map(w => w.id),
+                    slotSpans: ws.windows.map(w => w.slotSpan),
+                })),
+                focusedWindow: this._world.focusedWindow,
+                viewportWorkspaceIndex: this._world.viewport.workspaceIndex,
+                viewportScrollX: this._world.viewport.scrollX,
+            };
+            this._settings.set_string('saved-state', JSON.stringify(state));
+            console.log(`[PaperFlow] saved state: ${state.workspaces.length} workspaces`);
+        } catch (e) {
+            console.error('[PaperFlow] Error saving state:', e);
+        }
+    }
+
+    /**
+     * Try to restore world from saved state. Returns true if restore succeeded.
+     * Sets `this._world` to the restored domain world before `enumerateExisting`
+     * runs — `_handleWindowReady` will detect windows already in the domain
+     * and only do adapter tracking (no duplicate `addWindow`).
+     */
+    private _tryRestoreState(config: PaperFlowConfig, monitor: MonitorInfo): boolean {
+        try {
+            const json = this._settings.get_string('saved-state');
+            if (!json) return false;
+
+            // Clear saved state immediately to avoid stale restores
+            this._settings.set_string('saved-state', '');
+
+            const state = JSON.parse(json);
+            if (state.version !== 1) return false;
+
+            // Enumerate currently existing windows for matching
+            const actors = global.get_window_actors();
+            const existingWindowIds = new Set<string>();
+            for (const actor of actors) {
+                try {
+                    const metaWindow = (actor as Meta.WindowActor).get_meta_window();
+                    if (!metaWindow) continue;
+                    existingWindowIds.add(String(metaWindow.get_stable_sequence()));
+                } catch { /* skip */ }
+            }
+
+            // Build workspace data from saved state, matching by WindowId
+            const workspaceData: RestoreWorkspaceData[] = [];
+
+            for (const savedWs of state.workspaces) {
+                const windows = [];
+                for (let i = 0; i < savedWs.windowIds.length; i++) {
+                    const id = savedWs.windowIds[i] as WindowId;
+                    const slotSpan = (savedWs.slotSpans[i] ?? 1) as 1 | 2;
+                    if (existingWindowIds.has(id)) {
+                        windows.push(createTiledWindow(id, slotSpan));
+                    }
+                    // Saved window not found → skip (closed while locked)
+                }
+                workspaceData.push({ windows });
+            }
+
+            // Restore the domain world — _handleWindowReady will detect
+            // existing windows and skip addWindow for them
+            this._world = restoreWorld(
+                config, monitor,
+                workspaceData,
+                state.viewportWorkspaceIndex ?? 0,
+                state.viewportScrollX ?? 0,
+                (state.focusedWindow as WindowId) ?? null,
+            );
+
+            this._cloneAdapter?.syncWorkspaces(this._world.workspaces);
+
+            console.log(`[PaperFlow] restored state: ${this._world.workspaces.length} workspaces`);
+            return true;
+        } catch (e) {
+            console.error('[PaperFlow] Error restoring state:', e);
+            return false;
+        }
+    }
+
     private _readConfig(): PaperFlowConfig {
         return {
             gapSize: this._settings.get_int('gap-size'),
@@ -269,6 +380,7 @@ export class PaperFlowController {
     private _handleWindowReady(windowId: WindowId, rawMetaWindow: Meta.Window): void {
         try {
             if (!this._world) return;
+            if (!this._guard?.check('windowReady')) return;
 
             console.log(`[PaperFlow] window added: ${windowId} title="${rawMetaWindow.get_title()}" wmclass="${rawMetaWindow.get_wm_class()}"`);
 
@@ -276,30 +388,82 @@ export class PaperFlowController {
             // throws JS errors instead of native SIGSEGV on dead GObjects.
             const metaWindow = safeWindow(rawMetaWindow);
 
+            // Check if the window already exists in the domain (restored from saved state)
+            const existsInDomain = this._world.workspaces.some(
+                ws => ws.windows.some(w => w.id === windowId),
+            );
+
+            if (existsInDomain) {
+                // Window was restored — only set up adapter tracking, don't re-add to domain
+                // Unmaximize if needed so PaperFlow can control size
+                if (metaWindow.maximized_horizontally || metaWindow.maximized_vertically) {
+                    metaWindow.unmaximize(Meta.MaximizeFlags.BOTH);
+                }
+                const restoredWsId = this._findWorkspaceIdForWindow(this._world, windowId)!;
+                this._windowAdapter?.track(windowId, metaWindow);
+                this._focusAdapter?.track(windowId, metaWindow);
+                this._cloneAdapter?.addClone(windowId, metaWindow, restoredWsId);
+
+                // Apply current layout to position the restored window
+                const layout = computeLayout(this._world);
+                this._applyLayout(layout, false);
+                this._focusWindow(this._world.focusedWindow);
+                this._startSettlementRetry();
+                return;
+            }
+
             // Track in adapters — clone goes to the current workspace's scroll container
             const wsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex)!;
             this._windowAdapter?.track(windowId, metaWindow);
             this._focusAdapter?.track(windowId, metaWindow);
             this._cloneAdapter?.addClone(windowId, metaWindow, wsId);
 
+            // Detect windows that started maximized — treat as 2-slot
+            const wasMaximized = metaWindow.maximized_horizontally || metaWindow.maximized_vertically;
+            if (wasMaximized) {
+                metaWindow.unmaximize(Meta.MaximizeFlags.BOTH);
+            }
+
             // Save old scroll position for viewport animation
             const oldScrollX = this._world.viewport.scrollX;
 
             // Update domain
-            const update = addWindow(this._world, windowId);
+            let update = addWindow(this._world, windowId, wasMaximized ? 2 : 1);
             this._world = update.world;
+
+            // If the window is already fullscreen at creation time, enter fullscreen
+            if (metaWindow.fullscreen) {
+                update = enterFullscreen(this._world, windowId);
+                this._world = update.world;
+                this._cloneAdapter?.setWindowFullscreen(windowId, true);
+                this._windowAdapter?.setWindowFullscreen(windowId, true);
+            }
 
             // Sync workspace containers (ensureTrailingEmpty may have added one)
             this._cloneAdapter?.syncWorkspaces(update.world.workspaces);
 
             // Apply layout — snap all positions immediately
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, false);
+            this._applyLayout(update.layout, false);
 
             // Animate viewport from old scroll position to new
             if (update.layout.scrollX !== oldScrollX) {
                 this._cloneAdapter?.setScroll(oldScrollX);
                 this._cloneAdapter?.animateViewport(update.layout.scrollX);
+
+                // Hide real windows during scroll animation
+                this._windowAdapter?.hideActors();
+                if (this._animationTimerId !== null) {
+                    GLib.source_remove(this._animationTimerId);
+                }
+                this._animationTimerId = GLib.timeout_add(
+                    GLib.PRIORITY_DEFAULT,
+                    PaperFlowController.ANIMATION_DURATION,
+                    () => {
+                        this._animationTimerId = null;
+                        this._windowAdapter?.showActors();
+                        return GLib.SOURCE_REMOVE;
+                    },
+                );
             }
 
             this._focusWindow(this._world.focusedWindow);
@@ -318,6 +482,7 @@ export class PaperFlowController {
     private _handleWindowDestroyed(windowId: WindowId): void {
         try {
             if (!this._world) return;
+            if (!this._guard?.check('windowDestroyed')) return;
 
             console.log(`[PaperFlow] window removed: ${windowId}`);
 
@@ -340,8 +505,7 @@ export class PaperFlowController {
                 this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
 
             this._focusWindow(this._world.focusedWindow);
 
@@ -350,15 +514,63 @@ export class PaperFlowController {
         }
     }
 
+    private _handleFullscreenChanged(windowId: WindowId, isFullscreen: boolean): void {
+        try {
+            if (!this._world) return;
+            if (!this._guard?.check('fullscreenChanged')) return;
+
+            console.log(`[PaperFlow] fullscreen changed: ${windowId} → ${isFullscreen}`);
+
+            const update = isFullscreen
+                ? enterFullscreen(this._world, windowId)
+                : exitFullscreen(this._world, windowId);
+            this._world = update.world;
+
+            // Update clone and window adapters
+            this._cloneAdapter?.setWindowFullscreen(windowId, isFullscreen);
+            this._windowAdapter?.setWindowFullscreen(windowId, isFullscreen);
+
+            this._applyLayout(update.layout, true);
+            this._focusWindow(this._world.focusedWindow);
+        } catch (e) {
+            console.error('[PaperFlow] Error handling fullscreen change:', e);
+        }
+    }
+
+    private _handleWindowMaximized(windowId: WindowId): void {
+        try {
+            if (!this._world) return;
+            if (!this._guard?.check('windowMaximized')) return;
+
+            console.log(`[PaperFlow] window maximized: ${windowId} → widening to 2-slot`);
+
+            // Find the Meta.Window to unmaximize it
+            const metaWindow = this._focusAdapter?.getMetaWindow(windowId);
+            if (metaWindow) {
+                metaWindow.unmaximize(Meta.MaximizeFlags.BOTH);
+            }
+
+            // Widen to 2-slot in domain
+            const update = widenWindow(this._world, windowId);
+            this._world = update.world;
+
+            this._applyLayout(update.layout, true);
+            this._focusWindow(this._world.focusedWindow);
+            this._startSettlementRetry();
+        } catch (e) {
+            console.error('[PaperFlow] Error handling window maximized:', e);
+        }
+    }
+
     private _handleFocusRight(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('focusRight')) return;
 
             const update = focusRight(this._world);
             this._world = update.world;
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
 
         } catch (e) {
@@ -369,12 +581,12 @@ export class PaperFlowController {
     private _handleFocusLeft(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('focusLeft')) return;
 
             const update = focusLeft(this._world);
             this._world = update.world;
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
 
         } catch (e) {
@@ -385,6 +597,7 @@ export class PaperFlowController {
     private _handleFocusDown(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('focusDown')) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
@@ -398,8 +611,7 @@ export class PaperFlowController {
                 this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
 
         } catch (e) {
@@ -410,6 +622,7 @@ export class PaperFlowController {
     private _handleFocusUp(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('focusUp')) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
@@ -423,8 +636,7 @@ export class PaperFlowController {
                 this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
 
         } catch (e) {
@@ -435,12 +647,12 @@ export class PaperFlowController {
     private _handleMoveRight(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('moveRight')) return;
 
             const update = moveRight(this._world);
             this._world = update.world;
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
 
         } catch (e) {
@@ -451,12 +663,12 @@ export class PaperFlowController {
     private _handleMoveLeft(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('moveLeft')) return;
 
             const update = moveLeft(this._world);
             this._world = update.world;
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
 
         } catch (e) {
@@ -467,6 +679,7 @@ export class PaperFlowController {
     private _handleMoveDown(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('moveDown')) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const windowId = this._world.focusedWindow;
@@ -491,8 +704,7 @@ export class PaperFlowController {
                 this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
 
             // Reposition remaining windows on source workspace so they close the gap.
             // Override workspaceIndex so applyLayout doesn't re-animate the workspace
@@ -518,6 +730,7 @@ export class PaperFlowController {
     private _handleMoveUp(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('moveUp')) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const windowId = this._world.focusedWindow;
@@ -542,8 +755,7 @@ export class PaperFlowController {
                 this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
 
             // Reposition remaining windows on source workspace so they close the gap.
             // Override workspaceIndex so applyLayout doesn't re-animate the workspace
@@ -569,12 +781,12 @@ export class PaperFlowController {
     private _handleToggleSize(): void {
         try {
             if (!this._world || this._world.overviewActive) return;
+            if (!this._guard?.check('toggleSize')) return;
 
             const update = toggleSize(this._world);
             this._world = update.world;
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
 
         } catch (e) {
@@ -680,8 +892,22 @@ export class PaperFlowController {
             // Visual: restore normal view
             this._cloneAdapter?.exitOverview(update.layout);
 
-            // Apply layout for real window positioning
+            // Hide real window actors during exit animation, show after
+            this._windowAdapter?.hideActors();
             this._windowAdapter?.applyLayout(update.layout);
+            if (this._animationTimerId !== null) {
+                GLib.source_remove(this._animationTimerId);
+            }
+            this._animationTimerId = GLib.timeout_add(
+                GLib.PRIORITY_DEFAULT,
+                PaperFlowController.ANIMATION_DURATION,
+                () => {
+                    this._animationTimerId = null;
+                    this._windowAdapter?.showActors();
+                    this._windowAdapter?.refreshClips();
+                    return GLib.SOURCE_REMOVE;
+                },
+            );
 
             // Activate the focused window
             this._focusWindow(this._world.focusedWindow);
@@ -715,8 +941,22 @@ export class PaperFlowController {
             // Visual: restore normal view
             this._cloneAdapter?.exitOverview(update.layout);
 
-            // Apply layout for real window positioning
+            // Hide real window actors during exit animation, show after
+            this._windowAdapter?.hideActors();
             this._windowAdapter?.applyLayout(update.layout);
+            if (this._animationTimerId !== null) {
+                GLib.source_remove(this._animationTimerId);
+            }
+            this._animationTimerId = GLib.timeout_add(
+                GLib.PRIORITY_DEFAULT,
+                PaperFlowController.ANIMATION_DURATION,
+                () => {
+                    this._animationTimerId = null;
+                    this._windowAdapter?.showActors();
+                    this._windowAdapter?.refreshClips();
+                    return GLib.SOURCE_REMOVE;
+                },
+            );
 
             // Activate the restored focused window
             this._focusWindow(this._world.focusedWindow);
@@ -834,6 +1074,7 @@ export class PaperFlowController {
             this._settlementTimerId = null;
             try {
                 if (!this._world) return GLib.SOURCE_REMOVE;
+                if (!this._guard?.check('settlement')) return GLib.SOURCE_REMOVE;
 
                 // Re-activate the focused window — some apps (e.g. Chromium)
                 // don't process the Wayland configure until re-activated.
@@ -843,11 +1084,12 @@ export class PaperFlowController {
                 // Nudge unsettled windows by sending a 1px-different size
                 // first to force Mutter to emit a fresh Wayland configure.
                 const layout = computeLayout(this._world);
-                this._windowAdapter?.applyLayout(layout, true);
-                this._cloneAdapter?.applyLayout(layout, false);
+                this._applyLayout(layout, false, true);
 
                 // If all windows now match their targets, we're done.
+                // Refresh clips now that buffer rects have settled.
                 if (!this._windowAdapter?.hasUnsettledWindows()) {
+                    this._windowAdapter?.refreshClips();
                     return GLib.SOURCE_REMOVE;
                 }
 
@@ -861,6 +1103,39 @@ export class PaperFlowController {
         });
     }
 
+    private static readonly ANIMATION_DURATION = 250;
+
+    /**
+     * Apply layout to both window and clone adapters.
+     * When animating, hides real window actors so they don't peek through
+     * gaps in the clone layer, then shows them after animation completes.
+     */
+    private _applyLayout(layout: import('../domain/types.js').LayoutState, animate: boolean, nudgeUnsettled: boolean = false): void {
+        if (animate) {
+            this._windowAdapter?.hideActors();
+
+            // Cancel any pending show timer (new animation supersedes previous)
+            if (this._animationTimerId !== null) {
+                GLib.source_remove(this._animationTimerId);
+            }
+
+            this._animationTimerId = GLib.timeout_add(
+                GLib.PRIORITY_DEFAULT,
+                PaperFlowController.ANIMATION_DURATION,
+                () => {
+                    this._animationTimerId = null;
+                    this._windowAdapter?.showActors();
+                    // Refresh clips — buffer rects should have settled by now
+                    this._windowAdapter?.refreshClips();
+                    return GLib.SOURCE_REMOVE;
+                },
+            );
+        }
+
+        this._windowAdapter?.applyLayout(layout, nudgeUnsettled);
+        this._cloneAdapter?.applyLayout(layout, animate);
+    }
+
     private _focusWindow(windowId: WindowId | null): void {
         if (!windowId) return;
         this._internalFocusChange = true;
@@ -872,6 +1147,7 @@ export class PaperFlowController {
         try {
             if (this._internalFocusChange) return;
             if (!this._world) return;
+            if (!this._guard?.check('externalFocus')) return;
             if (this._world.focusedWindow === windowId) return;
 
             const oldScrollX = this._world.viewport.scrollX;
@@ -886,8 +1162,7 @@ export class PaperFlowController {
                 this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, true);
+            this._applyLayout(update.layout, true);
         } catch (e) {
             console.error('[PaperFlow] Error handling external focus:', e);
         }
@@ -896,6 +1171,7 @@ export class PaperFlowController {
     private _handleMonitorChange(monitor: MonitorInfo): void {
         try {
             if (!this._world) return;
+            if (!this._guard?.check('monitorChange')) return;
 
             console.log('[PaperFlow] monitors changed');
 
@@ -904,9 +1180,9 @@ export class PaperFlowController {
 
             this._cloneAdapter?.updateWorkArea(monitor.workAreaY, monitor.totalHeight);
             this._windowAdapter?.setWorkAreaY(monitor.workAreaY);
+            this._windowAdapter?.setMonitorWidth(monitor.totalWidth);
 
-            this._windowAdapter?.applyLayout(update.layout);
-            this._cloneAdapter?.applyLayout(update.layout, false);
+            this._applyLayout(update.layout, false);
         } catch (e) {
             console.error('[PaperFlow] Error handling monitor change:', e);
         }

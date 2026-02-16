@@ -321,6 +321,18 @@ export class CloneAdapter {
      * Must be called before syncWorkspaces to prevent the source container
      * from being wrongly pruned.
      */
+    /**
+     * Hide or show a clone wrapper when its window enters/exits fullscreen.
+     * When fullscreen, the real window covers the screen — the clone is not needed.
+     * When exiting fullscreen, the clone becomes visible again and will be
+     * repositioned by the next applyLayout call.
+     */
+    setWindowFullscreen(windowId: WindowId, isFullscreen: boolean): void {
+        const entry = this._clones.get(windowId);
+        if (!entry) return;
+        entry.wrapper.visible = !isFullscreen;
+    }
+
     moveCloneToWorkspace(windowId: WindowId, targetWsId: WorkspaceId): void {
         const entry = this._clones.get(windowId);
         if (!entry) return;

@@ -10,7 +10,11 @@ import { windowAfter, windowBefore, slotIndexOf, windowAtSlot } from './workspac
 export function focusRight(world: World): WorldUpdate {
     if (!world.focusedWindow) return buildUpdate(world);
 
+    // If focused window is fullscreen, left/right navigation is a no-op
     const ws = currentWorkspace(world);
+    const focused = ws.windows.find(w => w.id === world.focusedWindow);
+    if (focused?.fullscreen) return buildUpdate(world);
+
     const next = windowAfter(ws, world.focusedWindow);
     if (!next) return buildUpdate(world);
 
@@ -25,7 +29,11 @@ export function focusRight(world: World): WorldUpdate {
 export function focusLeft(world: World): WorldUpdate {
     if (!world.focusedWindow) return buildUpdate(world);
 
+    // If focused window is fullscreen, left/right navigation is a no-op
     const ws = currentWorkspace(world);
+    const focused = ws.windows.find(w => w.id === world.focusedWindow);
+    if (focused?.fullscreen) return buildUpdate(world);
+
     const prev = windowBefore(ws, world.focusedWindow);
     if (!prev) return buildUpdate(world);
 
