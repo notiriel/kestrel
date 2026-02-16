@@ -26,6 +26,7 @@ export interface World {
     readonly focusedWindow: WindowId | null;
     readonly config: PaperFlowConfig;
     readonly monitor: MonitorInfo;
+    readonly overviewActive: boolean;
 }
 
 let workspaceCounter = 0;
@@ -41,6 +42,7 @@ export function createWorld(config: PaperFlowConfig, monitor: MonitorInfo): Worl
         focusedWindow: null,
         config,
         monitor,
+        overviewActive: false,
     };
 }
 

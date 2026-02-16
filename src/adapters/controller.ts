@@ -3,6 +3,7 @@ import type { World } from '../domain/world.js';
 import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate } from '../domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from '../domain/window-operations.js';
+import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
 import { computeLayout, computeLayoutForWorkspace } from '../domain/layout.js';
 import { MonitorAdapter } from './monitor-adapter.js';
 import { WindowEventAdapter } from './window-event-adapter.js';
@@ -10,6 +11,8 @@ import { CloneAdapter } from './clone-adapter.js';
 import { WindowAdapter } from './window-adapter.js';
 import { FocusAdapter } from './focus-adapter.js';
 import { KeybindingAdapter } from './keybinding-adapter.js';
+import { OverviewInputAdapter } from './overview-input-adapter.js';
+import type { OverviewTransform } from './clone-adapter.js';
 import { ConflictDetector } from './conflict-detector.js';
 import { safeWindow } from './safe-window.js';
 import type Gio from 'gi://Gio';
@@ -25,7 +28,11 @@ export class PaperFlowController {
     private _windowAdapter: WindowAdapter | null = null;
     private _focusAdapter: FocusAdapter | null = null;
     private _keybindingAdapter: KeybindingAdapter | null = null;
+    private _overviewInputAdapter: OverviewInputAdapter | null = null;
     private _conflictDetector: ConflictDetector | null = null;
+    /** State saved when entering overview, for Escape restore. */
+    private _preOverviewState: { focusedWindow: WindowId | null; viewport: { workspaceIndex: number; scrollX: number } } | null = null;
+    private _overviewTransform: OverviewTransform | null = null;
     private _internalFocusChange: boolean = false;
     private _wmDestroyId: number | null = null;
     private _wmMinimizeId: number | null = null;
@@ -82,6 +89,7 @@ export class PaperFlowController {
                 onMoveDown: () => this._handleMoveDown(),
                 onMoveUp: () => this._handleMoveUp(),
                 onToggleSize: () => this._handleToggleSize(),
+                onToggleOverview: () => this._handleToggleOverview(),
             });
 
             // 6. Connect external focus changes (click-to-focus)
@@ -180,6 +188,9 @@ export class PaperFlowController {
             this._windowEventAdapter?.destroy();
             this._windowEventAdapter = null;
 
+            this._overviewInputAdapter?.destroy();
+            this._overviewInputAdapter = null;
+
             this._keybindingAdapter?.destroy();
             this._keybindingAdapter = null;
 
@@ -217,6 +228,7 @@ export class PaperFlowController {
                 config: this._world.config,
                 monitor: this._world.monitor,
                 focusedWindow: this._world.focusedWindow,
+                overviewActive: this._world.overviewActive,
                 workspaces: this._world.workspaces.map(ws => ({
                     id: ws.id,
                     windows: ws.windows.map(w => ({ id: w.id, slotSpan: w.slotSpan })),
@@ -340,7 +352,7 @@ export class PaperFlowController {
 
     private _handleFocusRight(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const update = focusRight(this._world);
             this._world = update.world;
@@ -356,7 +368,7 @@ export class PaperFlowController {
 
     private _handleFocusLeft(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const update = focusLeft(this._world);
             this._world = update.world;
@@ -372,7 +384,7 @@ export class PaperFlowController {
 
     private _handleFocusDown(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
@@ -397,7 +409,7 @@ export class PaperFlowController {
 
     private _handleFocusUp(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const oldWsId = this._wsIdAt(this._world, this._world.viewport.workspaceIndex);
@@ -422,7 +434,7 @@ export class PaperFlowController {
 
     private _handleMoveRight(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const update = moveRight(this._world);
             this._world = update.world;
@@ -438,7 +450,7 @@ export class PaperFlowController {
 
     private _handleMoveLeft(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const update = moveLeft(this._world);
             this._world = update.world;
@@ -454,7 +466,7 @@ export class PaperFlowController {
 
     private _handleMoveDown(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const windowId = this._world.focusedWindow;
@@ -505,7 +517,7 @@ export class PaperFlowController {
 
     private _handleMoveUp(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const oldScrollX = this._world.viewport.scrollX;
             const windowId = this._world.focusedWindow;
@@ -556,7 +568,7 @@ export class PaperFlowController {
 
     private _handleToggleSize(): void {
         try {
-            if (!this._world) return;
+            if (!this._world || this._world.overviewActive) return;
 
             const update = toggleSize(this._world);
             this._world = update.world;
@@ -568,6 +580,188 @@ export class PaperFlowController {
         } catch (e) {
             console.error('[PaperFlow] Error handling toggle size:', e);
         }
+    }
+
+    private _handleToggleOverview(): void {
+        try {
+            if (!this._world) return;
+
+            if (this._world.overviewActive) {
+                // Super+M while in overview = confirm (same as Enter)
+                this._handleOverviewConfirm();
+            } else {
+                this._enterOverview();
+            }
+        } catch (e) {
+            console.error('[PaperFlow] Error handling toggle overview:', e);
+        }
+    }
+
+    private _enterOverview(): void {
+        if (!this._world) return;
+
+        // Save pre-overview state for Escape restore
+        this._preOverviewState = {
+            focusedWindow: this._world.focusedWindow,
+            viewport: {
+                workspaceIndex: this._world.viewport.workspaceIndex,
+                scrollX: this._world.viewport.scrollX,
+            },
+        };
+
+        // Domain update
+        const update = enterOverview(this._world);
+        this._world = update.world;
+
+        // Compute overview transform
+        const numWorkspaces = this._world.workspaces.filter(ws => ws.windows.length > 0).length || 1;
+        this._overviewTransform = this._computeOverviewTransform(numWorkspaces);
+
+        // Visual: enter overview
+        this._cloneAdapter?.enterOverview(this._overviewTransform, update.layout, numWorkspaces);
+
+        // Activate modal input
+        this._overviewInputAdapter = new OverviewInputAdapter();
+        this._overviewInputAdapter.activate({
+            onNavigate: (dir) => this._handleOverviewNavigate(dir),
+            onConfirm: () => this._handleOverviewConfirm(),
+            onCancel: () => this._handleOverviewCancel(),
+        });
+
+        console.log('[PaperFlow] Entered overview');
+    }
+
+    private _handleOverviewNavigate(direction: 'left' | 'right' | 'up' | 'down'): void {
+        try {
+            if (!this._world || !this._overviewTransform) return;
+
+            let update;
+            switch (direction) {
+                case 'left':
+                    update = focusLeft(this._world);
+                    break;
+                case 'right':
+                    update = focusRight(this._world);
+                    break;
+                case 'up':
+                    update = focusUp(this._world);
+                    break;
+                case 'down':
+                    update = focusDown(this._world);
+                    break;
+            }
+
+            this._world = update.world;
+
+            // Update focus indicator only — don't scroll or reposition
+            this._cloneAdapter?.updateOverviewFocus(
+                update.layout,
+                update.world.viewport.workspaceIndex,
+                this._overviewTransform,
+            );
+        } catch (e) {
+            console.error('[PaperFlow] Error handling overview navigate:', e);
+        }
+    }
+
+    private _handleOverviewConfirm(): void {
+        try {
+            if (!this._world) return;
+
+            // Deactivate modal input first
+            this._overviewInputAdapter?.deactivate();
+            this._overviewInputAdapter = null;
+
+            // Domain: exit overview (adjusts viewport to focused window)
+            const update = exitOverview(this._world);
+            this._world = update.world;
+
+            // Visual: restore normal view
+            this._cloneAdapter?.exitOverview(update.layout);
+
+            // Apply layout for real window positioning
+            this._windowAdapter?.applyLayout(update.layout);
+
+            // Activate the focused window
+            this._focusWindow(this._world.focusedWindow);
+
+            this._preOverviewState = null;
+            this._overviewTransform = null;
+
+            console.log('[PaperFlow] Exited overview (confirm)');
+        } catch (e) {
+            console.error('[PaperFlow] Error handling overview confirm:', e);
+        }
+    }
+
+    private _handleOverviewCancel(): void {
+        try {
+            if (!this._world || !this._preOverviewState) return;
+
+            // Deactivate modal input first
+            this._overviewInputAdapter?.deactivate();
+            this._overviewInputAdapter = null;
+
+            // Domain: cancel overview (restores saved state)
+            const update = cancelOverview(
+                this._world,
+                this._preOverviewState.focusedWindow,
+                this._preOverviewState.viewport.workspaceIndex,
+                this._preOverviewState.viewport.scrollX,
+            );
+            this._world = update.world;
+
+            // Visual: restore normal view
+            this._cloneAdapter?.exitOverview(update.layout);
+
+            // Apply layout for real window positioning
+            this._windowAdapter?.applyLayout(update.layout);
+
+            // Activate the restored focused window
+            this._focusWindow(this._world.focusedWindow);
+
+            this._preOverviewState = null;
+            this._overviewTransform = null;
+
+            console.log('[PaperFlow] Exited overview (cancel)');
+        } catch (e) {
+            console.error('[PaperFlow] Error handling overview cancel:', e);
+        }
+    }
+
+    /**
+     * Compute the scale and offsets to fit all workspaces on screen.
+     * The strip is numWorkspaces * monitorHeight tall, and we need it
+     * to fit within the actual monitor height.
+     */
+    private _computeOverviewTransform(numWorkspaces: number): OverviewTransform {
+        const monitor = this._world!.monitor;
+        const stripHeight = numWorkspaces * monitor.totalHeight;
+
+        // Find the widest workspace to determine horizontal scale
+        let maxWsWidth = monitor.totalWidth;
+        for (const ws of this._world!.workspaces) {
+            if (ws.windows.length === 0) continue;
+            const { gapSize, edgeGap } = this._world!.config;
+            let width = edgeGap;
+            for (const win of ws.windows) {
+                width += win.slotSpan * monitor.slotWidth - gapSize + gapSize;
+            }
+            width += edgeGap - gapSize; // trailing edge gap minus extra gap
+            if (width > maxWsWidth) maxWsWidth = width;
+        }
+
+        const scaleX = monitor.totalWidth / maxWsWidth;
+        const scaleY = monitor.totalHeight / stripHeight;
+        const scale = Math.min(scaleX, scaleY, 1); // never zoom in
+
+        // Center the scaled strip
+        const scaledWidth = maxWsWidth * scale;
+        const scaledHeight = stripHeight * scale;
+        const offsetX = Math.round((monitor.totalWidth - scaledWidth) / 2);
+        const offsetY = Math.round((monitor.totalHeight - scaledHeight) / 2);
+
+        return { scale, offsetX, offsetY };
     }
 
     private static readonly SETTLEMENT_DELAYS = [100, 150, 200, 300, 400, 500, 750, 1000];

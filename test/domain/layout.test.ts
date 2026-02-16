@@ -31,6 +31,7 @@ function makeWorld(wsFactory: () => ReturnType<typeof createWorkspace>, override
         focusedWindow: null,
         config,
         monitor,
+        overviewActive: false,
         ...overrides,
     };
 }

@@ -13,6 +13,7 @@ export interface KeybindingCallbacks {
     onMoveDown: () => void;
     onMoveUp: () => void;
     onToggleSize: () => void;
+    onToggleOverview: () => void;
 }
 
 /** Mutter setting whose default ('Super_L') opens the Activities Overview. */
@@ -24,6 +25,12 @@ const MUTTER_KB_SCHEMA = 'org.gnome.mutter.keybindings';
 const CONFLICTING_MUTTER_KEYS = [
     'toggle-tiled-left',            // <Super>Left
     'toggle-tiled-right',           // <Super>Right
+] as const;
+
+/** Shell keybindings that conflict with PaperFlow's Super+key combos. */
+const SHELL_KB_SCHEMA = 'org.gnome.shell.keybindings';
+const CONFLICTING_SHELL_KEYS = [
+    'toggle-message-tray',          // <Super>m — conflicts with overview toggle
 ] as const;
 
 /** WM keybindings that conflict with PaperFlow's Super+key combos. */
@@ -43,6 +50,7 @@ export class KeybindingAdapter {
     private _bound: string[] = [];
     private _savedOverlayKey: string | null = null;
     private _savedMutterBindings: Map<string, string[]> = new Map();
+    private _savedShellBindings: Map<string, string[]> = new Map();
     private _savedWmBindings: Map<string, string[]> = new Map();
 
     connect(settings: Gio.Settings, callbacks: KeybindingCallbacks): void {
@@ -70,6 +78,19 @@ export class KeybindingAdapter {
             console.error('[PaperFlow] Failed to disable Mutter keybindings:', e);
         }
 
+        // Disable conflicting Shell keybindings (e.g. Super+M message tray)
+        try {
+            const shellKbSettings = new Gio.Settings({ schema_id: SHELL_KB_SCHEMA });
+            for (const key of CONFLICTING_SHELL_KEYS) {
+                const saved = shellKbSettings.get_strv(key);
+                this._savedShellBindings.set(key, saved);
+                shellKbSettings.set_strv(key, []);
+                console.log(`[PaperFlow] Disabled ${key} (was ${JSON.stringify(saved)})`);
+            }
+        } catch (e) {
+            console.error('[PaperFlow] Failed to disable Shell keybindings:', e);
+        }
+
         // Disable conflicting WM keybindings (e.g. Super+Tab app switcher)
         try {
             const wmSettings = new Gio.Settings({ schema_id: WM_SCHEMA });
@@ -93,17 +114,19 @@ export class KeybindingAdapter {
             ['move-down', callbacks.onMoveDown],
             ['move-up', callbacks.onMoveUp],
             ['toggle-size', callbacks.onToggleSize],
+            ['paperflow-toggle-overview', callbacks.onToggleOverview],
         ];
 
         for (const [name, handler] of bindings) {
             try {
-                Main.wm.addKeybinding(
+                const result = Main.wm.addKeybinding(
                     name,
                     settings,
                     Meta.KeyBindingFlags.NONE,
                     Shell.ActionMode.NORMAL,
                     handler,
                 );
+                console.log(`[PaperFlow] addKeybinding("${name}") → ${result}`);
                 this._bound.push(name);
             } catch (e) {
                 console.error(`[PaperFlow] Failed to add keybinding ${name}:`, e);
@@ -145,6 +168,20 @@ export class KeybindingAdapter {
                 console.error('[PaperFlow] Failed to restore Mutter keybindings:', e);
             }
             this._savedMutterBindings.clear();
+        }
+
+        // Restore conflicting Shell keybindings
+        if (this._savedShellBindings.size > 0) {
+            try {
+                const shellKbSettings = new Gio.Settings({ schema_id: SHELL_KB_SCHEMA });
+                for (const [key, saved] of this._savedShellBindings) {
+                    shellKbSettings.set_strv(key, saved);
+                    console.log(`[PaperFlow] Restored ${key} to ${JSON.stringify(saved)}`);
+                }
+            } catch (e) {
+                console.error('[PaperFlow] Failed to restore Shell keybindings:', e);
+            }
+            this._savedShellBindings.clear();
         }
 
         // Restore conflicting WM keybindings

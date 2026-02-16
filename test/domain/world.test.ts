@@ -229,6 +229,7 @@ describe('World', () => {
                 focusedWindow: wid(focusedWindowId),
                 config,
                 monitor,
+                overviewActive: false,
             };
         }
 
@@ -283,6 +284,7 @@ describe('World', () => {
                 focusedWindow: wid(2),
                 config,
                 monitor,
+                overviewActive: false,
             };
             const { world: result } = removeWindow(w, wid(2));
             // Slot 1 on WS2 → D (full-width, spans 1-2)

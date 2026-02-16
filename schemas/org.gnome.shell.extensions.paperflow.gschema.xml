@@ -57,5 +57,10 @@
       <summary>Toggle window size</summary>
       <description>Toggle the focused window between half and full width</description>
     </key>
+    <key name="paperflow-toggle-overview" type="as">
+      <default>['&lt;Super&gt;minus']</default>
+      <summary>Toggle overview</summary>
+      <description>Toggle the bird's-eye overview of all workspaces</description>
+    </key>
   </schema>
 </schemalist>

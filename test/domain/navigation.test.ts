@@ -34,6 +34,7 @@ function makeWorld(windowIds: number[], focusedIdx: number, scrollX = 0): World 
         focusedWindow: windowIds.length > 0 ? wid(windowIds[focusedIdx]!) : null,
         config,
         monitor,
+        overviewActive: false,
     };
 }
 
@@ -128,6 +129,7 @@ function makeMultiWorld(
         focusedWindow: focusedWindowId !== null ? wid(focusedWindowId) : null,
         config,
         monitor,
+        overviewActive: false,
     };
 }
 
@@ -161,6 +163,7 @@ describe('focusDown', () => {
             focusedWindow: wid(2),
             config,
             monitor,
+            overviewActive: false,
         };
         const update = focusDown(world);
         expect(update.world.focusedWindow).toBe(wid(3)); // slot 2 hits double-width win-3

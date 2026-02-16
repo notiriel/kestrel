@@ -33,6 +33,7 @@ function makeWorld(windowIds: number[], focusedIdx: number, scrollX = 0): World 
         focusedWindow: windowIds.length > 0 ? wid(windowIds[focusedIdx]!) : null,
         config,
         monitor,
+        overviewActive: false,
     };
 }
 
@@ -54,6 +55,7 @@ function makeMultiWorld(
         focusedWindow: focusedWindowId !== null ? wid(focusedWindowId) : null,
         config,
         monitor,
+        overviewActive: false,
     };
 }
 
@@ -227,6 +229,7 @@ describe('toggleSize', () => {
             focusedWindow: wid(1),
             config,
             monitor,
+            overviewActive: false,
         };
         const update = toggleSize(world);
         const win = update.world.workspaces[0]!.windows.find(w => w.id === wid(1));

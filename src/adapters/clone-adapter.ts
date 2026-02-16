@@ -41,6 +41,13 @@ interface WorkspaceContainer {
 const ANIMATION_DURATION = 250;
 const FOCUS_BORDER_WIDTH = 3;
 const FOCUS_BORDER_COLOR = '#4caf50';
+const OVERVIEW_BG_COLOR = 'rgba(0,0,0,0.7)';
+
+export interface OverviewTransform {
+    readonly scale: number;
+    readonly offsetX: number;
+    readonly offsetY: number;
+}
 
 export class CloneAdapter {
     private _layer: Clutter.Actor | null = null;
@@ -56,6 +63,8 @@ export class CloneAdapter {
     private _monitorHeight: number = 0;
     private _currentWorkspaceId: WorkspaceId | null = null;
     private _lastLayout: LayoutState | null = null;
+    private _overviewActive: boolean = false;
+    private _overviewBg: St.Widget | null = null;
 
     init(workAreaY: number, monitorHeight: number): void {
         this._workAreaY = workAreaY;
@@ -516,6 +525,135 @@ export class CloneAdapter {
         });
     }
 
+    /**
+     * Enter overview: scale workspace strip to show all workspaces,
+     * add dark background, reposition focus indicator.
+     */
+    enterOverview(transform: OverviewTransform, layout: LayoutState, numWorkspaces: number): void {
+        if (!this._layer || !this._workspaceStrip) return;
+        this._overviewActive = true;
+
+        // Dark background behind the strip
+        if (!this._overviewBg) {
+            this._overviewBg = new St.Widget({
+                name: 'paperflow-overview-bg',
+                style: `background-color: ${OVERVIEW_BG_COLOR};`,
+                reactive: false,
+                x: 0,
+                y: 0,
+                width: this._layer.width,
+                height: this._layer.height,
+            });
+            this._layer.insert_child_below(this._overviewBg, this._workspaceStrip);
+        }
+        this._overviewBg.visible = true;
+
+        // Temporarily remove clip so scaled-down strip is visible
+        this._layer.set_clip(-1, -1, global.stage.width + 2, this._monitorHeight + 2);
+
+        // Animate strip to overview position
+        const stripY = transform.offsetY;
+        (this._workspaceStrip as unknown as Easeable).ease({
+            scale_x: transform.scale,
+            scale_y: transform.scale,
+            x: transform.offsetX,
+            y: stripY,
+            duration: ANIMATION_DURATION,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+
+        // Reset all scroll containers to x=0 (show all windows from left edge)
+        for (const wc of this._workspaceContainers.values()) {
+            (wc.scrollContainer as unknown as Easeable).ease({
+                x: 0,
+                duration: ANIMATION_DURATION,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
+
+        // Update focus indicator for overview coordinates
+        this._updateOverviewFocus(layout, layout.workspaceIndex, transform);
+    }
+
+    /**
+     * Exit overview: restore strip to normal scale and positioning.
+     */
+    exitOverview(layout: LayoutState): void {
+        if (!this._layer || !this._workspaceStrip) return;
+        this._overviewActive = false;
+
+        // Hide background
+        if (this._overviewBg) {
+            this._overviewBg.visible = false;
+        }
+
+        // Restore strip to normal
+        const targetY = -layout.workspaceIndex * this._monitorHeight;
+        (this._workspaceStrip as unknown as Easeable).ease({
+            scale_x: 1,
+            scale_y: 1,
+            x: 0,
+            y: targetY,
+            duration: ANIMATION_DURATION,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+
+        // Restore clip
+        this._layer.remove_clip();
+
+        // Restore scroll positions
+        for (const wc of this._workspaceContainers.values()) {
+            (wc.scrollContainer as unknown as Easeable).ease({
+                x: -layout.scrollX,
+                duration: ANIMATION_DURATION,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
+
+        // Restore normal focus indicator
+        this._updateFocusIndicator(layout, ANIMATION_DURATION, Clutter.AnimationMode.EASE_OUT_QUAD);
+    }
+
+    /**
+     * Update focus indicator position during overview navigation.
+     * The focus indicator is a layer child (not inside the scaled strip),
+     * so we compute its position in layer-local coordinates.
+     */
+    updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void {
+        if (!this._overviewActive) return;
+        this._updateOverviewFocus(layout, wsIndex, transform);
+    }
+
+    private _updateOverviewFocus(
+        layout: LayoutState,
+        wsIndex: number,
+        transform: OverviewTransform,
+    ): void {
+        if (!this._focusIndicator) return;
+
+        const focusedLayout = layout.windows.find(
+            w => w.windowId === layout.focusedWindowId,
+        );
+        if (!focusedLayout) {
+            this._focusIndicator.visible = false;
+            return;
+        }
+
+        this._focusIndicator.visible = true;
+
+        const { scale, offsetX, offsetY } = transform;
+        const x = focusedLayout.x * scale + offsetX - FOCUS_BORDER_WIDTH;
+        const y = (wsIndex * this._monitorHeight + focusedLayout.y) * scale + offsetY - FOCUS_BORDER_WIDTH;
+        const width = focusedLayout.width * scale + FOCUS_BORDER_WIDTH * 2;
+        const height = focusedLayout.height * scale + FOCUS_BORDER_WIDTH * 2;
+
+        (this._focusIndicator as unknown as Easeable).ease({
+            x, y, width, height,
+            duration: ANIMATION_DURATION,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+    }
+
     destroy(): void {
         // Stop all running animations and clean up workspace containers
         for (const wc of this._workspaceContainers.values()) {
@@ -543,6 +681,11 @@ export class CloneAdapter {
             }
         }
         this._floatClones.clear();
+
+        if (this._overviewBg) {
+            this._overviewBg.destroy();
+            this._overviewBg = null;
+        }
 
         if (this._floatLayer) {
             this._floatLayer.destroy();
