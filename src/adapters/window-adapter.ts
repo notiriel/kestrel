@@ -119,7 +119,12 @@ export class WindowAdapter {
                     this._adjusting = false;
                 }
 
-                this._applyClip(tracked);
+                // Don't apply clip here — on Wayland, move_resize_frame() is
+                // async so the buffer rect is still at the OLD position.
+                // _applyClip reads the buffer rect, so calling it now would
+                // produce a stale clip that makes the clone render nothing.
+                // The position-changed / size-changed signal handlers already
+                // call _applyClip() once the buffer settles.
             } catch (e) {
                 console.debug('[PaperFlow] move_resize_frame skipped (dead window?):', e);
                 this.untrack(wl.windowId);

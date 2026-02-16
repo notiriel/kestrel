@@ -630,9 +630,11 @@ This is a separate component, not part of the core extension. Communication coul
 - Adapters: Workspace strip Y-axis animation, window visibility management
 - Result: Super+Down/Up switches virtual workspaces with 2D animation.
 
-### Phase 4: Window Operations
-- Domain: moveLeft/Right/Down/Up, toggleSize
-- Adapters: Window reorder animation, resize
+### Phase 4: Window Operations ✅
+- ✅ Domain: moveLeft/Right/Down/Up, toggleSize with slot-based insertion
+- ✅ Adapters: Clone reparenting for cross-workspace moves, layout re-apply for source workspace gap closure
+- ✅ Controller handlers for all 5 operations with proper viewport/scroll sync
+- ✅ Keybindings: Super+Shift+Left/Right/Down/Up, Super+F
 - Result: Super+Shift+arrows reorders/moves windows, Super+F toggles size.
 
 ### Phase 5: Overview
