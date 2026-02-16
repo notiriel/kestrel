@@ -643,6 +643,7 @@ This is a separate component, not part of the core extension. Communication coul
 - Result: Super+M shows bird's-eye view, arrow keys navigate, Enter/click jumps.
 
 ### Phase 6: Polish
+- Lock screen resilience: persist window→workspace mappings across disable/enable cycles
 - Fullscreen step-out model
 - Mouse interaction (click focus, Super+drag, Super+scroll)
 - Alt-Tab override scoped to PaperFlow workspace

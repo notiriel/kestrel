@@ -626,6 +626,7 @@ export class PaperFlowController {
             onNavigate: (dir) => this._handleOverviewNavigate(dir),
             onConfirm: () => this._handleOverviewConfirm(),
             onCancel: () => this._handleOverviewCancel(),
+            onClick: (x, y) => this._handleOverviewClick(x, y),
         });
 
         console.log('[PaperFlow] Entered overview');
@@ -726,6 +727,49 @@ export class PaperFlowController {
             console.log('[PaperFlow] Exited overview (cancel)');
         } catch (e) {
             console.error('[PaperFlow] Error handling overview cancel:', e);
+        }
+    }
+
+    private _handleOverviewClick(x: number, y: number): void {
+        try {
+            if (!this._world || !this._overviewTransform) return;
+
+            const { scale, offsetX, offsetY } = this._overviewTransform;
+            const monitor = this._world.monitor;
+
+            // Reverse-transform screen coordinates to layout coordinates
+            const reverseX = (x - offsetX) / scale;
+            const reverseY = (y - offsetY) / scale;
+
+            // Determine which workspace row was clicked
+            const wsIndex = Math.floor(reverseY / monitor.totalHeight);
+            const nonEmptyCount = this._world.workspaces.filter(ws => ws.windows.length > 0).length;
+            if (wsIndex < 0 || wsIndex >= nonEmptyCount) return;
+
+            // Local Y within the workspace
+            const localY = reverseY - wsIndex * monitor.totalHeight;
+
+            // Compute layout for the clicked workspace to get window positions
+            const wsLayout = computeLayoutForWorkspace(this._world, wsIndex);
+
+            // Hit-test: find window containing the click point
+            let hitWindowId: WindowId | null = null;
+            for (const win of wsLayout.windows) {
+                if (reverseX >= win.x && reverseX <= win.x + win.width &&
+                    localY >= win.y && localY <= win.y + win.height) {
+                    hitWindowId = win.windowId;
+                    break;
+                }
+            }
+
+            if (!hitWindowId) return; // Clicked empty space — ignore
+
+            // Focus the clicked window and confirm
+            const update = setFocus(this._world, hitWindowId);
+            this._world = update.world;
+            this._handleOverviewConfirm();
+        } catch (e) {
+            console.error('[PaperFlow] Error handling overview click:', e);
         }
     }
 

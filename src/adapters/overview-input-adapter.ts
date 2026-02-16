@@ -10,6 +10,7 @@ export interface OverviewInputCallbacks {
     onNavigate: (direction: OverviewDirection) => void;
     onConfirm: () => void;
     onCancel: () => void;
+    onClick: (x: number, y: number) => void;
 }
 
 /**
@@ -20,6 +21,7 @@ export interface OverviewInputCallbacks {
 export class OverviewInputAdapter {
     private _grab: { ungrab: () => void } | null = null;
     private _keyPressId: number = 0;
+    private _buttonPressId: number = 0;
 
     activate(callbacks: OverviewInputCallbacks): void {
         if (this._grab) return;
@@ -43,12 +45,32 @@ export class OverviewInputAdapter {
                 }
             },
         );
+
+        // Listen for mouse clicks
+        this._buttonPressId = global.stage.connect('button-press-event',
+            (_actor: Clutter.Actor, event: Clutter.Event) => {
+                try {
+                    const button = event.get_button();
+                    if (button !== 1) return Clutter.EVENT_PROPAGATE;
+                    const [x, y] = event.get_coords();
+                    callbacks.onClick(x, y);
+                    return Clutter.EVENT_STOP;
+                } catch (e) {
+                    console.error('[PaperFlow] Error in overview click handler:', e);
+                    return Clutter.EVENT_PROPAGATE;
+                }
+            },
+        );
     }
 
     deactivate(): void {
         if (this._keyPressId) {
             global.stage.disconnect(this._keyPressId);
             this._keyPressId = 0;
+        }
+        if (this._buttonPressId) {
+            global.stage.disconnect(this._buttonPressId);
+            this._buttonPressId = 0;
         }
 
         if (this._grab) {
@@ -71,6 +93,10 @@ export class OverviewInputAdapter {
         if (this._keyPressId) {
             global.stage.disconnect(this._keyPressId);
             this._keyPressId = 0;
+        }
+        if (this._buttonPressId) {
+            global.stage.disconnect(this._buttonPressId);
+            this._buttonPressId = 0;
         }
         if (this._grab) {
             try {
