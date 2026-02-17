@@ -22,7 +22,7 @@ If GNOME crashes, it sets `disable-user-extensions=true` in dconf — re-enable 
 
 ## Architecture
 
-Hexagonal architecture with a pure domain core and GNOME Shell adapters.
+Hexagonal architecture with a pure domain core and GNOME Shell adapters. This project follows hexagonal/ports-and-adapters architecture. Never import GNOME Shell APIs (Main, Meta, etc.) directly in domain or controller layers. All platform interactions must go through adapter interfaces.
 
 ### Core data flow
 
@@ -105,3 +105,16 @@ B is focused. WS2 has D, E.
 - `docs/design.md` — Product design spec (keybindings, UX, phasing)
 - `docs/solution-design.md` — Technical architecture (data model, adapter contracts, phase breakdown)
 - `docs/debug.md` — Live debugging via DBus Eval (`global._paperflow`), journal logs, crash recovery
+
+## General Principles
+
+- Always read design docs and existing documentation before proposing fixes. Never guess at solutions — check `docs/` folder first for architectural decisions and stated approaches.
+- When asked to write output to a file, write it to the file directly. Do not present it inline first and wait to be asked again.
+
+## Debugging
+
+- When the user reports a bug, first determine whether it reproduces via both keyboard shortcuts AND DBus commands. If only one path is affected, the bug is in that specific handler path, not in shared domain/layout logic.
+
+## GNOME Shell Specifics
+
+- When debugging GNOME Shell/Mutter/Wayland issues: Chromium and CSD windows have async timing behaviors where size-changed signals can undo layout changes. Always check for signal handler interference before assuming layout logic bugs.
