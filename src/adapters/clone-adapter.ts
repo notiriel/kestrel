@@ -524,6 +524,26 @@ export class CloneAdapter implements ClonePort {
         });
     }
 
+    getLayer(): Clutter.Actor | null {
+        return this._layer;
+    }
+
+    getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; wsIndex: number }> {
+        const positions = new Map<WindowId, { x: number; y: number; width: number; height: number; wsIndex: number }>();
+        for (const [windowId, entry] of this._clones) {
+            const wsIndex = this._workspaceOrder.indexOf(entry.workspaceId);
+            if (wsIndex < 0) continue;
+            positions.set(windowId, {
+                x: entry.wrapper.x,
+                y: entry.wrapper.y,
+                width: entry.wrapper.width,
+                height: entry.wrapper.height,
+                wsIndex,
+            });
+        }
+        return positions;
+    }
+
     destroy(): void {
         // Stop all running animations and clean up workspace containers
         for (const wc of this._workspaceContainers.values()) {

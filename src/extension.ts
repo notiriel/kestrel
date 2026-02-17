@@ -5,7 +5,7 @@ export default class PaperFlowExtension extends Extension {
     private _controller: PaperFlowController | undefined;
 
     enable(): void {
-        this._controller = new PaperFlowController(this.getSettings());
+        this._controller = new PaperFlowController(this.getSettings(), undefined, this.path);
         this._controller.enable();
     }
 

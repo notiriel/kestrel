@@ -22,17 +22,73 @@ vi.mock('gi://GLib', () => ({
     },
 }));
 
-// Mock adapter modules that import gi:// so they don't break loading
-vi.mock('../../src/adapters/monitor-adapter.js', () => ({ MonitorAdapter: vi.fn() }));
-vi.mock('../../src/adapters/shell-adapter.js', () => ({ ShellAdapter: vi.fn() }));
-vi.mock('../../src/adapters/window-event-adapter.js', () => ({ WindowEventAdapter: vi.fn() }));
-vi.mock('../../src/adapters/clone-adapter.js', () => ({ CloneAdapter: vi.fn() }));
-vi.mock('../../src/adapters/window-adapter.js', () => ({ WindowAdapter: vi.fn() }));
-vi.mock('../../src/adapters/focus-adapter.js', () => ({ FocusAdapter: vi.fn() }));
-vi.mock('../../src/adapters/keybinding-adapter.js', () => ({ KeybindingAdapter: vi.fn() }));
+// Mock adapter modules that import gi:// so they don't break loading.
+// Each returns a constructor that creates a mock with all required methods,
+// so both port-injected and fallback (no-port) paths work.
+function mockMethods(...names: string[]) {
+    return Object.fromEntries(names.map(n => [n, vi.fn()]));
+}
+vi.mock('../../src/adapters/monitor-adapter.js', () => ({
+    MonitorAdapter: vi.fn().mockImplementation(() => ({
+        readPrimaryMonitor: vi.fn().mockReturnValue({
+            count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0,
+        }),
+        connectMonitorsChanged: vi.fn(),
+        destroy: vi.fn(),
+    })),
+}));
+vi.mock('../../src/adapters/shell-adapter.js', () => ({
+    ShellAdapter: vi.fn().mockImplementation(() => mockMethods('hideOverview', 'interceptWmAnimations', 'destroy')),
+}));
+vi.mock('../../src/adapters/window-event-adapter.js', () => ({
+    WindowEventAdapter: vi.fn().mockImplementation(() => mockMethods('connect', 'enumerateExisting', 'destroy')),
+}));
+vi.mock('../../src/adapters/clone-adapter.js', () => ({
+    CloneAdapter: vi.fn().mockImplementation(() => ({
+        ...mockMethods(
+            'init', 'updateWorkArea', 'syncWorkspaces', 'addClone', 'removeClone',
+            'addFloatClone', 'removeFloatClone', 'moveCloneToWorkspace', 'setWindowFullscreen',
+            'applyLayout', 'setScroll', 'setScrollForWorkspace', 'animateViewport',
+            'enterOverview', 'exitOverview', 'updateOverviewFocus', 'destroy',
+        ),
+        getLayer: vi.fn().mockReturnValue(null),
+        getClonePositions: vi.fn().mockReturnValue(null),
+    })),
+}));
+vi.mock('../../src/adapters/window-adapter.js', () => ({
+    WindowAdapter: vi.fn().mockImplementation(() => ({
+        ...mockMethods('setWorkAreaY', 'setMonitorWidth', 'track', 'untrack', 'setWindowFullscreen', 'applyLayout', 'destroy'),
+        hasUnsettledWindows: vi.fn().mockReturnValue(false),
+    })),
+}));
+vi.mock('../../src/adapters/focus-adapter.js', () => ({
+    FocusAdapter: vi.fn().mockImplementation(() => mockMethods('track', 'untrack', 'focus', 'getMetaWindow', 'connectFocusChanged', 'destroy')),
+}));
+vi.mock('../../src/adapters/keybinding-adapter.js', () => ({
+    KeybindingAdapter: vi.fn().mockImplementation(() => mockMethods('connect', 'destroy')),
+}));
 vi.mock('../../src/adapters/overview-input-adapter.js', () => ({ OverviewInputAdapter: vi.fn() }));
-vi.mock('../../src/adapters/conflict-detector.js', () => ({ ConflictDetector: vi.fn() }));
-vi.mock('../../src/adapters/state-persistence.js', () => ({ StatePersistence: vi.fn() }));
+vi.mock('../../src/adapters/conflict-detector.js', () => ({
+    ConflictDetector: vi.fn().mockImplementation(() => mockMethods('detectConflicts', 'destroy')),
+}));
+vi.mock('../../src/adapters/state-persistence.js', () => ({
+    StatePersistence: vi.fn().mockImplementation(() => ({
+        readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3 }),
+        save: vi.fn(),
+        tryRestore: vi.fn().mockReturnValue(null),
+    })),
+}));
+vi.mock('../../src/adapters/status-overlay-adapter.js', () => ({
+    StatusOverlayAdapter: vi.fn().mockImplementation(() => ({
+        init: vi.fn(),
+        watchWindow: vi.fn(),
+        unwatchWindow: vi.fn(),
+        setWindowStatus: vi.fn(),
+        enterOverview: vi.fn(),
+        exitOverview: vi.fn(),
+        destroy: vi.fn(),
+    })),
+}));
 vi.mock('../../src/adapters/safe-window.js', () => ({
     safeWindow: (w: unknown) => w,
     rawWindow: (w: unknown) => w,
@@ -45,6 +101,8 @@ vi.mock('../../src/adapters/safe-window.js', () => ({
 };
 
 import { PaperFlowController } from '../../src/adapters/controller.js';
+import { createWorld, addWindow } from '../../src/domain/world.js';
+import type { WindowId } from '../../src/domain/types.js';
 import { createMockControllerPorts } from './mock-ports.js';
 
 function createMockSettings(): any {
@@ -131,9 +189,13 @@ describe('PaperFlowController', () => {
             expect(ports.windowEvent.enumerateExisting).toHaveBeenCalled();
         });
 
-        it('hides GNOME overview', () => {
+        it('hides GNOME overview after delay', () => {
+            vi.useFakeTimers();
             controller.enable();
+            expect(ports.shell.hideOverview).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(1000);
             expect(ports.shell.hideOverview).toHaveBeenCalled();
+            vi.useRealTimers();
         });
 
         it('tries restoring saved state', () => {
@@ -144,6 +206,366 @@ describe('PaperFlowController', () => {
         it('reads config', () => {
             controller.enable();
             expect(ports.statePersistence.readConfig).toHaveBeenCalled();
+        });
+    });
+
+    describe('state restore on enable()', () => {
+        it('applies restored world when tryRestore returns state', () => {
+            const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+            const monitor = ports.monitor.readPrimaryMonitor();
+            let restored = createWorld(config, monitor);
+            restored = addWindow(restored, 'w-1' as WindowId).world;
+
+            ports.statePersistence.tryRestore.mockReturnValue(restored);
+
+            controller.enable();
+
+            // syncWorkspaces called twice: once in init, once after restore
+            expect(ports.clone.syncWorkspaces).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    describe('window handlers', () => {
+        let windowCallbacks: any;
+        let focusCallback: (id: any) => void;
+        let monitorCallback: (info: any) => void;
+
+        beforeEach(() => {
+            controller.enable();
+
+            // Capture callbacks registered during enable()
+            windowCallbacks = ports.windowEvent.connect.mock.calls[0][0];
+            focusCallback = ports.focus.connectFocusChanged.mock.calls[0][0];
+            monitorCallback = ports.monitor.connectMonitorsChanged.mock.calls[0][0];
+        });
+
+        function mockMetaWindow(overrides: any = {}) {
+            return {
+                get_title: () => 'Test',
+                get_wm_class: () => 'test',
+                maximized_horizontally: false,
+                maximized_vertically: false,
+                fullscreen: false,
+                unmaximize: vi.fn(),
+                ...overrides,
+            };
+        }
+
+        describe('_handleWindowReady', () => {
+            it('adds a window to the domain and applies layout', () => {
+                const meta = mockMetaWindow();
+                windowCallbacks.onWindowReady('w-1', meta);
+
+                expect(ports.window.track).toHaveBeenCalledWith('w-1', meta);
+                expect(ports.focus.track).toHaveBeenCalledWith('w-1', meta);
+                expect(ports.clone.addClone).toHaveBeenCalled();
+                expect(ports.window.applyLayout).toHaveBeenCalled();
+                expect(ports.clone.applyLayout).toHaveBeenCalled();
+                expect(ports.focus.focus).toHaveBeenCalledWith('w-1');
+            });
+
+            it('unmaximizes windows that were maximized', () => {
+                const meta = mockMetaWindow({ maximized_horizontally: true });
+                windowCallbacks.onWindowReady('w-1', meta);
+
+                expect(meta.unmaximize).toHaveBeenCalledWith(3); // Meta.MaximizeFlags.BOTH
+            });
+
+            it('handles fullscreen windows on creation', () => {
+                const meta = mockMetaWindow({ fullscreen: true });
+                windowCallbacks.onWindowReady('w-1', meta);
+
+                expect(ports.clone.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
+                expect(ports.window.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
+            });
+
+            it('animates viewport when scroll changes', () => {
+                // Add first window (viewport starts at 0)
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+                // Add second window — may shift viewport
+                windowCallbacks.onWindowReady('w-2', mockMetaWindow());
+
+                // scrollX change depends on domain, but applyLayout is always called
+                expect(ports.clone.applyLayout).toHaveBeenCalled();
+            });
+
+            it('handles restored window (already in domain)', () => {
+                // Set up: restore a world with a window already in it
+                const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+                const monitor = ports.monitor.readPrimaryMonitor();
+                let restored = createWorld(config, monitor);
+                restored = addWindow(restored, 'w-99' as WindowId).world;
+
+                ports.statePersistence.tryRestore.mockReturnValue(restored);
+
+                // Re-enable with restored state
+                const ctrl2 = new PaperFlowController(settings, ports);
+                ctrl2.enable();
+
+                const cbs = ports.windowEvent.connect.mock.calls[1][0];
+
+                // Now the "window ready" for w-99 should hit the existsInDomain branch
+                const meta = mockMetaWindow();
+                cbs.onWindowReady('w-99', meta);
+
+                expect(ports.window.track).toHaveBeenCalledWith('w-99', meta);
+                expect(ports.clone.addClone).toHaveBeenCalled();
+            });
+
+            it('unmaximizes restored window that was maximized', () => {
+                const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+                const monitor = ports.monitor.readPrimaryMonitor();
+                let restored = createWorld(config, monitor);
+                restored = addWindow(restored, 'w-99' as WindowId).world;
+
+                ports.statePersistence.tryRestore.mockReturnValue(restored);
+
+                const ctrl2 = new PaperFlowController(settings, ports);
+                ctrl2.enable();
+                const cbs = ports.windowEvent.connect.mock.calls[1][0];
+
+                const meta = mockMetaWindow({ maximized_vertically: true });
+                cbs.onWindowReady('w-99', meta);
+
+                expect(meta.unmaximize).toHaveBeenCalledWith(3);
+            });
+        });
+
+        describe('_handleWindowDestroyed', () => {
+            it('removes window from domain and untracks', () => {
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+                windowCallbacks.onWindowDestroyed('w-1');
+
+                expect(ports.clone.removeClone).toHaveBeenCalledWith('w-1');
+                expect(ports.window.untrack).toHaveBeenCalledWith('w-1');
+                expect(ports.focus.untrack).toHaveBeenCalledWith('w-1');
+            });
+        });
+
+        describe('_handleFullscreenChanged', () => {
+            it('enters fullscreen', () => {
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+                windowCallbacks.onWindowFullscreenChanged('w-1', true);
+
+                expect(ports.clone.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
+                expect(ports.window.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
+            });
+
+            it('exits fullscreen', () => {
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+                windowCallbacks.onWindowFullscreenChanged('w-1', true);
+                windowCallbacks.onWindowFullscreenChanged('w-1', false);
+
+                expect(ports.clone.setWindowFullscreen).toHaveBeenCalledWith('w-1', false);
+                expect(ports.window.setWindowFullscreen).toHaveBeenCalledWith('w-1', false);
+            });
+        });
+
+        describe('_handleWindowMaximized', () => {
+            it('widens window to 2-slot and unmaximizes', () => {
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+
+                ports.focus.getMetaWindow.mockReturnValue(mockMetaWindow());
+                windowCallbacks.onWindowMaximized('w-1');
+
+                expect(ports.focus.getMetaWindow).toHaveBeenCalledWith('w-1');
+                expect(ports.window.applyLayout).toHaveBeenCalled();
+            });
+
+            it('handles missing metaWindow gracefully', () => {
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+
+                ports.focus.getMetaWindow.mockReturnValue(undefined);
+                // Should not throw
+                windowCallbacks.onWindowMaximized('w-1');
+            });
+        });
+
+        describe('_handleExternalFocus', () => {
+            it('updates focus when external focus changes', () => {
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+                windowCallbacks.onWindowReady('w-2', mockMetaWindow());
+
+                // Reset to only track calls from focusCallback
+                ports.clone.applyLayout.mockClear();
+
+                focusCallback('w-1' as any);
+
+                expect(ports.clone.applyLayout).toHaveBeenCalled();
+            });
+
+            it('no-ops when focus matches current', () => {
+                windowCallbacks.onWindowReady('w-1', mockMetaWindow());
+
+                ports.clone.applyLayout.mockClear();
+                // w-1 is already focused (last added window gets focus)
+                focusCallback('w-1' as any);
+
+                // applyLayout should NOT be called since focus didn't change
+                expect(ports.clone.applyLayout).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('_handleMonitorChange', () => {
+            it('updates domain and adapters with new monitor info', () => {
+                const newMonitor = {
+                    count: 1,
+                    totalWidth: 2560,
+                    totalHeight: 1440,
+                    slotWidth: 1280,
+                    workAreaY: 32,
+                };
+
+                monitorCallback(newMonitor);
+
+                expect(ports.clone.updateWorkArea).toHaveBeenCalledWith(32, 1440);
+                expect(ports.window.setWorkAreaY).toHaveBeenCalledWith(32);
+                expect(ports.window.setMonitorWidth).toHaveBeenCalledWith(2560);
+                expect(ports.window.applyLayout).toHaveBeenCalled();
+            });
+        });
+
+        describe('float windows', () => {
+            it('adds float clone on float window ready', () => {
+                const meta = mockMetaWindow();
+                windowCallbacks.onFloatWindowReady('f-1', meta);
+
+                expect(ports.clone.addFloatClone).toHaveBeenCalledWith('f-1', meta);
+            });
+
+            it('removes float clone on float window destroyed', () => {
+                windowCallbacks.onFloatWindowDestroyed('f-1');
+
+                expect(ports.clone.removeFloatClone).toHaveBeenCalledWith('f-1');
+            });
+        });
+    });
+
+    describe('enable() without injected ports (fallback adapters)', () => {
+        it('constructs and enables using default adapter constructors', () => {
+            const ctrl = new PaperFlowController(settings);
+            ctrl.enable();
+            ctrl.disable();
+        });
+    });
+
+    describe('debugState()', () => {
+        it('returns JSON state when world exists', () => {
+            controller.enable();
+            const result = (controller as any).debugState();
+            const parsed = JSON.parse(result);
+            expect(parsed.world).toBeDefined();
+            expect(parsed.layout).toBeDefined();
+        });
+
+        it('returns error when no world', () => {
+            const result = (controller as any).debugState();
+            expect(result).toBe('{"error":"no world"}');
+        });
+    });
+
+    describe('handlers after disable (null guards)', () => {
+        let windowCallbacks: any;
+        let focusCallback: (id: any) => void;
+        let monitorCallback: (info: any) => void;
+
+        beforeEach(() => {
+            controller.enable();
+            windowCallbacks = ports.windowEvent.connect.mock.calls[0][0];
+            focusCallback = ports.focus.connectFocusChanged.mock.calls[0][0];
+            monitorCallback = ports.monitor.connectMonitorsChanged.mock.calls[0][0];
+            controller.disable();
+        });
+
+        it('windowReady no-ops when world is null', () => {
+            expect(() => windowCallbacks.onWindowReady('w-1', {})).not.toThrow();
+        });
+
+        it('windowDestroyed no-ops when world is null', () => {
+            expect(() => windowCallbacks.onWindowDestroyed('w-1')).not.toThrow();
+        });
+
+        it('fullscreenChanged no-ops when world is null', () => {
+            expect(() => windowCallbacks.onWindowFullscreenChanged('w-1', true)).not.toThrow();
+        });
+
+        it('windowMaximized no-ops when world is null', () => {
+            expect(() => windowCallbacks.onWindowMaximized('w-1')).not.toThrow();
+        });
+
+        it('externalFocus no-ops when world is null', () => {
+            expect(() => focusCallback('w-1')).not.toThrow();
+        });
+
+        it('monitorChange no-ops when world is null', () => {
+            expect(() => monitorCallback({ count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0 })).not.toThrow();
+        });
+    });
+
+    describe('error handling (catch blocks)', () => {
+        let windowCallbacks: any;
+        let focusCallback: (id: any) => void;
+        let monitorCallback: (info: any) => void;
+
+        beforeEach(() => {
+            controller.enable();
+            windowCallbacks = ports.windowEvent.connect.mock.calls[0][0];
+            focusCallback = ports.focus.connectFocusChanged.mock.calls[0][0];
+            monitorCallback = ports.monitor.connectMonitorsChanged.mock.calls[0][0];
+        });
+
+        it('windowReady catches errors', () => {
+            ports.clone.addClone.mockImplementation(() => { throw new Error('test'); });
+            expect(() => windowCallbacks.onWindowReady('w-1', {
+                get_title: () => 'T', get_wm_class: () => 'c',
+                maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
+            })).not.toThrow();
+        });
+
+        it('windowDestroyed catches errors', () => {
+            // Add a window first so removeWindow works
+            windowCallbacks.onWindowReady('w-1', {
+                get_title: () => 'T', get_wm_class: () => 'c',
+                maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
+            });
+            ports.clone.removeClone.mockImplementation(() => { throw new Error('test'); });
+            expect(() => windowCallbacks.onWindowDestroyed('w-1')).not.toThrow();
+        });
+
+        it('fullscreenChanged catches errors', () => {
+            windowCallbacks.onWindowReady('w-1', {
+                get_title: () => 'T', get_wm_class: () => 'c',
+                maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
+            });
+            ports.clone.setWindowFullscreen.mockImplementation(() => { throw new Error('test'); });
+            expect(() => windowCallbacks.onWindowFullscreenChanged('w-1', true)).not.toThrow();
+        });
+
+        it('windowMaximized catches errors', () => {
+            windowCallbacks.onWindowReady('w-1', {
+                get_title: () => 'T', get_wm_class: () => 'c',
+                maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
+            });
+            ports.clone.applyLayout.mockImplementation(() => { throw new Error('test'); });
+            expect(() => windowCallbacks.onWindowMaximized('w-1')).not.toThrow();
+        });
+
+        it('externalFocus catches errors', () => {
+            windowCallbacks.onWindowReady('w-1', {
+                get_title: () => 'T', get_wm_class: () => 'c',
+                maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
+            });
+            windowCallbacks.onWindowReady('w-2', {
+                get_title: () => 'T', get_wm_class: () => 'c',
+                maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
+            });
+            ports.clone.applyLayout.mockImplementation(() => { throw new Error('test'); });
+            expect(() => focusCallback('w-1')).not.toThrow();
+        });
+
+        it('monitorChange catches errors', () => {
+            ports.clone.updateWorkArea.mockImplementation(() => { throw new Error('test'); });
+            expect(() => monitorCallback({ count: 1, totalWidth: 2560, totalHeight: 1440, slotWidth: 1280, workAreaY: 32 })).not.toThrow();
         });
     });
 

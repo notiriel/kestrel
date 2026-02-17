@@ -28,6 +28,7 @@ import { OverviewHandler } from './overview-handler.js';
 import { SettlementRetry } from './settlement-retry.js';
 import { StatePersistence } from './state-persistence.js';
 import { NavigationHandler } from './navigation-handler.js';
+import { StatusOverlayAdapter } from './status-overlay-adapter.js';
 import { safeWindow } from './safe-window.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
@@ -49,12 +50,15 @@ export class PaperFlowController {
     private _statePersistence: StatePersistencePort;
     private _shellAdapter: ShellPort | null = null;
     private _navigationHandler: NavigationHandler | null = null;
+    private _statusOverlay: StatusOverlayAdapter | null = null;
+    private _extensionPath: string;
     private _internalFocusChange: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    constructor(settings: Gio.Settings, ports?: Partial<ControllerPorts>) {
+    constructor(settings: Gio.Settings, ports?: Partial<ControllerPorts>, extensionPath?: string) {
         this._settings = settings;
         this._ports = ports ?? {};
+        this._extensionPath = extensionPath ?? '';
         this._statePersistence = this._ports.statePersistence ?? new StatePersistence(settings);
     }
 
@@ -95,6 +99,13 @@ export class PaperFlowController {
             this._focusAdapter = this._ports.focus ?? new FocusAdapter();
             this._shellAdapter = this._ports.shell ?? new ShellAdapter();
 
+            // Status overlay for Claude session indicators
+            this._statusOverlay = new StatusOverlayAdapter();
+            const layer = (this._cloneAdapter as CloneAdapter).getLayer?.();
+            if (layer) {
+                this._statusOverlay.init(layer, `${this._extensionPath}/data`);
+            }
+
             // 5. Create collaborators
             this._overviewHandler = new OverviewHandler({
                 getWorld: () => this._world,
@@ -103,6 +114,15 @@ export class PaperFlowController {
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
                 createOverviewInputAdapter: () => new OverviewInputAdapter(),
+                notifyOverviewEnter: (transform) => {
+                    const positions = (this._cloneAdapter as CloneAdapter)?.getClonePositions?.();
+                    if (positions) {
+                        this._statusOverlay?.enterOverview(transform, positions);
+                    }
+                },
+                notifyOverviewExit: () => {
+                    this._statusOverlay?.exitOverview();
+                },
             });
 
             this._settlementRetry = new SettlementRetry({
@@ -217,6 +237,9 @@ export class PaperFlowController {
             this._settlementRetry?.destroy();
             this._settlementRetry = null;
 
+            this._statusOverlay?.destroy();
+            this._statusOverlay = null;
+
             this._overviewHandler?.destroy();
             this._overviewHandler = null;
 
@@ -255,6 +278,11 @@ export class PaperFlowController {
         }
     }
 
+    /** Set Claude session status for a window. Called via DBus from hook scripts. */
+    setWindowStatus(sessionId: string, status: string): void {
+        this._statusOverlay?.setWindowStatus(sessionId, status);
+    }
+
     /** Serializable snapshot for DBus debugging: global._paperflow.debugState() */
     debugState(): string {
         if (!this._world) return '{"error":"no world"}';
@@ -285,6 +313,8 @@ export class PaperFlowController {
             if (!this._guard?.check('windowReady')) return;
 
             console.log(`[PaperFlow] window added: ${windowId} title="${rawMetaWindow.get_title()}" wmclass="${rawMetaWindow.get_wm_class()}"`);
+
+            this._statusOverlay?.watchWindow(windowId, rawMetaWindow);
 
             const metaWindow = safeWindow(rawMetaWindow);
 
@@ -363,6 +393,7 @@ export class PaperFlowController {
             this._cloneAdapter?.removeClone(windowId);
             this._windowAdapter?.untrack(windowId);
             this._focusAdapter?.untrack(windowId);
+            this._statusOverlay?.unwatchWindow(windowId);
             this._cloneAdapter?.syncWorkspaces(update.world.workspaces);
 
             const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);

@@ -13,6 +13,7 @@ install: build
 	cp -r dist/* $(INSTALL_DIR)/
 	cp src/metadata.json $(INSTALL_DIR)/
 	cp src/stylesheet.css $(INSTALL_DIR)/
+	cp -r data $(INSTALL_DIR)/
 	cp schemas/*.xml $(INSTALL_DIR)/schemas/
 	glib-compile-schemas $(INSTALL_DIR)/schemas/
 

@@ -15,6 +15,8 @@ export interface OverviewDeps {
     getCloneAdapter(): (OverviewRenderPort & CloneRenderPort) | null;
     getWindowAdapter(): WindowPort | null;
     createOverviewInputAdapter(): OverviewInputAdapter;
+    notifyOverviewEnter?(transform: OverviewTransform): void;
+    notifyOverviewExit?(): void;
 }
 
 export class OverviewHandler {
@@ -65,6 +67,7 @@ export class OverviewHandler {
         this._overviewTransform = this._computeTransform(update.world, numWorkspaces);
 
         this._deps.getCloneAdapter()?.enterOverview(this._overviewTransform, update.layout, numWorkspaces);
+        this._deps.notifyOverviewEnter?.(this._overviewTransform);
 
         this._overviewInputAdapter = this._deps.createOverviewInputAdapter();
         this._overviewInputAdapter.activate({
@@ -175,6 +178,7 @@ export class OverviewHandler {
         this._overviewInputAdapter = null;
 
         this._deps.getCloneAdapter()?.exitOverview(layout);
+        this._deps.notifyOverviewExit?.();
         this._deps.getWindowAdapter()?.applyLayout(layout);
         this._deps.focusWindow(this._deps.getWorld()!.focusedWindow);
 

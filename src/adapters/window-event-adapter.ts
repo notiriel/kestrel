@@ -27,6 +27,16 @@ function shouldTile(metaWindow: Meta.Window): boolean {
 function shouldFloat(metaWindow: Meta.Window): boolean {
     const type = metaWindow.get_window_type();
     const wmClass = metaWindow.get_wm_class();
+
+    // Popup/menu/tooltip types always float — they must render above the clone
+    // layer. These don't require a wm_class check since they're transient
+    // surfaces that may not have one set yet.
+    if (type === Meta.WindowType.POPUP_MENU ||
+        type === Meta.WindowType.DROPDOWN_MENU ||
+        type === Meta.WindowType.MENU ||
+        type === Meta.WindowType.TOOLTIP ||
+        type === Meta.WindowType.COMBO) return true;
+
     if (!wmClass || wmClass === 'null') return false;
     if (WM_CLASS_BLOCKLIST.includes(wmClass)) return false;
 
@@ -102,6 +112,19 @@ export class WindowEventAdapter implements WindowEventPort {
         const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
 
         if (!actor) return;
+
+        // Popup/menu/tooltip windows must be handled immediately — they're very
+        // transient and waiting for first-frame would make them appear too late.
+        const type = metaWindow.get_window_type();
+        if (type === Meta.WindowType.POPUP_MENU ||
+            type === Meta.WindowType.DROPDOWN_MENU ||
+            type === Meta.WindowType.MENU ||
+            type === Meta.WindowType.TOOLTIP ||
+            type === Meta.WindowType.COMBO) {
+            this._callbacks?.onFloatWindowReady(windowId, metaWindow);
+            this._watchActorDestroy(actor, windowId, true);
+            return;
+        }
 
         // Guard against double-fire (first-frame + timeout)
         this._pendingWindows.add(windowId);
