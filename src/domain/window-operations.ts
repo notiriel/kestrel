@@ -9,8 +9,7 @@ import {
     ensureTrailingEmpty,
 } from './world.js';
 import {
-    swapWithNext,
-    swapWithPrev,
+    swapNeighbor,
     removeWindow,
     insertWindowAt,
     replaceWindow,
@@ -18,33 +17,21 @@ import {
     windowAtSlot,
 } from './workspace.js';
 
-/**
- * Swap the focused window with the one to its right.
- */
-export function moveRight(world: World): WorldUpdate {
+function moveHorizontal(world: World, delta: -1 | 1): WorldUpdate {
     if (!world.focusedWindow) return buildUpdate(world);
 
     const ws = currentWorkspace(world);
-    const newWs = swapWithNext(ws, world.focusedWindow);
+    const newWs = swapNeighbor(ws, world.focusedWindow, delta);
     if (newWs === ws) return buildUpdate(world);
 
-    const newWorld = replaceCurrentWorkspace(world, newWs);
-    return buildUpdate(adjustViewport(newWorld));
+    return buildUpdate(adjustViewport(replaceCurrentWorkspace(world, newWs)));
 }
 
-/**
- * Swap the focused window with the one to its left.
- */
-export function moveLeft(world: World): WorldUpdate {
-    if (!world.focusedWindow) return buildUpdate(world);
+/** Swap the focused window with the one to its right. */
+export function moveRight(world: World): WorldUpdate { return moveHorizontal(world, 1); }
 
-    const ws = currentWorkspace(world);
-    const newWs = swapWithPrev(ws, world.focusedWindow);
-    if (newWs === ws) return buildUpdate(world);
-
-    const newWorld = replaceCurrentWorkspace(world, newWs);
-    return buildUpdate(adjustViewport(newWorld));
-}
+/** Swap the focused window with the one to its left. */
+export function moveLeft(world: World): WorldUpdate { return moveHorizontal(world, -1); }
 
 /**
  * Move the focused window to the workspace below.

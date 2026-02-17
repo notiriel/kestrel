@@ -1,65 +1,38 @@
 import type { WorldUpdate } from './types.js';
 import type { World } from './world.js';
 import { currentWorkspace, buildUpdate, adjustViewport } from './world.js';
-import { windowAfter, windowBefore, slotIndexOf, windowAtSlot } from './workspace.js';
+import { windowNeighbor, slotIndexOf, windowAtSlot } from './workspace.js';
 
-/**
- * Move focus to the next window (right).
- * If the newly focused window is outside the viewport, scroll to reveal it.
- */
-export function focusRight(world: World): WorldUpdate {
+function focusHorizontal(world: World, delta: -1 | 1): WorldUpdate {
     if (!world.focusedWindow) return buildUpdate(world);
 
-    // If focused window is fullscreen, left/right navigation is a no-op
     const ws = currentWorkspace(world);
     const focused = ws.windows.find(w => w.id === world.focusedWindow);
     if (focused?.fullscreen) return buildUpdate(world);
 
-    const next = windowAfter(ws, world.focusedWindow);
-    if (!next) return buildUpdate(world);
+    const neighbor = windowNeighbor(ws, world.focusedWindow, delta);
+    if (!neighbor) return buildUpdate(world);
 
-    const newWorld: World = { ...world, focusedWindow: next.id };
-    return buildUpdate(adjustViewport(newWorld));
+    return buildUpdate(adjustViewport({ ...world, focusedWindow: neighbor.id }));
 }
 
-/**
- * Move focus to the previous window (left).
- * If the newly focused window is outside the viewport, scroll to reveal it.
- */
-export function focusLeft(world: World): WorldUpdate {
-    if (!world.focusedWindow) return buildUpdate(world);
+/** Move focus to the next window (right). */
+export function focusRight(world: World): WorldUpdate { return focusHorizontal(world, 1); }
 
-    // If focused window is fullscreen, left/right navigation is a no-op
-    const ws = currentWorkspace(world);
-    const focused = ws.windows.find(w => w.id === world.focusedWindow);
-    if (focused?.fullscreen) return buildUpdate(world);
+/** Move focus to the previous window (left). */
+export function focusLeft(world: World): WorldUpdate { return focusHorizontal(world, -1); }
 
-    const prev = windowBefore(ws, world.focusedWindow);
-    if (!prev) return buildUpdate(world);
-
-    const newWorld: World = { ...world, focusedWindow: prev.id };
-    return buildUpdate(adjustViewport(newWorld));
-}
-
-/**
- * Move focus to the workspace below.
- * Uses slot-based targeting to pick the window at the same horizontal position.
- */
+/** Move focus to the workspace below. */
 export function focusDown(world: World): WorldUpdate {
     const targetIndex = world.viewport.workspaceIndex + 1;
     if (targetIndex >= world.workspaces.length) return buildUpdate(world);
-
     return focusVertical(world, targetIndex);
 }
 
-/**
- * Move focus to the workspace above.
- * Uses slot-based targeting to pick the window at the same horizontal position.
- */
+/** Move focus to the workspace above. */
 export function focusUp(world: World): WorldUpdate {
     const targetIndex = world.viewport.workspaceIndex - 1;
     if (targetIndex < 0) return buildUpdate(world);
-
     return focusVertical(world, targetIndex);
 }
 

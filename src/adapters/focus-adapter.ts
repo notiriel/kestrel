@@ -1,8 +1,9 @@
 import type { WindowId } from '../domain/types.js';
+import type { FocusPort } from '../ports/focus-port.js';
 import Meta from 'gi://Meta';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-export class FocusAdapter {
+export class FocusAdapter implements FocusPort {
     private _windows: Map<WindowId, Meta.Window> = new Map();
     private _focusChangedId: number | null = null;
 

@@ -61,28 +61,36 @@ The codebase is split into three layers:
 │                    Adapters                           │
 │          TypeScript with GNOME/GJS imports            │
 │                                                      │
+│  Port Interfaces (src/ports/):                       │
+│    ClonePort             Rendering, overview, sync   │
+│    WindowPort            Positioning, settlement     │
+│    FocusPort             Focus activation, tracking  │
+│    MonitorPort           Geometry reading             │
+│                                                      │
 │  Inbound (events → domain):                          │
 │    KeybindingAdapter     Main.wm.addKeybinding()     │
 │    WindowEventAdapter    display.window-created,     │
 │                          actor.first-frame,          │
 │                          actor.destroy               │
-│    MouseAdapter          click, Super+drag,          │
-│                          Super+scroll               │
 │    MonitorAdapter        layoutManager.monitors,     │
 │                          monitors-changed            │
 │                                                      │
-│  Outbound (domain → system):                         │
+│  Outbound (domain → system, implements ports):       │
 │    WindowAdapter         Meta.Window.move_resize_    │
-│                          frame(), actor.show/hide    │
+│                          frame(), actor opacity      │
 │    CloneAdapter          Clutter.Clone lifecycle,    │
 │                          clone container mgmt        │
-│    AnimatorAdapter       actor.ease() execution      │
-│    OverviewAdapter       overview UI (St widgets)    │
 │    FocusAdapter          global.display focus,       │
 │                          Main.activateWindow()       │
 │                                                      │
+│  Controller Collaborators:                           │
+│    OverviewHandler       Overview enter/exit/nav     │
+│    NavigationHandler     Unified keybinding handlers │
+│    SettlementRetry       Backoff layout retry        │
+│    StatePersistence      Save/restore world state    │
+│                                                      │
 │  Extension Lifecycle:                                │
-│    PaperFlowExtension    enable() / disable()        │
+│    PaperFlowController   enable() / disable()        │
 │                          wires ports ↔ adapters      │
 └──────────────────────────────────────────────────────┘
 ```

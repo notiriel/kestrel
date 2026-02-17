@@ -19,16 +19,20 @@ export function removeWindow(ws: Workspace, windowId: WindowId): Workspace {
     return { ...ws, windows: ws.windows.filter(w => w.id !== windowId) };
 }
 
-export function windowAfter(ws: Workspace, windowId: WindowId): TiledWindow | undefined {
+/** Get the neighboring window by delta: -1 = before, +1 = after */
+export function windowNeighbor(ws: Workspace, windowId: WindowId, delta: -1 | 1): TiledWindow | undefined {
     const idx = ws.windows.findIndex(w => w.id === windowId);
-    if (idx === -1 || idx >= ws.windows.length - 1) return undefined;
-    return ws.windows[idx + 1];
+    const targetIdx = idx + delta;
+    if (idx === -1 || targetIdx < 0 || targetIdx >= ws.windows.length) return undefined;
+    return ws.windows[targetIdx];
+}
+
+export function windowAfter(ws: Workspace, windowId: WindowId): TiledWindow | undefined {
+    return windowNeighbor(ws, windowId, 1);
 }
 
 export function windowBefore(ws: Workspace, windowId: WindowId): TiledWindow | undefined {
-    const idx = ws.windows.findIndex(w => w.id === windowId);
-    if (idx <= 0) return undefined;
-    return ws.windows[idx - 1];
+    return windowNeighbor(ws, windowId, -1);
 }
 
 /** Returns the 1-based starting slot index of a window within its workspace. */
@@ -41,22 +45,24 @@ export function slotIndexOf(ws: Workspace, windowId: WindowId): number {
     return -1;
 }
 
+/** Swap a window with its neighbor by delta: -1 = prev, +1 = next */
+export function swapNeighbor(ws: Workspace, windowId: WindowId, delta: -1 | 1): Workspace {
+    const idx = ws.windows.findIndex(w => w.id === windowId);
+    const targetIdx = idx + delta;
+    if (idx === -1 || targetIdx < 0 || targetIdx >= ws.windows.length) return ws;
+    const windows = [...ws.windows];
+    [windows[idx], windows[targetIdx]] = [windows[targetIdx]!, windows[idx]!];
+    return { ...ws, windows };
+}
+
 /** Swap a window with the one after it; return unchanged ws if at end. */
 export function swapWithNext(ws: Workspace, windowId: WindowId): Workspace {
-    const idx = ws.windows.findIndex(w => w.id === windowId);
-    if (idx === -1 || idx >= ws.windows.length - 1) return ws;
-    const windows = [...ws.windows];
-    [windows[idx], windows[idx + 1]] = [windows[idx + 1]!, windows[idx]!];
-    return { ...ws, windows };
+    return swapNeighbor(ws, windowId, 1);
 }
 
 /** Swap a window with the one before it; return unchanged ws if at start. */
 export function swapWithPrev(ws: Workspace, windowId: WindowId): Workspace {
-    const idx = ws.windows.findIndex(w => w.id === windowId);
-    if (idx <= 0) return ws;
-    const windows = [...ws.windows];
-    [windows[idx - 1], windows[idx]] = [windows[idx]!, windows[idx - 1]!];
-    return { ...ws, windows };
+    return swapNeighbor(ws, windowId, -1);
 }
 
 /** Insert a window at the given index. */

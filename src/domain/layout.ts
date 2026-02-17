@@ -1,47 +1,50 @@
 import type { WindowLayout, LayoutState } from './types.js';
 import type { World } from './world.js';
+import type { Workspace } from './workspace.js';
 
 /**
- * Computes pixel positions for all windows in the current workspace.
- * Windows tile horizontally: each occupies slotSpan * slotWidth pixels,
- * with gaps between them and at edges.
- *
- * Viewport visibility: windows whose x-range falls entirely outside
- * the visible viewport (scrollX .. scrollX + viewportWidth) are marked invisible.
+ * Shared layout computation for a workspace.
+ * When viewport is provided, computes visibility against it.
+ * When viewport is null, marks all windows visible (for non-current workspaces).
  */
-export function computeLayout(world: World): LayoutState {
-    const { config, monitor, viewport, focusedWindow } = world;
+function computeWindowPositions(
+    ws: Workspace,
+    config: World['config'],
+    monitor: World['monitor'],
+    viewport: { scrollX: number; widthPx: number } | null,
+): WindowLayout[] {
     const { gapSize, edgeGap, focusBorderWidth } = config;
-    const { slotWidth, totalHeight } = monitor;
+    const { slotWidth, totalHeight, totalWidth } = monitor;
     const effectiveEdge = edgeGap + focusBorderWidth;
     const windowHeight = totalHeight - effectiveEdge * 2;
     const windowY = effectiveEdge;
 
-    const ws = world.workspaces[viewport.workspaceIndex]!;
     const windows: WindowLayout[] = [];
     let x = edgeGap;
 
     for (const win of ws.windows) {
-        // Fullscreen windows get a full-monitor layout entry, not a strip position
         if (win.fullscreen) {
             windows.push({
                 windowId: win.id,
                 x: 0,
                 y: 0,
-                width: monitor.totalWidth,
-                height: monitor.totalHeight,
+                width: totalWidth,
+                height: totalHeight,
                 visible: true,
             });
             continue;
         }
 
         const windowWidth = win.slotSpan * slotWidth - gapSize;
-        const rightEdge = x + windowWidth;
-        const leftEdge = x;
-        // Window is visible if it overlaps with the viewport
-        const visible =
-            rightEdge > viewport.scrollX &&
-            leftEdge < viewport.scrollX + viewport.widthPx;
+
+        let visible: boolean;
+        if (viewport) {
+            const rightEdge = x + windowWidth;
+            visible = rightEdge > viewport.scrollX &&
+                x < viewport.scrollX + viewport.widthPx;
+        } else {
+            visible = true;
+        }
 
         windows.push({
             windowId: win.id,
@@ -53,6 +56,17 @@ export function computeLayout(world: World): LayoutState {
         });
         x += windowWidth + gapSize;
     }
+
+    return windows;
+}
+
+/**
+ * Computes pixel positions for all windows in the current workspace.
+ */
+export function computeLayout(world: World): LayoutState {
+    const { viewport, focusedWindow } = world;
+    const ws = world.workspaces[viewport.workspaceIndex]!;
+    const windows = computeWindowPositions(ws, world.config, world.monitor, viewport);
 
     return {
         windows,
@@ -67,45 +81,11 @@ export function computeLayout(world: World): LayoutState {
  * Used to reposition windows on non-current workspaces after cross-workspace moves.
  */
 export function computeLayoutForWorkspace(world: World, wsIndex: number): LayoutState {
-    const { config, monitor, viewport, focusedWindow } = world;
-    const { gapSize, edgeGap, focusBorderWidth } = config;
-    const { slotWidth, totalHeight } = monitor;
-    const effectiveEdge = edgeGap + focusBorderWidth;
-    const windowHeight = totalHeight - effectiveEdge * 2;
-    const windowY = effectiveEdge;
-
+    const { viewport, focusedWindow } = world;
     const ws = world.workspaces[wsIndex];
     if (!ws) return { windows: [], scrollX: viewport.scrollX, workspaceIndex: wsIndex, focusedWindowId: null };
 
-    const windows: WindowLayout[] = [];
-    let x = edgeGap;
-
-    for (const win of ws.windows) {
-        if (win.fullscreen) {
-            windows.push({
-                windowId: win.id,
-                x: 0,
-                y: 0,
-                width: monitor.totalWidth,
-                height: monitor.totalHeight,
-                visible: true,
-            });
-            continue;
-        }
-
-        const windowWidth = win.slotSpan * slotWidth - gapSize;
-        windows.push({
-            windowId: win.id,
-            x,
-            y: windowY,
-            width: windowWidth,
-            height: windowHeight,
-            visible: true, // Non-current workspaces: mark all visible for positioning
-        });
-        x += windowWidth + gapSize;
-    }
-
-    // Only report focus if the focused window lives on this workspace
+    const windows = computeWindowPositions(ws, world.config, world.monitor, null);
     const hasFocus = focusedWindow && ws.windows.some(w => w.id === focusedWindow);
 
     return {

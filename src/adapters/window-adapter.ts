@@ -1,4 +1,6 @@
 import type { WindowId, LayoutState } from '../domain/types.js';
+import type { WindowPort } from '../ports/window-port.js';
+import { safeDisconnect } from './signal-utils.js';
 import Meta from 'gi://Meta';
 
 interface TrackedWindow {
@@ -17,11 +19,18 @@ interface TrackedWindow {
     offscreen: boolean;
 }
 
-export class WindowAdapter {
+export class WindowAdapter implements WindowPort {
     private _windows: Map<WindowId, TrackedWindow> = new Map();
     private _workAreaY: number = 0;
     private _monitorWidth: number = 0;
     private _adjusting: boolean = false;
+
+    private _setActorOpacity(metaWindow: Meta.Window, opacity: number): void {
+        try {
+            const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
+            if (actor) actor.set_opacity(opacity);
+        } catch { /* actor not ready or already gone */ }
+    }
 
     setWorkAreaY(workAreaY: number): void {
         this._workAreaY = workAreaY;
@@ -55,21 +64,17 @@ export class WindowAdapter {
         // Real window actors are always hidden — the clone layer handles
         // all visual rendering. Actors remain at opacity=0 so they're
         // invisible but still receive Wayland input (click-through).
-        try {
-            const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
-            if (actor) actor.set_opacity(0);
-        } catch { /* not ready yet */ }
+        this._setActorOpacity(metaWindow, 0);
     }
 
     untrack(windowId: WindowId): void {
         const tracked = this._windows.get(windowId);
         if (tracked) {
-            try { tracked.metaWindow.disconnect(tracked.sizeChangedId); } catch { /* already gone */ }
-            try { tracked.metaWindow.disconnect(tracked.positionChangedId); } catch { /* already gone */ }
+            safeDisconnect(tracked.metaWindow, tracked.sizeChangedId);
+            safeDisconnect(tracked.metaWindow, tracked.positionChangedId);
             try {
                 if (tracked.offscreen) tracked.metaWindow.unminimize();
-                const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                if (actor) actor.set_opacity(255);
+                this._setActorOpacity(tracked.metaWindow, 255);
             } catch { /* already gone */ }
             this._windows.delete(windowId);
         }
@@ -79,27 +84,17 @@ export class WindowAdapter {
     private _fullscreenWindows: Set<WindowId> = new Set();
 
     setWindowFullscreen(windowId: WindowId, isFullscreen: boolean): void {
+        const tracked = this._windows.get(windowId);
         if (isFullscreen) {
             this._fullscreenWindows.add(windowId);
-            // Unminimize if it was offscreen
-            const tracked = this._windows.get(windowId);
             if (tracked?.offscreen) {
                 tracked.offscreen = false;
                 try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
             }
-            // Fullscreen windows need to be visible (not cloned)
-            try {
-                const actor = tracked?.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                if (actor) actor.set_opacity(255);
-            } catch { /* already gone */ }
+            if (tracked) this._setActorOpacity(tracked.metaWindow, 255);
         } else {
             this._fullscreenWindows.delete(windowId);
-            // Re-hide when leaving fullscreen
-            const tracked = this._windows.get(windowId);
-            try {
-                const actor = tracked?.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                if (actor) actor.set_opacity(0);
-            } catch { /* already gone */ }
+            if (tracked) this._setActorOpacity(tracked.metaWindow, 0);
         }
     }
 
@@ -142,9 +137,7 @@ export class WindowAdapter {
                 if (tracked.offscreen) {
                     tracked.offscreen = false;
                     tracked.metaWindow.unminimize();
-                    // Ensure actor stays hidden after unminimize
-                    const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                    if (actor) actor.set_opacity(0);
+                    this._setActorOpacity(tracked.metaWindow, 0);
                 }
 
                 const frame = tracked.metaWindow.get_frame_rect();
@@ -290,41 +283,13 @@ export class WindowAdapter {
         return false;
     }
 
-    /**
-     * No-op. Real window actors are always hidden (opacity=0).
-     * Kept for API compatibility with controller animation flow.
-     */
-    hideActors(): void {
-        // Actors are always hidden — nothing to do.
-    }
-
-    /**
-     * No-op. Real window actors stay hidden; clones handle rendering.
-     * Kept for API compatibility with controller animation flow.
-     */
-    showActors(): void {
-        // Actors are always hidden — nothing to do.
-    }
-
-    /**
-     * No-op. Kept for API compatibility.
-     */
-    refreshClips(): void {
-        // No clips needed — actors are always hidden.
-    }
-
-    showAll(): void {
-        this.showActors();
-    }
-
     destroy(): void {
         for (const tracked of this._windows.values()) {
-            try { tracked.metaWindow.disconnect(tracked.sizeChangedId); } catch { /* already gone */ }
-            try { tracked.metaWindow.disconnect(tracked.positionChangedId); } catch { /* already gone */ }
+            safeDisconnect(tracked.metaWindow, tracked.sizeChangedId);
+            safeDisconnect(tracked.metaWindow, tracked.positionChangedId);
             try {
                 if (tracked.offscreen) tracked.metaWindow.unminimize();
-                const actor = tracked.metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                if (actor) actor.set_opacity(255);
+                this._setActorOpacity(tracked.metaWindow, 255);
             } catch { /* already gone */ }
         }
         this._windows.clear();

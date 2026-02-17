@@ -36,7 +36,13 @@ function nextWorkspaceId(): WorkspaceId {
     return `ws-${workspaceCounter++}` as WorkspaceId;
 }
 
+/** Reset workspace ID counter. Called by createWorld() to ensure fresh IDs each enable cycle. */
+export function resetWorkspaceCounter(): void {
+    workspaceCounter = 0;
+}
+
 export function createWorld(config: PaperFlowConfig, monitor: MonitorInfo): World {
+    resetWorkspaceCounter();
     return {
         workspaces: [createWorkspace(nextWorkspaceId())],
         viewport: createViewport(monitor.totalWidth),
@@ -54,6 +60,26 @@ export function updateMonitor(world: World, monitor: MonitorInfo): WorldUpdate {
         viewport: { ...world.viewport, widthPx: monitor.totalWidth },
     };
     return buildUpdate(adjustViewport(newWorld));
+}
+
+/** Find a window across all workspaces. Returns workspace index and window, or null. */
+export function findWindowInWorld(world: World, windowId: WindowId): { wsIndex: number; window: TiledWindow } | null {
+    for (let i = 0; i < world.workspaces.length; i++) {
+        const win = world.workspaces[i]!.windows.find(w => w.id === windowId);
+        if (win) return { wsIndex: i, window: win };
+    }
+    return null;
+}
+
+/** Get the workspace ID at a given index. */
+export function wsIdAt(world: World, index: number): WorkspaceId | null {
+    return world.workspaces[index]?.id ?? null;
+}
+
+/** Find which workspace contains a window and return its ID. */
+export function findWorkspaceIdForWindow(world: World, windowId: WindowId): WorkspaceId | null {
+    const result = findWindowInWorld(world, windowId);
+    return result ? world.workspaces[result.wsIndex]!.id : null;
 }
 
 export function currentWorkspace(world: World): Workspace {
@@ -131,9 +157,11 @@ export function pruneEmptyWorkspaces(world: World): World {
 
 /**
  * Adjust viewport.scrollX so the focused window is fully visible.
- * Scrolls by minimum amount needed.
+ * When minimal is false (default), includes edge-gap padding.
+ * When minimal is true, only scrolls when window extends past viewport edge
+ * (used by addWindow so opening a window doesn't push existing visible ones).
  */
-export function adjustViewport(world: World): World {
+export function adjustViewport(world: World, minimal: boolean = false): World {
     if (!world.focusedWindow) return world;
 
     const layout = computeLayout(world);
@@ -148,12 +176,22 @@ export function adjustViewport(world: World): World {
 
     let newScrollX = viewport.scrollX;
 
-    // Ensure focused window + edge gap padding is visible in viewport
-    if (winRight + edgeGap > viewport.scrollX + viewport.widthPx) {
-        newScrollX = winRight + edgeGap - viewport.widthPx;
-    }
-    if (winLeft - edgeGap < newScrollX) {
-        newScrollX = winLeft - edgeGap;
+    if (minimal) {
+        // Only scroll when window extends past viewport edge (not for padding)
+        if (winRight > newScrollX + viewport.widthPx) {
+            newScrollX = winRight + edgeGap - viewport.widthPx;
+        }
+        if (winLeft < newScrollX) {
+            newScrollX = winLeft - edgeGap;
+        }
+    } else {
+        // Ensure focused window + edge gap padding is visible in viewport
+        if (winRight + edgeGap > viewport.scrollX + viewport.widthPx) {
+            newScrollX = winRight + edgeGap - viewport.widthPx;
+        }
+        if (winLeft - edgeGap < newScrollX) {
+            newScrollX = winLeft - edgeGap;
+        }
     }
 
     if (newScrollX === viewport.scrollX) return world;
@@ -170,14 +208,8 @@ export function adjustViewport(world: World): World {
  * Switches workspace if the window lives on a different one.
  */
 export function setFocus(world: World, windowId: WindowId): WorldUpdate {
-    // Find which workspace contains the target window
-    let targetWsIndex = world.viewport.workspaceIndex;
-    for (let i = 0; i < world.workspaces.length; i++) {
-        if (world.workspaces[i]!.windows.some(w => w.id === windowId)) {
-            targetWsIndex = i;
-            break;
-        }
-    }
+    const found = findWindowInWorld(world, windowId);
+    const targetWsIndex = found ? found.wsIndex : world.viewport.workspaceIndex;
 
     const newWorld: World = {
         ...world,
@@ -196,55 +228,13 @@ export function addWindow(world: World, windowId: WindowId, slotSpan: 1 | 2 = 1)
         newWs,
     );
     newWorld = ensureTrailingEmpty(newWorld);
-    return buildUpdate(adjustViewportMinimal(newWorld));
-}
-
-/**
- * Like adjustViewport but only scrolls when the focused window is actually
- * off-screen (not merely missing edge-gap padding). Used by addWindow so
- * that opening a new window doesn't push existing visible windows out.
- */
-function adjustViewportMinimal(world: World): World {
-    if (!world.focusedWindow) return world;
-
-    const layout = computeLayout(world);
-    const focusedLayout = layout.windows.find(
-        w => w.windowId === world.focusedWindow,
-    );
-    if (!focusedLayout) return world;
-
-    const { viewport, config: { edgeGap } } = world;
-    const winLeft = focusedLayout.x;
-    const winRight = focusedLayout.x + focusedLayout.width;
-
-    let newScrollX = viewport.scrollX;
-
-    // Only scroll when window extends past viewport edge (not for padding)
-    if (winRight > newScrollX + viewport.widthPx) {
-        newScrollX = winRight + edgeGap - viewport.widthPx;
-    }
-    if (winLeft < newScrollX) {
-        newScrollX = winLeft - edgeGap;
-    }
-
-    if (newScrollX === viewport.scrollX) return world;
-
-    return {
-        ...world,
-        viewport: { ...viewport, scrollX: newScrollX },
-    };
+    return buildUpdate(adjustViewport(newWorld, true));
 }
 
 export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
-    // Find which workspace contains this window
-    let wsIndex = -1;
-    for (let i = 0; i < world.workspaces.length; i++) {
-        if (world.workspaces[i]!.windows.some(w => w.id === windowId)) {
-            wsIndex = i;
-            break;
-        }
-    }
-    if (wsIndex === -1) return buildUpdate(world);
+    const found = findWindowInWorld(world, windowId);
+    if (!found) return buildUpdate(world);
+    const wsIndex = found.wsIndex;
 
     const ws = world.workspaces[wsIndex]!;
     const isCurrentWorkspace = wsIndex === world.viewport.workspaceIndex;
@@ -276,36 +266,28 @@ export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
     return buildUpdate(adjustViewport(newWorld));
 }
 
+function setWindowFullscreen(world: World, windowId: WindowId, isFullscreen: boolean): WorldUpdate {
+    const found = findWindowInWorld(world, windowId);
+    if (!found) return buildUpdate(world);
+
+    const { wsIndex, window: win } = found;
+    const newWin = { ...win, fullscreen: isFullscreen };
+    const newWs = wsReplaceWindow(world.workspaces[wsIndex]!, windowId, newWin);
+    const workspaces = world.workspaces.map((w, idx) => idx === wsIndex ? newWs : w);
+    const newWorld: World = {
+        ...world,
+        workspaces,
+        ...(isFullscreen ? { focusedWindow: windowId } : {}),
+    };
+    return buildUpdate(adjustViewport(newWorld));
+}
+
 export function enterFullscreen(world: World, windowId: WindowId): WorldUpdate {
-    // Find which workspace contains this window
-    for (let i = 0; i < world.workspaces.length; i++) {
-        const ws = world.workspaces[i]!;
-        const win = ws.windows.find(w => w.id === windowId);
-        if (win) {
-            const newWin = { ...win, fullscreen: true };
-            const newWs = wsReplaceWindow(ws, windowId, newWin);
-            const workspaces = world.workspaces.map((w, idx) => idx === i ? newWs : w);
-            const newWorld: World = { ...world, workspaces, focusedWindow: windowId };
-            return buildUpdate(adjustViewport(newWorld));
-        }
-    }
-    return buildUpdate(world);
+    return setWindowFullscreen(world, windowId, true);
 }
 
 export function exitFullscreen(world: World, windowId: WindowId): WorldUpdate {
-    // Find which workspace contains this window
-    for (let i = 0; i < world.workspaces.length; i++) {
-        const ws = world.workspaces[i]!;
-        const win = ws.windows.find(w => w.id === windowId);
-        if (win) {
-            const newWin = { ...win, fullscreen: false };
-            const newWs = wsReplaceWindow(ws, windowId, newWin);
-            const workspaces = world.workspaces.map((w, idx) => idx === i ? newWs : w);
-            const newWorld: World = { ...world, workspaces };
-            return buildUpdate(adjustViewport(newWorld));
-        }
-    }
-    return buildUpdate(world);
+    return setWindowFullscreen(world, windowId, false);
 }
 
 /**
@@ -317,36 +299,27 @@ export function exitFullscreen(world: World, windowId: WindowId): WorldUpdate {
 function navigateFromEmptyWorkspace(world: World, sourceSlot: number): World {
     const wsIndex = world.viewport.workspaceIndex;
 
-    // Try workspace below first (skip trailing empty)
-    for (let i = wsIndex + 1; i < world.workspaces.length; i++) {
-        const ws = world.workspaces[i]!;
-        if (ws.windows.length > 0) {
-            const target = windowAtSlot(ws, sourceSlot)
-                ?? ws.windows[ws.windows.length - 1];
-            return {
-                ...world,
-                viewport: { ...world.viewport, workspaceIndex: i, scrollX: 0 },
-                focusedWindow: target?.id ?? null,
-            };
+    // Search in a direction for the first populated workspace
+    const searchDirection = (start: number, end: number, step: number): World | null => {
+        for (let i = start; step > 0 ? i < end : i >= end; i += step) {
+            const ws = world.workspaces[i]!;
+            if (ws.windows.length > 0) {
+                const target = windowAtSlot(ws, sourceSlot)
+                    ?? ws.windows[ws.windows.length - 1];
+                return {
+                    ...world,
+                    viewport: { ...world.viewport, workspaceIndex: i, scrollX: 0 },
+                    focusedWindow: target?.id ?? null,
+                };
+            }
         }
-    }
+        return null;
+    };
 
-    // Try workspace above
-    for (let i = wsIndex - 1; i >= 0; i--) {
-        const ws = world.workspaces[i]!;
-        if (ws.windows.length > 0) {
-            const target = windowAtSlot(ws, sourceSlot)
-                ?? ws.windows[ws.windows.length - 1];
-            return {
-                ...world,
-                viewport: { ...world.viewport, workspaceIndex: i, scrollX: 0 },
-                focusedWindow: target?.id ?? null,
-            };
-        }
-    }
-
-    // No populated workspace — stay on trailing empty
-    return world;
+    // Try below first, then above
+    return searchDirection(wsIndex + 1, world.workspaces.length, 1)
+        ?? searchDirection(wsIndex - 1, 0, -1)
+        ?? world;
 }
 
 /**
@@ -354,19 +327,16 @@ function navigateFromEmptyWorkspace(world: World, sourceSlot: number): World {
  * Finds the window across all workspaces.
  */
 export function widenWindow(world: World, windowId: WindowId): WorldUpdate {
-    for (let i = 0; i < world.workspaces.length; i++) {
-        const ws = world.workspaces[i]!;
-        const win = ws.windows.find(w => w.id === windowId);
-        if (win) {
-            if (win.slotSpan === 2) return buildUpdate(world); // already wide
-            const newWin = { ...win, slotSpan: 2 as const };
-            const newWs = wsReplaceWindow(ws, windowId, newWin);
-            const workspaces = world.workspaces.map((w, idx) => idx === i ? newWs : w);
-            const newWorld: World = { ...world, workspaces };
-            return buildUpdate(adjustViewport(newWorld));
-        }
-    }
-    return buildUpdate(world);
+    const found = findWindowInWorld(world, windowId);
+    if (!found) return buildUpdate(world);
+
+    const { wsIndex, window: win } = found;
+    if (win.slotSpan === 2) return buildUpdate(world); // already wide
+    const newWin = { ...win, slotSpan: 2 as const };
+    const newWs = wsReplaceWindow(world.workspaces[wsIndex]!, windowId, newWin);
+    const workspaces = world.workspaces.map((w, idx) => idx === wsIndex ? newWs : w);
+    const newWorld: World = { ...world, workspaces };
+    return buildUpdate(adjustViewport(newWorld));
 }
 
 export interface RestoreWorkspaceData {

@@ -1,17 +1,12 @@
 import type { WindowId } from '../domain/types.js';
+import type { WindowEventPort, WindowEventCallbacks } from '../ports/window-event-port.js';
+import { safeDisconnect } from './signal-utils.js';
 import Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
 
 const FIRST_FRAME_TIMEOUT_MS = 2000;
 
-export interface WindowEventCallbacks {
-    onWindowReady: (windowId: WindowId, metaWindow: Meta.Window) => void;
-    onWindowDestroyed: (windowId: WindowId) => void;
-    onFloatWindowReady: (windowId: WindowId, metaWindow: Meta.Window) => void;
-    onFloatWindowDestroyed: (windowId: WindowId) => void;
-    onWindowFullscreenChanged: (windowId: WindowId, isFullscreen: boolean) => void;
-    onWindowMaximized: (windowId: WindowId) => void;
-}
+export type { WindowEventCallbacks };
 
 export { shouldTile };
 
@@ -38,7 +33,9 @@ function shouldFloat(metaWindow: Meta.Window): boolean {
     // Dialog types always float
     if (type === Meta.WindowType.DIALOG ||
         type === Meta.WindowType.MODAL_DIALOG ||
-        type === Meta.WindowType.UTILITY) return true;
+        type === Meta.WindowType.UTILITY ||
+        type === Meta.WindowType.SPLASHSCREEN ||
+        type === Meta.WindowType.TOOLBAR) return true;
 
     // Normal windows that can't be tiled (transient, above, skip-taskbar) float.
     // skip-taskbar windows (e.g. ulauncher) must be floated so they render
@@ -56,7 +53,7 @@ function getWindowId(metaWindow: Meta.Window): WindowId {
     return String(metaWindow.get_stable_sequence()) as WindowId;
 }
 
-export class WindowEventAdapter {
+export class WindowEventAdapter implements WindowEventPort {
     private _windowCreatedId: number | null = null;
     private _actorDestroyIds: Map<WindowId, number> = new Map();
     private _fullscreenSignalIds: Map<WindowId, { metaWindow: Meta.Window; signalId: number }> = new Map();
@@ -153,8 +150,8 @@ export class WindowEventAdapter {
         const destroyId = actor.connect('destroy', () => {
             try {
                 this._actorDestroyIds.delete(windowId);
-                this._disconnectFullscreenSignal(windowId);
-                this._disconnectMaximizeSignal(windowId);
+                this._disconnectTrackedSignal(this._fullscreenSignalIds, windowId);
+                this._disconnectTrackedSignal(this._maximizeSignalIds, windowId);
                 if (isFloat) {
                     this._callbacks?.onFloatWindowDestroyed(windowId);
                 } else {
@@ -191,19 +188,11 @@ export class WindowEventAdapter {
         }
     }
 
-    private _disconnectMaximizeSignal(windowId: WindowId): void {
-        const entry = this._maximizeSignalIds.get(windowId);
+    private _disconnectTrackedSignal(map: Map<WindowId, { metaWindow: Meta.Window; signalId: number }>, windowId: WindowId): void {
+        const entry = map.get(windowId);
         if (entry) {
-            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
-            this._maximizeSignalIds.delete(windowId);
-        }
-    }
-
-    private _disconnectFullscreenSignal(windowId: WindowId): void {
-        const entry = this._fullscreenSignalIds.get(windowId);
-        if (entry) {
-            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
-            this._fullscreenSignalIds.delete(windowId);
+            safeDisconnect(entry.metaWindow, entry.signalId);
+            map.delete(windowId);
         }
     }
 
@@ -219,12 +208,12 @@ export class WindowEventAdapter {
         this._timeoutIds.clear();
 
         for (const entry of this._fullscreenSignalIds.values()) {
-            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
+            safeDisconnect(entry.metaWindow, entry.signalId);
         }
         this._fullscreenSignalIds.clear();
 
         for (const entry of this._maximizeSignalIds.values()) {
-            try { entry.metaWindow.disconnect(entry.signalId); } catch { /* already gone */ }
+            safeDisconnect(entry.metaWindow, entry.signalId);
         }
         this._maximizeSignalIds.clear();
 

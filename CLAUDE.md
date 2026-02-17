@@ -61,10 +61,22 @@ B is focused. WS2 has D, E.
 - `layout.ts` — `computeLayout()` turns workspace + config + monitor into pixel positions (`LayoutState`)
 - `types.ts` — Branded types (`WindowId`, `WorkspaceId`), interfaces (`World`, `Workspace`, `TiledWindow`, `Viewport`)
 
+### Ports
+
+`src/ports/` — Adapter interfaces (no `gi://` imports). Controller depends on ports, not concrete adapters.
+- `clone-port.ts` — `ClonePort` interface + `OverviewTransform` type
+- `window-port.ts` — `WindowPort` interface (positioning, settlement check)
+- `focus-port.ts` — `FocusPort` interface (focus activation, tracking)
+- `monitor-port.ts` — `MonitorPort` interface (geometry reading)
+
 ### Adapters
 
-`src/adapters/` — GNOME Shell integration via `gi://` imports.
+`src/adapters/` — GNOME Shell integration via `gi://` imports. Each adapter `implements` its corresponding port.
 - `controller.ts` — Composition root; wires domain ↔ adapters in `enable()`/`disable()`
+- `overview-handler.ts` — Overview mode enter/exit/navigate/click logic (extracted from controller)
+- `navigation-handler.ts` — Unified keybinding handlers: `handleSimpleCommand`, `handleVerticalFocus`, `handleVerticalMove`
+- `settlement-retry.ts` — Exponential-backoff layout retry for async Wayland configures
+- `state-persistence.ts` — Save/restore world state across disable/enable cycles
 - `window-event-adapter.ts` — Listens for `window-created`/`destroy` signals, waits for `first-frame`
 - `clone-adapter.ts` — Creates `Clutter.Clone` of `WindowActor`s on a custom layer above `global.window_group`
 - `window-adapter.ts` — Positions real `Meta.Window`s via `move_resize_frame()`
