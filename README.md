@@ -44,7 +44,7 @@ Your monitors form a viewport that slides across this 2D plane. All navigation i
 ## Install
 
 ```bash
-git clone https://github.com/paperflow/paperflow.git
+git clone https://github.com/notiriel/paperflow.git
 cd paperflow
 npm install
 make install    # Build + deploy to GNOME extensions dir

@@ -3,6 +3,6 @@
   "name": "PaperFlow",
   "description": "Niri-style scrolling tiling for GNOME",
   "shell-version": ["45", "46", "47"],
-  "url": "https://github.com/paperflow/paperflow",
+  "url": "https://github.com/notiriel/paperflow",
   "settings-schema": "org.gnome.shell.extensions.paperflow"
 }
