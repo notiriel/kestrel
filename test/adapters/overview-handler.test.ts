@@ -5,13 +5,14 @@ import type { World } from '../../src/domain/world.js';
 import { OverviewHandler, type OverviewDeps } from '../../src/adapters/overview-handler.js';
 import { createMockClonePort, createMockWindowPort } from './mock-ports.js';
 
-const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
     totalHeight: 1080,
     slotWidth: 960,
     workAreaY: 0,
+    stageOffsetX: 0,
 };
 
 function wid(n: number): WindowId {

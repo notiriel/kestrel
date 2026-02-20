@@ -85,6 +85,53 @@ B is focused. WS2 has D, E.
 
 **Entry point**: `src/extension.ts` — Standard GNOME extension `enable()`/`disable()` delegating to `PaperFlowController`.
 
+## Claude Code Hook Integration
+
+PaperFlow integrates with Claude Code via a plugin (`paperflow-plugin/`) that registers shell hooks for Claude Code lifecycle events. The hooks communicate with the GNOME extension over session DBus.
+
+### DBus interface
+
+The extension exports `io.paperflow.Extension` at `/io/paperflow/Extension` (see `src/adapters/dbus-service.ts`):
+
+| Method | Args | Returns | Purpose |
+|--------|------|---------|---------|
+| `HandlePermission` | `payload: s` | `{"id":"notif-N"}` | Show permission card in overlay, return notification ID for polling |
+| `HandleNotification` | `payload: s` | `{"id":"notif-N"}` | Show fire-and-forget notification card |
+| `GetNotificationResponse` | `id: s` | `{"action":"allow"}` or `{"pending":true}` | Poll for user's response to a permission card |
+| `SetWindowStatus` | `sessionId: s, status: s` | — | Update status indicator on the Claude session's window clone |
+
+### Hook scripts
+
+All scripts live in `paperflow-plugin/hooks/` and log to `/tmp/paperflow-hooks.log` with `[scriptname]` prefix.
+
+| Script | Claude Code event | What it does |
+|--------|------------------|--------------|
+| `paperflow-probe.sh` | `SessionStart` | Writes a terminal title escape sequence (`paper_flow_probe_<session_id>`) so the extension can map session IDs to GNOME windows |
+| `paperflow-status.sh` | `SessionStart`, `Notification`, `Stop`, `SessionEnd` | Calls `SetWindowStatus` to update the clone's status badge (`done`, `working`, `needs-input`, `end`) |
+| `paperflow-notify.sh` | `Notification`, `Stop` | Calls `HandleNotification` — fire-and-forget, no response needed |
+| `paperflow-permission.sh` | `PermissionRequest` | Calls `HandlePermission`, then polls `GetNotificationResponse` every 0.5s (up to 10 min) until the user clicks Allow/Deny/Always. Outputs Claude Code decision JSON. |
+
+### Data flow
+
+```
+Claude Code -(lifecycle event)-> hook script -(gdbus call)-> GNOME extension DBus
+  -> controller.handlePermissionRequest / handleNotification
+  -> injects current workspace name from domain
+  -> notification-overlay-adapter renders card
+  -> user clicks button -> response written
+  <- hook polls GetNotificationResponse <- returns action
+  <- hook outputs decision JSON to Claude Code
+```
+
+### Hook registration
+
+`paperflow-plugin/hooks/hooks.json` maps Claude Code events to scripts:
+- **SessionStart**: probe + status(done)
+- **Notification**: status(needs-input) + notify
+- **PermissionRequest**: permission (blocking, 10 min timeout)
+- **Stop**: status(done) + notify
+- **SessionEnd**: status(end)
+
 ## Key Design Decisions
 
 - **Clone-based rendering**: Real `WindowActor`s can't be reparented from `global.window_group` on Wayland. `Clutter.Clone` allows free positioning on a custom layer for horizontal scrolling.
@@ -118,3 +165,21 @@ B is focused. WS2 has D, E.
 ## GNOME Shell Specifics
 
 - When debugging GNOME Shell/Mutter/Wayland issues: Chromium and CSD windows have async timing behaviors where size-changed signals can undo layout changes. Always check for signal handler interference before assuming layout logic bugs.
+
+## Clutter / Mutter / St API Reference
+
+**Before writing or modifying any code that uses Clutter, Mutter, Meta, or St APIs, ALWAYS read the relevant type definitions first.** Do not guess at API signatures. The type definitions are the source of truth:
+
+| Library | Type definitions | Online docs |
+|---------|-----------------|-------------|
+| Clutter 14 | `node_modules/@girs/clutter-14/clutter-14.d.ts` | https://gnome.pages.gitlab.gnome.org/mutter/clutter/ |
+| Meta 14 | `node_modules/@girs/meta-14/meta-14.d.ts` | https://gnome.pages.gitlab.gnome.org/mutter/meta/ |
+| St 14 | `node_modules/@girs/st-14/st-14.d.ts` | https://gnome.pages.gitlab.gnome.org/gnome-shell/st/ |
+| Mtk 14 | `node_modules/@girs/mtk-14/mtk-14.d.ts` | https://gnome.pages.gitlab.gnome.org/mutter/mtk/ |
+
+### Key API patterns
+
+- **Clutter.Event** (base class) has all event query methods: `get_related()`, `get_source()`, `get_coords()`, `get_button()`, etc. Subclasses like `CrossingEvent` are abstract markers with NO additional methods.
+- **Signal callbacks** in GJS receive `(emitter, ...signalArgs)`. For `'leave-event'` on a Clutter.Actor: `(actor, event)` where event is `Clutter.Event`.
+- **St.Widget** has `track_hover` / `hover` properties for automatic hover tracking. Base `Clutter.Actor` does NOT have these.
+- **Enter/leave events and children**: When pointer moves from a parent to a reactive child, the parent receives `leave-event`. Use `event.get_related()` + `actor.contains(related)` to detect child-crossing and avoid false collapses.

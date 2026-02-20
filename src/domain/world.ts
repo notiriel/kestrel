@@ -339,8 +339,38 @@ export function widenWindow(world: World, windowId: WindowId): WorldUpdate {
     return buildUpdate(adjustViewport(newWorld));
 }
 
+/** Rename the current workspace. Pass null to clear the name. */
+export function renameCurrentWorkspace(world: World, name: string | null): World {
+    const ws = currentWorkspace(world);
+    return replaceCurrentWorkspace(world, { ...ws, name });
+}
+
+/** Find a workspace by case-insensitive substring match on name. Returns wsIndex or -1. */
+export function findWorkspaceByName(world: World, query: string): number {
+    const q = query.toLowerCase();
+    for (let i = 0; i < world.workspaces.length; i++) {
+        const name = world.workspaces[i]!.name;
+        if (name && name.toLowerCase().includes(q)) return i;
+    }
+    return -1;
+}
+
+/** Switch viewport to a specific workspace index. No-op if out of bounds. */
+export function switchToWorkspace(world: World, wsIndex: number): WorldUpdate {
+    if (wsIndex < 0 || wsIndex >= world.workspaces.length) return buildUpdate(world);
+    const targetWs = world.workspaces[wsIndex]!;
+    const newFocus = targetWs.windows[0]?.id ?? null;
+    const newWorld: World = {
+        ...world,
+        viewport: { ...world.viewport, workspaceIndex: wsIndex, scrollX: 0 },
+        focusedWindow: newFocus,
+    };
+    return buildUpdate(adjustViewport(newWorld));
+}
+
 export interface RestoreWorkspaceData {
     readonly windows: readonly TiledWindow[];
+    readonly name: string | null;
 }
 
 /**
@@ -355,8 +385,8 @@ export function restoreWorld(
     viewportScrollX: number,
     focusedWindow: WindowId | null,
 ): World {
-    let workspaces: Workspace[] = workspaceData.map((data, i) => {
-        const ws = createWorkspace(nextWorkspaceId());
+    let workspaces: Workspace[] = workspaceData.map((data) => {
+        const ws = createWorkspace(nextWorkspaceId(), data.name);
         return { ...ws, windows: data.windows };
     });
 

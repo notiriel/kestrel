@@ -1,4 +1,4 @@
-import type { WindowId, WorkspaceId, LayoutState } from '../domain/types.js';
+import type { WindowId, WorkspaceId, LayoutState, PaperFlowConfig } from '../domain/types.js';
 
 export interface OverviewTransform {
     readonly scale: number;
@@ -8,9 +8,11 @@ export interface OverviewTransform {
 
 /** Tiled clone lifecycle: create, remove, reparent, fullscreen visibility. */
 export interface CloneLifecyclePort {
-    init(workAreaY: number, monitorHeight: number): void;
+    init(workAreaY: number, monitorHeight: number, config?: PaperFlowConfig): void;
     updateWorkArea(workAreaY: number, monitorHeight?: number): void;
-    syncWorkspaces(workspaces: readonly { readonly id: WorkspaceId }[]): void;
+    updateConfig?(config: PaperFlowConfig): void;
+    syncWorkspaces(workspaces: readonly { readonly id: WorkspaceId; readonly name?: string | null }[]): void;
+    updateWorkspaceName?(wsId: WorkspaceId, name: string | null): void;
     addClone(windowId: WindowId, metaWindow: unknown, workspaceId: WorkspaceId): void;
     removeClone(windowId: WindowId): void;
     moveCloneToWorkspace(windowId: WindowId, targetWsId: WorkspaceId): void;

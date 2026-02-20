@@ -77,7 +77,6 @@ export class OverviewHandler {
             onClick: (x, y) => this._handleClick(x, y),
         });
 
-        console.log('[PaperFlow] Entered overview');
     }
 
     private _handleNavigate(direction: 'left' | 'right' | 'up' | 'down'): void {
@@ -110,7 +109,6 @@ export class OverviewHandler {
             this._deps.setWorld(update.world);
 
             this._exitVisual(update.layout);
-            console.log('[PaperFlow] Exited overview (confirm)');
         } catch (e) {
             console.error('[PaperFlow] Error handling overview confirm:', e);
         }
@@ -130,7 +128,6 @@ export class OverviewHandler {
             this._deps.setWorld(update.world);
 
             this._exitVisual(update.layout);
-            console.log('[PaperFlow] Exited overview (cancel)');
         } catch (e) {
             console.error('[PaperFlow] Error handling overview cancel:', e);
         }

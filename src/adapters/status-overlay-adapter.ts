@@ -8,9 +8,9 @@ import Clutter from 'gi://Clutter';
 export type ClaudeStatus = 'working' | 'needs-input' | 'done';
 
 const STATUS_COLORS: Record<ClaudeStatus, string> = {
-    'working': '#FF9800',
+    'working': '#4CAF50',
     'needs-input': '#F44336',
-    'done': '#4CAF50',
+    'done': '#FF9800',
 };
 
 const ICON_SIZE = 75;
@@ -96,7 +96,6 @@ export class StatusOverlayAdapter {
                 overlay.destroy();
                 this._overlays.delete(windowId);
             }
-            console.log(`[PaperFlow] session ${sessionId} ended, cleared window ${windowId}`);
             return;
         }
 
@@ -107,13 +106,22 @@ export class StatusOverlayAdapter {
         }
 
         this._windowStatus.set(windowId, validStatus);
-        console.log(`[PaperFlow] window ${windowId} status → ${validStatus}`);
 
         // If overview is active, update overlay color immediately
         const overlay = this._overlays.get(windowId);
         if (overlay && this._overviewActive) {
             overlay.style = `color: ${STATUS_COLORS[validStatus]}; -st-icon-style: symbolic;`;
         }
+    }
+
+    /** Look up which window a Claude session is running in. */
+    getWindowForSession(sessionId: string): WindowId | null {
+        return this._sessionToWindowId.get(sessionId) ?? null;
+    }
+
+    /** Get a read-only view of windowId → ClaudeStatus for aggregation. */
+    getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> {
+        return this._windowStatus;
     }
 
     enterOverview(
@@ -189,7 +197,6 @@ export class StatusOverlayAdapter {
             if (!this._windowStatus.has(windowId)) {
                 this._windowStatus.set(windowId, 'done');
             }
-            console.log(`[PaperFlow] title probe: session ${sessionId} → window ${windowId}`);
         }
     }
 }

@@ -3,3 +3,6 @@ dist/
 *.js.map
 .idea/
 coverage/
+private/
+.claude/agent-memory/
+github-cleanup.md

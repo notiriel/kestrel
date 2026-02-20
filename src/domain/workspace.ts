@@ -7,8 +7,9 @@ export interface Workspace {
     readonly name: string | null;
 }
 
-export function createWorkspace(id: WorkspaceId, name: string | null = null): Workspace {
-    return { id, windows: [], name };
+export function createWorkspace(id: WorkspaceId, name?: string | null): Workspace {
+    const defaultName = `Workspace ${Number(String(id).replace('ws-', '')) + 1}`;
+    return { id, windows: [], name: name === undefined ? defaultName : name };
 }
 
 export function addWindow(ws: Workspace, window: TiledWindow): Workspace {

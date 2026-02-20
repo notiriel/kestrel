@@ -1,4 +1,4 @@
-import type { WindowId, WorkspaceId, LayoutState } from '../domain/types.js';
+import type { WindowId, WorkspaceId, LayoutState, PaperFlowConfig } from '../domain/types.js';
 import type { ClonePort, OverviewTransform } from '../ports/clone-port.js';
 import { safeDisconnect } from './signal-utils.js';
 import { FloatCloneManager } from './float-clone-manager.js';
@@ -28,11 +28,10 @@ interface CloneEntry {
 interface WorkspaceContainer {
     container: Clutter.Actor;
     scrollContainer: Clutter.Actor;
+    nameLabel: St.Label;
 }
 
 const ANIMATION_DURATION = 250;
-const FOCUS_BORDER_WIDTH = 3;
-const FOCUS_BORDER_COLOR = '#4caf50';
 const OVERVIEW_BG_COLOR = 'rgba(0,0,0,0.7)';
 
 export type { OverviewTransform };
@@ -52,10 +51,21 @@ export class CloneAdapter implements ClonePort {
     private _lastLayout: LayoutState | null = null;
     private _overviewActive: boolean = false;
     private _overviewBg: St.Widget | null = null;
+    private _focusBorderWidth: number = 3;
+    private _focusBorderColor: string = 'rgba(255,255,255,0.8)';
+    private _focusBorderRadius: number = 8;
+    private _focusBgColor: string = 'rgba(255,255,255,0.05)';
 
-    init(workAreaY: number, monitorHeight: number): void {
+    init(workAreaY: number, monitorHeight: number, config?: PaperFlowConfig): void {
         this._workAreaY = workAreaY;
         this._monitorHeight = monitorHeight;
+
+        if (config) {
+            this._focusBorderWidth = config.focusBorderWidth;
+            this._focusBorderColor = config.focusBorderColor;
+            this._focusBorderRadius = config.focusBorderRadius;
+            this._focusBgColor = config.focusBgColor;
+        }
 
         this._layer = new Clutter.Actor({
             name: 'paperflow-layer',
@@ -73,7 +83,7 @@ export class CloneAdapter implements ClonePort {
 
         this._focusIndicator = new St.Widget({
             name: 'paperflow-focus-indicator',
-            style: `border: ${FOCUS_BORDER_WIDTH}px solid ${FOCUS_BORDER_COLOR}; border-radius: 4px;`,
+            style: this._buildFocusStyle(),
             visible: false,
             reactive: false,
         });
@@ -82,8 +92,23 @@ export class CloneAdapter implements ClonePort {
         parent.insert_child_above(this._layer, global.window_group);
 
         this._floatCloneManager.init(this._layer);
+    }
 
-        console.log(`[PaperFlow] clone-adapter init: workAreaY=${workAreaY}, monitorHeight=${monitorHeight}, layer.position=(${this._layer.x},${this._layer.y})`);
+    updateConfig(config: PaperFlowConfig): void {
+        this._focusBorderWidth = config.focusBorderWidth;
+        this._focusBorderColor = config.focusBorderColor;
+        this._focusBorderRadius = config.focusBorderRadius;
+        this._focusBgColor = config.focusBgColor;
+        if (this._focusIndicator) {
+            this._focusIndicator.style = this._buildFocusStyle();
+        }
+        if (this._lastLayout) {
+            this._updateFocusIndicator(this._lastLayout, 0, Clutter.AnimationMode.EASE_OUT_QUAD);
+        }
+    }
+
+    private _buildFocusStyle(): string {
+        return `border: ${this._focusBorderWidth}px solid ${this._focusBorderColor}; border-radius: ${this._focusBorderRadius}px; background-color: ${this._focusBgColor};`;
     }
 
     updateWorkArea(workAreaY: number, monitorHeight?: number): void {
@@ -120,7 +145,18 @@ export class CloneAdapter implements ClonePort {
 
         this._workspaceStrip!.add_child(container);
 
-        const wc: WorkspaceContainer = { container, scrollContainer };
+        const nameLabel = new St.Label({
+            text: '',
+            style_class: 'paperflow-ws-label',
+            y_align: Clutter.ActorAlign.START,
+            visible: false,
+        });
+        nameLabel.rotation_angle_z = -90;
+        // Position label at left edge; rotated -90 means text reads bottom-to-top
+        nameLabel.set_position(4, 120);
+        container.add_child(nameLabel);
+
+        const wc: WorkspaceContainer = { container, scrollContainer, nameLabel };
         this._workspaceContainers.set(wsId, wc);
         return wc;
     }
@@ -350,10 +386,10 @@ export class CloneAdapter implements ClonePort {
         this._focusIndicator.visible = true;
 
         // Convert from scroll-container-relative to layer-relative coordinates.
-        const x = focusedLayout.x - layout.scrollX - FOCUS_BORDER_WIDTH;
-        const y = focusedLayout.y - FOCUS_BORDER_WIDTH;
-        const width = focusedLayout.width + FOCUS_BORDER_WIDTH * 2;
-        const height = focusedLayout.height + FOCUS_BORDER_WIDTH * 2;
+        const x = focusedLayout.x - layout.scrollX - this._focusBorderWidth;
+        const y = focusedLayout.y - this._focusBorderWidth;
+        const width = focusedLayout.width + this._focusBorderWidth * 2;
+        const height = focusedLayout.height + this._focusBorderWidth * 2;
 
         if (duration > 0) {
             (this._focusIndicator as unknown as Easeable).ease({
@@ -387,7 +423,7 @@ export class CloneAdapter implements ClonePort {
         wc.scrollContainer.set_position(-scrollX, 0);
     }
 
-    syncWorkspaces(workspaces: readonly { readonly id: WorkspaceId }[]): void {
+    syncWorkspaces(workspaces: readonly { readonly id: WorkspaceId; readonly name?: string | null }[]): void {
         if (!this._workspaceStrip) return;
 
         const validIds = new Set(workspaces.map(ws => ws.id));
@@ -400,10 +436,17 @@ export class CloneAdapter implements ClonePort {
         }
 
         for (const ws of workspaces) {
-            this._getOrCreateWorkspaceContainer(ws.id);
+            const wc = this._getOrCreateWorkspaceContainer(ws.id);
+            wc.nameLabel.text = ws.name ?? '';
         }
 
         this._workspaceOrder = workspaces.map(ws => ws.id);
+    }
+
+    updateWorkspaceName(wsId: WorkspaceId, name: string | null): void {
+        const wc = this._workspaceContainers.get(wsId);
+        if (!wc) return;
+        wc.nameLabel.text = name ?? '';
     }
 
     animateViewport(targetScrollX: number): void {
@@ -453,6 +496,7 @@ export class CloneAdapter implements ClonePort {
                 duration: ANIMATION_DURATION,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
+            wc.nameLabel.visible = true;
         }
 
         this._updateOverviewFocus(layout, layout.workspaceIndex, transform);
@@ -484,6 +528,7 @@ export class CloneAdapter implements ClonePort {
                 duration: ANIMATION_DURATION,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
+            wc.nameLabel.visible = false;
         }
 
         this._updateFocusIndicator(layout, ANIMATION_DURATION, Clutter.AnimationMode.EASE_OUT_QUAD);
@@ -512,10 +557,10 @@ export class CloneAdapter implements ClonePort {
         this._focusIndicator.visible = true;
 
         const { scale, offsetX, offsetY } = transform;
-        const x = focusedLayout.x * scale + offsetX - FOCUS_BORDER_WIDTH;
-        const y = (wsIndex * this._monitorHeight + focusedLayout.y) * scale + offsetY - FOCUS_BORDER_WIDTH;
-        const width = focusedLayout.width * scale + FOCUS_BORDER_WIDTH * 2;
-        const height = focusedLayout.height * scale + FOCUS_BORDER_WIDTH * 2;
+        const x = focusedLayout.x * scale + offsetX - this._focusBorderWidth;
+        const y = (wsIndex * this._monitorHeight + focusedLayout.y) * scale + offsetY - this._focusBorderWidth;
+        const width = focusedLayout.width * scale + this._focusBorderWidth * 2;
+        const height = focusedLayout.height * scale + this._focusBorderWidth * 2;
 
         (this._focusIndicator as unknown as Easeable).ease({
             x, y, width, height,

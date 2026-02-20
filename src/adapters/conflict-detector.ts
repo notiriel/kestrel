@@ -31,7 +31,6 @@ export class ConflictDetector implements ConflictDetectorPort {
                         if (!uuid) return;
                         if (!(CONFLICTING_EXTENSIONS as readonly string[]).includes(uuid)) return;
                         if (ext.state === EXTENSION_STATE_ENABLED) {
-                            console.log(`[PaperFlow] Conflicting extension became enabled: ${uuid}`);
                             this._notifyConflict(uuid);
                         }
                     } catch (e) {
@@ -48,9 +47,7 @@ export class ConflictDetector implements ConflictDetectorPort {
         for (const uuid of CONFLICTING_EXTENSIONS) {
             try {
                 const ext = Main.extensionManager.lookup(uuid);
-                console.log(`[PaperFlow] Conflict check: ${uuid} → state=${ext?.state ?? 'not found'}`);
                 if (ext && ext.state === EXTENSION_STATE_ENABLED) {
-                    console.log(`[PaperFlow] Conflicting extension detected: ${uuid}`);
                     this._notifyConflict(uuid);
                 }
             } catch (e) {
@@ -101,7 +98,7 @@ export class ConflictDetector implements ConflictDetectorPort {
                         );
                     }
 
-                    console.log(`[PaperFlow] Disabled conflicting extension: ${uuid}`);
+                    console.log(`[PaperFlow] Disabled conflicting extension: ${uuid}`); // intentional — user action feedback
                 } catch (e) {
                     console.error(`[PaperFlow] Failed to disable ${uuid}:`, e);
                 }

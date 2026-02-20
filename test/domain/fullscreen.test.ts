@@ -7,13 +7,14 @@ import { createTiledWindow } from '../../src/domain/window.js';
 import { computeLayout } from '../../src/domain/layout.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
 
-const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
     totalHeight: 1080,
     slotWidth: 960,
     workAreaY: 0,
+    stageOffsetX: 0,
 };
 
 function wid(n: number): WindowId {

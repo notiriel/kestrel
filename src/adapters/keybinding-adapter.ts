@@ -50,7 +50,6 @@ export class KeybindingAdapter implements KeybindingPort {
                 const saved = settings.get_strv(key);
                 bindings.set(key, saved);
                 settings.set_strv(key, []);
-                console.log(`[PaperFlow] Disabled ${key} (was ${JSON.stringify(saved)})`);
             }
             this._savedBindings.push({ schemaId, bindings });
         } catch (e) {
@@ -65,7 +64,6 @@ export class KeybindingAdapter implements KeybindingPort {
                 const settings = new Gio.Settings({ schema_id: schemaId });
                 for (const [key, saved] of bindings) {
                     settings.set_strv(key, saved);
-                    console.log(`[PaperFlow] Restored ${key} to ${JSON.stringify(saved)}`);
                 }
             } catch (e) {
                 console.error(`[PaperFlow] Failed to restore keybindings in ${schemaId}:`, e);
@@ -81,7 +79,6 @@ export class KeybindingAdapter implements KeybindingPort {
             const mutterSettings = new Gio.Settings({ schema_id: MUTTER_SCHEMA });
             this._savedOverlayKey = mutterSettings.get_string(OVERLAY_KEY);
             mutterSettings.set_string(OVERLAY_KEY, '');
-            console.log(`[PaperFlow] Disabled overlay-key (was "${this._savedOverlayKey}")`);
         } catch (e) {
             console.error('[PaperFlow] Failed to disable overlay-key:', e);
         }
@@ -101,6 +98,8 @@ export class KeybindingAdapter implements KeybindingPort {
             ['move-up', callbacks.onMoveUp],
             ['toggle-size', callbacks.onToggleSize],
             ['paperflow-toggle-overview', callbacks.onToggleOverview],
+            ['new-window', callbacks.onNewWindow],
+            ['toggle-notifications', callbacks.onToggleNotifications],
         ];
 
         for (const [name, handler] of bindings) {
@@ -112,7 +111,6 @@ export class KeybindingAdapter implements KeybindingPort {
                     Shell.ActionMode.NORMAL,
                     handler,
                 );
-                console.log(`[PaperFlow] addKeybinding("${name}") → ${result}`);
                 this._bound.push(name);
             } catch (e) {
                 console.error(`[PaperFlow] Failed to add keybinding ${name}:`, e);
@@ -135,7 +133,6 @@ export class KeybindingAdapter implements KeybindingPort {
             try {
                 const mutterSettings = new Gio.Settings({ schema_id: MUTTER_SCHEMA });
                 mutterSettings.set_string(OVERLAY_KEY, this._savedOverlayKey);
-                console.log(`[PaperFlow] Restored overlay-key to "${this._savedOverlayKey}"`);
             } catch (e) {
                 console.error('[PaperFlow] Failed to restore overlay-key:', e);
             }

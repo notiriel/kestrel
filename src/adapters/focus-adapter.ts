@@ -1,6 +1,7 @@
 import type { WindowId } from '../domain/types.js';
 import type { FocusPort } from '../ports/focus-port.js';
 import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 export class FocusAdapter implements FocusPort {
@@ -29,6 +30,18 @@ export class FocusAdapter implements FocusPort {
             console.error('[PaperFlow] Failed to activate window:', e);
             this._windows.delete(windowId);
         }
+    }
+
+    openNewWindow(windowId: WindowId): void {
+        const metaWindow = this._windows.get(windowId);
+        if (!metaWindow) return;
+        const tracker = Shell.WindowTracker.get_default();
+        const app = tracker.get_window_app(metaWindow);
+        if (!app) {
+            console.log('[PaperFlow] No app found for focused window');
+            return;
+        }
+        app.open_new_window(-1);
     }
 
     connectFocusChanged(callback: (windowId: WindowId) => void): void {

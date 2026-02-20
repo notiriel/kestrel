@@ -17,24 +17,27 @@ export class StatePersistence implements StatePersistencePort {
         return {
             gapSize: this._settings.get_int('gap-size'),
             edgeGap: this._settings.get_int('edge-gap'),
-            focusBorderWidth: 3,
+            focusBorderWidth: this._settings.get_int('focus-border-width'),
+            focusBorderColor: this._settings.get_string('focus-border-color'),
+            focusBorderRadius: this._settings.get_int('focus-border-radius'),
+            focusBgColor: this._settings.get_string('focus-background-color'),
         };
     }
 
     save(world: World): void {
         try {
             const state = {
-                version: 1,
+                version: 2,
                 workspaces: world.workspaces.map(ws => ({
                     windowIds: ws.windows.map(w => w.id),
                     slotSpans: ws.windows.map(w => w.slotSpan),
+                    name: ws.name,
                 })),
                 focusedWindow: world.focusedWindow,
                 viewportWorkspaceIndex: world.viewport.workspaceIndex,
                 viewportScrollX: world.viewport.scrollX,
             };
             this._settings.set_string('saved-state', JSON.stringify(state));
-            console.log(`[PaperFlow] saved state: ${state.workspaces.length} workspaces`);
         } catch (e) {
             console.error('[PaperFlow] Error saving state:', e);
         }
@@ -48,7 +51,7 @@ export class StatePersistence implements StatePersistencePort {
             this._settings.set_string('saved-state', '');
 
             const state = JSON.parse(json);
-            if (state.version !== 1) return null;
+            if (state.version !== 1 && state.version !== 2) return null;
 
             const actors = global.get_window_actors();
             const existingWindowIds = new Set<string>();
@@ -70,7 +73,7 @@ export class StatePersistence implements StatePersistencePort {
                         windows.push(createTiledWindow(id, slotSpan));
                     }
                 }
-                workspaceData.push({ windows });
+                workspaceData.push({ windows, name: savedWs.name ?? null });
             }
 
             const world = restoreWorld(
@@ -81,7 +84,6 @@ export class StatePersistence implements StatePersistencePort {
                 (state.focusedWindow as WindowId) ?? null,
             );
 
-            console.log(`[PaperFlow] restored state: ${world.workspaces.length} workspaces`);
             return world;
         } catch (e) {
             console.error('[PaperFlow] Error restoring state:', e);

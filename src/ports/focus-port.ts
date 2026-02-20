@@ -5,6 +5,7 @@ export interface FocusPort {
     untrack(windowId: WindowId): void;
     focus(windowId: WindowId | null): void;
     getMetaWindow(windowId: WindowId): unknown | undefined;
+    openNewWindow(windowId: WindowId): void;
     connectFocusChanged(callback: (windowId: WindowId) => void): void;
     destroy(): void;
 }

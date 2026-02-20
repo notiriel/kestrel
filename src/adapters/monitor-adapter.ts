@@ -6,24 +6,47 @@ export class MonitorAdapter implements MonitorPort {
     private _signalId: number | null = null;
 
     readPrimaryMonitor(): MonitorInfo {
-        const monitor = Main.layoutManager.primaryMonitor;
-        if (!monitor) {
-            return { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0 };
+        const monitors = Main.layoutManager.monitors;
+        if (!monitors || monitors.length === 0) {
+            return { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
         }
-        const count = Main.layoutManager.monitors.length;
-        const workArea = Main.layoutManager.getWorkAreaForMonitor(monitor.index);
-        const totalWidth = monitor.width;
+        const count = monitors.length;
+
+        // Compute combined geometry across all monitors
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minHeight = Infinity;
+
+        for (const m of monitors) {
+            minX = Math.min(minX, m.x);
+            maxX = Math.max(maxX, m.x + m.width);
+            minHeight = Math.min(minHeight, m.height);
+        }
+
+        const stageOffsetX = minX;
+        const totalWidth = maxX - minX;
+
+        // Use primary monitor's work area for panel offset
+        const primaryMonitor = Main.layoutManager.primaryMonitor;
+        const workArea = primaryMonitor
+            ? Main.layoutManager.getWorkAreaForMonitor(primaryMonitor.index)
+            : null;
+
+        let workAreaY = 0;
+        if (primaryMonitor && workArea) {
+            workAreaY = workArea.y - primaryMonitor.y;
+        }
         // On some systems (e.g. Parallels VMs), the GNOME panel doesn't create
         // a strut, so workArea.y == monitor.y.  Fall back to reading panel height.
-        let workAreaY = workArea.y - monitor.y;
         const panelHeight = Main.panel?.height ?? 0;
         if (workAreaY === 0 && panelHeight > 0) {
             workAreaY = panelHeight;
         }
-        const totalHeight = monitor.height - workAreaY;
+
+        const totalHeight = minHeight - workAreaY;
         const slotWidth = Math.floor(totalWidth / (count * 2));
-        console.log(`[PaperFlow] monitor: monitor(${monitor.x},${monitor.y},${monitor.width}x${monitor.height}) workArea(${workArea.x},${workArea.y},${workArea.width}x${workArea.height}) → totalWidth=${totalWidth} totalHeight=${totalHeight} slotWidth=${slotWidth} workAreaY=${workAreaY}`);
-        return { count, totalWidth, totalHeight, slotWidth, workAreaY };
+
+        return { count, totalWidth, totalHeight, slotWidth, workAreaY, stageOffsetX };
     }
 
     connectMonitorsChanged(callback: (info: MonitorInfo) => void): void {

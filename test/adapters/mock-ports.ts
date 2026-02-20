@@ -38,7 +38,7 @@ export function createMockClonePort(): Mocked<ClonePort> {
 export function createMockWindowPort(): Mocked<WindowPort> {
     return {
         setWorkAreaY: vi.fn(),
-        setMonitorWidth: vi.fn(),
+        setMonitorBounds: vi.fn(),
         track: vi.fn(),
         untrack: vi.fn(),
         setWindowFullscreen: vi.fn(),
@@ -74,6 +74,7 @@ export function createMockMonitorPort(monitor?: MonitorInfo): Mocked<MonitorPort
         totalHeight: 1080,
         slotWidth: 960,
         workAreaY: 0,
+        stageOffsetX: 0,
     };
     return {
         readPrimaryMonitor: vi.fn().mockReturnValue(defaultMonitor),
@@ -106,7 +107,7 @@ export function createMockConflictDetectorPort(): Mocked<ConflictDetectorPort> {
 
 export function createMockStatePersistencePort(): Mocked<StatePersistencePort> {
     return {
-        readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3 }),
+        readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' }),
         save: vi.fn(),
         tryRestore: vi.fn().mockReturnValue(null),
     };

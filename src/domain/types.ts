@@ -8,6 +8,9 @@ export interface PaperFlowConfig {
     readonly gapSize: number;
     readonly edgeGap: number;
     readonly focusBorderWidth: number;
+    readonly focusBorderColor: string;
+    readonly focusBorderRadius: number;
+    readonly focusBgColor: string;
 }
 
 export interface MonitorInfo {
@@ -17,6 +20,8 @@ export interface MonitorInfo {
     readonly slotWidth: number;
     /** Y offset of usable work area (below GNOME top panel) in stage coords */
     readonly workAreaY: number;
+    /** X offset of leftmost monitor in stage coords (usually 0) */
+    readonly stageOffsetX: number;
 }
 
 export interface WindowLayout {

@@ -1,6 +1,6 @@
 import type { WindowId, WorkspaceId, MonitorInfo } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt } from '../domain/world.js';
+import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from '../domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from '../domain/window-operations.js';
 import { computeLayout } from '../domain/layout.js';
@@ -29,9 +29,14 @@ import { SettlementRetry } from './settlement-retry.js';
 import { StatePersistence } from './state-persistence.js';
 import { NavigationHandler } from './navigation-handler.js';
 import { StatusOverlayAdapter } from './status-overlay-adapter.js';
+import { PanelIndicatorAdapter } from './panel-indicator-adapter.js';
+import { NotificationOverlayAdapter } from './notification-overlay-adapter.js';
+import { PaperFlowDBusService } from './dbus-service.js';
+import { NotificationFocusMode } from './notification-focus-mode.js';
 import { safeWindow } from './safe-window.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
+import GLib from 'gi://GLib';
 
 export class PaperFlowController {
     private _settings: Gio.Settings;
@@ -51,7 +56,12 @@ export class PaperFlowController {
     private _shellAdapter: ShellPort | null = null;
     private _navigationHandler: NavigationHandler | null = null;
     private _statusOverlay: StatusOverlayAdapter | null = null;
+    private _panelIndicator: import('./panel-indicator-adapter.js').PanelIndicatorAdapter | null = null;
+    private _notificationOverlay: import('./notification-overlay-adapter.js').NotificationOverlayAdapter | null = null;
+    private _dbusService: PaperFlowDBusService | null = null;
+    private _notificationFocusMode: NotificationFocusMode | null = null;
     private _extensionPath: string;
+    private _debugMode: boolean = false;
     private _internalFocusChange: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -66,11 +76,15 @@ export class PaperFlowController {
         try {
             console.log('[PaperFlow] enabling...');
 
-            // Enable DBus Eval for development (gdbus call org.gnome.Shell.Eval)
-            (global as any).context.unsafe_mode = true;
+            // Read debug mode from settings
+            this._debugMode = this._settings.get_boolean('debug-mode');
 
-            // Expose controller on global for DBus debugging
-            (global as any)._paperflow = this;
+            if (this._debugMode) {
+                // Enable DBus Eval for development (gdbus call org.gnome.Shell.Eval)
+                (global as any).context.unsafe_mode = true;
+                // Expose controller on global for DBus debugging
+                (global as any)._paperflow = this;
+            }
 
             // 0. Check for conflicting extensions
             this._conflictDetector = this._ports.conflictDetector ?? new ConflictDetector();
@@ -90,12 +104,12 @@ export class PaperFlowController {
 
             // 4. Create adapters
             this._cloneAdapter = this._ports.clone ?? new CloneAdapter();
-            this._cloneAdapter.init(monitor.workAreaY, monitor.totalHeight);
+            this._cloneAdapter.init(monitor.workAreaY, monitor.totalHeight, config);
             this._cloneAdapter.syncWorkspaces(this._world.workspaces);
 
             this._windowAdapter = this._ports.window ?? new WindowAdapter();
             this._windowAdapter.setWorkAreaY(monitor.workAreaY);
-            this._windowAdapter.setMonitorWidth(monitor.totalWidth);
+            this._windowAdapter.setMonitorBounds(monitor.stageOffsetX, monitor.totalWidth);
             this._focusAdapter = this._ports.focus ?? new FocusAdapter();
             this._shellAdapter = this._ports.shell ?? new ShellAdapter();
 
@@ -106,10 +120,106 @@ export class PaperFlowController {
                 this._statusOverlay.init(layer, `${this._extensionPath}/data`);
             }
 
+            // Panel indicator in top bar
+            this._panelIndicator = new PanelIndicatorAdapter();
+            this._panelIndicator.init((wsIndex) => {
+                try {
+                    if (!this._world) return;
+                    const oldScrollX = this._world.viewport.scrollX;
+                    const oldWsId = wsIdAt(this._world, this._world.viewport.workspaceIndex);
+                    const update = switchToWorkspace(this._world, wsIndex);
+                    this._setWorld(update.world);
+                    const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+                    if (newWsId && newWsId !== oldWsId) {
+                        this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
+                    }
+                    this._applyLayout(update.layout, true);
+                    this._focusWindow(update.world.focusedWindow);
+                } catch (e) {
+                    console.error('[PaperFlow] Error switching workspace from panel:', e);
+                }
+            });
+
+            // Notification overlay for Claude permission requests
+            this._notificationOverlay = new NotificationOverlayAdapter();
+            this._notificationOverlay.init({
+                onVisitSession: (sessionId) => {
+                    const wid = this._statusOverlay?.getWindowForSession(sessionId) ?? null;
+                    if (!wid || !this._world) return;
+                    const oldScrollX = this._world.viewport.scrollX;
+                    const oldWsId = wsIdAt(this._world, this._world.viewport.workspaceIndex);
+                    const update = setFocus(this._world, wid);
+                    this._setWorld(update.world);
+                    const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+                    if (newWsId && newWsId !== oldWsId) {
+                        this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
+                    }
+                    this._applyLayout(update.layout, true);
+                    this._focusWindow(wid);
+                },
+            });
+
+            // Export DBus service for hook scripts
+            this._dbusService = new PaperFlowDBusService({
+                handleNotification: (payload) => this.handleNotification(payload),
+                handlePermissionRequest: (payload) => this.handlePermissionRequest(payload),
+                setWindowStatus: (sessionId, status) => this.setWindowStatus(sessionId, status),
+                getNotificationResponse: (id) => this.getNotificationResponse(id),
+            });
+
+            // Notification focus mode (Super+.)
+            this._notificationFocusMode = new NotificationFocusMode({
+                getPendingEntries: () => this._notificationOverlay?.getPendingEntries() ?? [],
+                getWindowForSession: (sid) => this._statusOverlay?.getWindowForSession(sid) ?? null,
+                getMetaWindow: (wid) => this._focusAdapter?.getMetaWindow(wid) as Meta.Window | undefined,
+                respondToEntry: (id, action) => this._notificationOverlay?.respond(id, action),
+                visitSession: (sessionId) => {
+                    const wid = this._statusOverlay?.getWindowForSession(sessionId) ?? null;
+                    if (!wid || !this._world) return;
+                    const oldScrollX = this._world.viewport.scrollX;
+                    const oldWsId = wsIdAt(this._world, this._world.viewport.workspaceIndex);
+                    const update = setFocus(this._world, wid);
+                    this._setWorld(update.world);
+                    const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+                    if (newWsId && newWsId !== oldWsId) {
+                        this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
+                    }
+                    this._applyLayout(update.layout, true);
+                    this._focusWindow(wid);
+                },
+                getMonitor: () => {
+                    const m = this._world?.monitor;
+                    return {
+                        x: m?.stageOffsetX ?? 0,
+                        y: m?.workAreaY ?? 0,
+                        width: m?.totalWidth ?? 1920,
+                        height: m?.totalHeight ?? 1080,
+                    };
+                },
+                isOverviewActive: () => this._overviewHandler?.isActive ?? false,
+                registerEntriesChanged: (cb) => {
+                    if (this._notificationOverlay) {
+                        this._notificationOverlay.onEntriesChanged = cb;
+                    }
+                },
+                unregisterEntriesChanged: () => {
+                    if (this._notificationOverlay) {
+                        this._notificationOverlay.onEntriesChanged = null;
+                    }
+                },
+                // Question support
+                getQuestionState: (id) => this._notificationOverlay?.getQuestionState(id) ?? null,
+                questionNavigate: (id, delta) => this._notificationOverlay?.questionNavigate(id, delta),
+                questionSelectOption: (id, qi, oi) => this._notificationOverlay?.questionSelectOption(id, qi, oi),
+                questionSend: (id) => this._notificationOverlay?.questionSend(id),
+                questionDismiss: (id) => this._notificationOverlay?.questionDismiss(id),
+                questionVisit: (id) => this._notificationOverlay?.questionVisit(id),
+            });
+
             // 5. Create collaborators
             this._overviewHandler = new OverviewHandler({
                 getWorld: () => this._world,
-                setWorld: (w) => { this._world = w; },
+                setWorld: (w) => { this._setWorld(w); },
                 focusWindow: (id) => this._focusWindow(id),
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
@@ -135,7 +245,7 @@ export class PaperFlowController {
 
             this._navigationHandler = new NavigationHandler({
                 getWorld: () => this._world,
-                setWorld: (w) => { this._world = w; },
+                setWorld: (w) => { this._setWorld(w); },
                 checkGuard: (label) => this._guard?.check(label) ?? false,
                 focusWindow: (id) => this._focusWindow(id),
                 getCloneAdapter: () => this._cloneAdapter,
@@ -156,6 +266,8 @@ export class PaperFlowController {
                 onMoveUp: () => this._navigationHandler!.handleVerticalMove(moveUp, 'moveUp'),
                 onToggleSize: () => this._navigationHandler!.handleSimpleCommand(toggleSize, 'toggleSize'),
                 onToggleOverview: () => this._overviewHandler!.handleToggle(),
+                onNewWindow: () => this._handleNewWindow(),
+                onToggleNotifications: () => this._notificationFocusMode?.toggle(),
             });
 
             // 7. Connect external focus changes (click-to-focus)
@@ -179,11 +291,11 @@ export class PaperFlowController {
                 },
                 onFloatWindowReady: (windowId: WindowId, metaWindow: unknown) => {
                     const rawMetaWindow = metaWindow as Meta.Window;
-                    console.log(`[PaperFlow] float window added: ${windowId} title="${rawMetaWindow.get_title()}"`);
+                    this._log(`[PaperFlow] float window added: ${windowId} title="${rawMetaWindow.get_title()}"`);
                     this._cloneAdapter?.addFloatClone(windowId, safeWindow(rawMetaWindow));
                 },
                 onFloatWindowDestroyed: (windowId: WindowId) => {
-                    console.log(`[PaperFlow] float window removed: ${windowId}`);
+                    this._log(`[PaperFlow] float window removed: ${windowId}`);
                     this._cloneAdapter?.removeFloatClone(windowId);
                 },
                 onWindowFullscreenChanged: (windowId: WindowId, isFullscreen: boolean) => {
@@ -200,7 +312,7 @@ export class PaperFlowController {
             // 11. Try restoring saved state, then enumerate existing windows.
             const restored = this._statePersistence.tryRestore(config, monitor);
             if (restored) {
-                this._world = restored;
+                this._setWorld(restored);
                 this._cloneAdapter.syncWorkspaces(this._world.workspaces);
             }
             this._windowEventAdapter.enumerateExisting();
@@ -231,11 +343,23 @@ export class PaperFlowController {
                 this._overviewDismissTimeout = null;
             }
 
+            this._dbusService?.destroy();
+            this._dbusService = null;
+
             this._shellAdapter?.destroy();
             this._shellAdapter = null;
 
             this._settlementRetry?.destroy();
             this._settlementRetry = null;
+
+            this._notificationFocusMode?.destroy();
+            this._notificationFocusMode = null;
+
+            this._notificationOverlay?.destroy();
+            this._notificationOverlay = null;
+
+            this._panelIndicator?.destroy();
+            this._panelIndicator = null;
 
             this._statusOverlay?.destroy();
             this._statusOverlay = null;
@@ -270,7 +394,10 @@ export class PaperFlowController {
             this._conflictDetector = null;
 
             this._world = null;
-            (global as any)._paperflow = null;
+            if (this._debugMode) {
+                (global as any)._paperflow = null;
+                (global as any).context.unsafe_mode = false;
+            }
 
             console.log('[PaperFlow] disabled');
         } catch (e) {
@@ -281,6 +408,19 @@ export class PaperFlowController {
     /** Set Claude session status for a window. Called via DBus from hook scripts. */
     setWindowStatus(sessionId: string, status: string): void {
         this._statusOverlay?.setWindowStatus(sessionId, status);
+        if (this._world) {
+            this._panelIndicator?.update(this._world, this._statusOverlay ?? undefined);
+        }
+    }
+
+    private _log(msg: string): void {
+        if (this._debugMode) console.log(msg);
+    }
+
+    /** Centralized world state setter — updates panel indicator after every change. */
+    private _setWorld(world: World): void {
+        this._world = world;
+        this._panelIndicator?.update(world, this._statusOverlay ?? undefined);
     }
 
     /** Serializable snapshot for DBus debugging: global._paperflow.debugState() */
@@ -295,6 +435,7 @@ export class PaperFlowController {
                 overviewActive: this._world.overviewActive,
                 workspaces: this._world.workspaces.map(ws => ({
                     id: ws.id,
+                    name: ws.name,
                     windows: ws.windows.map(w => ({ id: w.id, slotSpan: w.slotSpan })),
                 })),
                 viewport: this._world.viewport,
@@ -307,12 +448,160 @@ export class PaperFlowController {
         });
     }
 
+    /** Rename current workspace. Called via DBus. */
+    renameCurrentWorkspace(name: string): string {
+        try {
+            if (!this._world) return '{"error":"no world"}';
+            this._setWorld(renameCurrentWorkspace(this._world, name || null));
+            return '{"ok":true}';
+        } catch (e) {
+            return `{"error":"${String(e)}"}`;
+        }
+    }
+
+    /** Switch to workspace by name. Called via DBus. */
+    switchToWorkspaceByName(name: string): string {
+        try {
+            if (!this._world) return '{"error":"no world"}';
+            const wsIndex = findWorkspaceByName(this._world, name);
+            if (wsIndex === -1) return '{"error":"workspace not found"}';
+
+            const oldScrollX = this._world.viewport.scrollX;
+            const oldWsId = wsIdAt(this._world, this._world.viewport.workspaceIndex);
+
+            const update = switchToWorkspace(this._world, wsIndex);
+            this._setWorld(update.world);
+
+            const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            if (newWsId && newWsId !== oldWsId) {
+                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
+            }
+
+            this._applyLayout(update.layout, true);
+            this._focusWindow(update.world.focusedWindow);
+            return '{"ok":true}';
+        } catch (e) {
+            return `{"error":"${String(e)}"}`;
+        }
+    }
+
+    /** List all non-empty workspaces with metadata. Called via DBus. */
+    listWorkspaces(): string {
+        try {
+            if (!this._world) return '{"error":"no world"}';
+            const result = this._world.workspaces
+                .map((ws, i) => ({
+                    index: i,
+                    name: ws.name,
+                    windowCount: ws.windows.length,
+                    isCurrent: i === this._world!.viewport.workspaceIndex,
+                    claudeStatus: this._getWorkspaceClaudeStatus(i),
+                }))
+                .filter(ws => ws.windowCount > 0);
+            return JSON.stringify(result);
+        } catch (e) {
+            return `{"error":"${String(e)}"}`;
+        }
+    }
+
+    /** Handle incoming permission request from Claude hook. Called via DBus. */
+    handlePermissionRequest(jsonPayload: string): string {
+        try {
+            const payload = JSON.parse(jsonPayload);
+            payload.workspace_name = this._workspaceNameForSession(String(payload.session_id ?? ''));
+            const id = `notif-${GLib.uuid_string_random()}`;
+
+            // Route AskUserQuestion to question card
+            if (payload.tool_name === 'AskUserQuestion' && payload.tool_input?.questions) {
+                payload.questions = payload.tool_input.questions;
+                const qCount = Array.isArray(payload.tool_input.questions) ? payload.tool_input.questions.length : 0;
+                payload.title = `Claude asks ${qCount} question${qCount !== 1 ? 's' : ''}`;
+                payload.message = 'Session wants your input';
+                this._notificationOverlay?.showQuestion(id, payload);
+            } else {
+                this._notificationOverlay?.showPermission(id, payload);
+            }
+
+            return JSON.stringify({ id });
+        } catch (e) {
+            return `{"error":"${String(e)}"}`;
+        }
+    }
+
+    /** Handle incoming notification from Claude hook. Called via DBus. */
+    handleNotification(jsonPayload: string): string {
+        try {
+            const payload = JSON.parse(jsonPayload);
+            payload.workspace_name = this._workspaceNameForSession(String(payload.session_id ?? ''));
+            const id = `notif-${GLib.uuid_string_random()}`;
+            this._notificationOverlay?.showNotification(id, payload);
+            return JSON.stringify({ id });
+        } catch (e) {
+            return `{"error":"${String(e)}"}`;
+        }
+    }
+
+    /** Get notification response (for hook polling). Called via DBus. */
+    getNotificationResponse(id: string): string {
+        try {
+            const response = this._notificationOverlay?.getResponse(id);
+            if (!response) return '{"pending":true}';
+
+            // Question cards respond with 'allow:{"0":["opt"]}' — parse the answers
+            if (response.startsWith('allow:')) {
+                const answersJson = response.slice(6);
+                try {
+                    const answers = JSON.parse(answersJson);
+                    return JSON.stringify({ action: 'allow', answers });
+                } catch {
+                    return JSON.stringify({ action: 'allow' });
+                }
+            }
+
+            return JSON.stringify({ action: response });
+        } catch (e) {
+            return `{"error":"${String(e)}"}`;
+        }
+    }
+
+    /** Get the workspace name for a given Claude session, or null if unknown. */
+    private _workspaceNameForSession(sessionId: string): string | null {
+        if (!this._world || !this._statusOverlay) return null;
+        const windowId = this._statusOverlay.getWindowForSession(sessionId);
+        if (!windowId) return null;
+        for (let i = 0; i < this._world.workspaces.length; i++) {
+            if (this._world.workspaces[i].windows.some(w => w.id === windowId)) {
+                return this._world.workspaces[i].name ?? null;
+            }
+        }
+        return null;
+    }
+
+    /** Get aggregate Claude status for a workspace. */
+    private _getWorkspaceClaudeStatus(wsIndex: number): string | null {
+        if (!this._world || !this._statusOverlay) return null;
+        const ws = this._world.workspaces[wsIndex];
+        if (!ws) return null;
+
+        const statusMap = this._statusOverlay.getWindowStatusMap();
+        let best: string | null = null;
+        const priority: Record<string, number> = { 'needs-input': 3, 'working': 2, 'done': 1 };
+
+        for (const win of ws.windows) {
+            const status = statusMap.get(win.id);
+            if (status && (priority[status] ?? 0) > (priority[best ?? ''] ?? 0)) {
+                best = status;
+            }
+        }
+        return best;
+    }
+
     private _handleWindowReady(windowId: WindowId, rawMetaWindow: Meta.Window): void {
         try {
             if (!this._world) return;
             if (!this._guard?.check('windowReady')) return;
 
-            console.log(`[PaperFlow] window added: ${windowId} title="${rawMetaWindow.get_title()}" wmclass="${rawMetaWindow.get_wm_class()}"`);
+            this._log(`[PaperFlow] window added: ${windowId} title="${rawMetaWindow.get_title()}" wmclass="${rawMetaWindow.get_wm_class()}"`);
 
             this._statusOverlay?.watchWindow(windowId, rawMetaWindow);
 
@@ -353,11 +642,11 @@ export class PaperFlowController {
             const oldScrollX = this._world.viewport.scrollX;
 
             let update = addWindow(this._world, windowId, wasMaximized ? 2 : 1);
-            this._world = update.world;
+            this._setWorld(update.world);
 
             if (metaWindow.fullscreen) {
-                update = enterFullscreen(this._world, windowId);
-                this._world = update.world;
+                update = enterFullscreen(this._world!, windowId);
+                this._setWorld(update.world);
                 this._cloneAdapter?.setWindowFullscreen(windowId, true);
                 this._windowAdapter?.setWindowFullscreen(windowId, true);
             }
@@ -382,13 +671,13 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('windowDestroyed')) return;
 
-            console.log(`[PaperFlow] window removed: ${windowId}`);
+            this._log(`[PaperFlow] window removed: ${windowId}`);
 
             const oldScrollX = this._world.viewport.scrollX;
             const oldWsId = wsIdAt(this._world, this._world.viewport.workspaceIndex);
 
             const update = removeWindow(this._world, windowId);
-            this._world = update.world;
+            this._setWorld(update.world);
 
             this._cloneAdapter?.removeClone(windowId);
             this._windowAdapter?.untrack(windowId);
@@ -413,12 +702,12 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('fullscreenChanged')) return;
 
-            console.log(`[PaperFlow] fullscreen changed: ${windowId} → ${isFullscreen}`);
+            this._log(`[PaperFlow] fullscreen changed: ${windowId} → ${isFullscreen}`);
 
             const update = isFullscreen
                 ? enterFullscreen(this._world, windowId)
                 : exitFullscreen(this._world, windowId);
-            this._world = update.world;
+            this._setWorld(update.world);
 
             this._cloneAdapter?.setWindowFullscreen(windowId, isFullscreen);
             this._windowAdapter?.setWindowFullscreen(windowId, isFullscreen);
@@ -435,7 +724,7 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('windowMaximized')) return;
 
-            console.log(`[PaperFlow] window maximized: ${windowId} → widening to 2-slot`);
+            this._log(`[PaperFlow] window maximized: ${windowId} → widening to 2-slot`);
 
             const metaWindow = this._focusAdapter?.getMetaWindow(windowId) as Meta.Window | undefined;
             if (metaWindow) {
@@ -443,7 +732,7 @@ export class PaperFlowController {
             }
 
             const update = widenWindow(this._world, windowId);
-            this._world = update.world;
+            this._setWorld(update.world);
 
             this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
@@ -476,7 +765,7 @@ export class PaperFlowController {
             const oldWsId = wsIdAt(this._world, this._world.viewport.workspaceIndex);
 
             const update = setFocus(this._world, windowId);
-            this._world = update.world;
+            this._setWorld(update.world);
 
             const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
             if (newWsId && newWsId !== oldWsId) {
@@ -489,19 +778,30 @@ export class PaperFlowController {
         }
     }
 
+    private _handleNewWindow(): void {
+        try {
+            if (!this._world) return;
+            const focusedWindow = this._world.focusedWindow;
+            if (!focusedWindow) return;
+            this._focusAdapter?.openNewWindow(focusedWindow);
+        } catch (e) {
+            console.error('[PaperFlow] Error opening new window:', e);
+        }
+    }
+
     private _handleMonitorChange(monitor: MonitorInfo): void {
         try {
             if (!this._world) return;
             if (!this._guard?.check('monitorChange')) return;
 
-            console.log('[PaperFlow] monitors changed');
+            this._log('[PaperFlow] monitors changed');
 
             const update = updateMonitor(this._world, monitor);
-            this._world = update.world;
+            this._setWorld(update.world);
 
             this._cloneAdapter?.updateWorkArea(monitor.workAreaY, monitor.totalHeight);
             this._windowAdapter?.setWorkAreaY(monitor.workAreaY);
-            this._windowAdapter?.setMonitorWidth(monitor.totalWidth);
+            this._windowAdapter?.setMonitorBounds(monitor.stageOffsetX, monitor.totalWidth);
 
             this._applyLayout(update.layout, false);
         } catch (e) {

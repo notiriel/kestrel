@@ -11,6 +11,8 @@ export interface KeybindingCallbacks {
     onMoveUp: () => void;
     onToggleSize: () => void;
     onToggleOverview: () => void;
+    onNewWindow: () => void;
+    onToggleNotifications: () => void;
 }
 
 export interface KeybindingPort {

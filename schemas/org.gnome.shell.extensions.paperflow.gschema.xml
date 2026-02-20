@@ -62,6 +62,41 @@
       <summary>Toggle overview</summary>
       <description>Toggle the bird's-eye overview of all workspaces</description>
     </key>
+    <key name="new-window" type="as">
+      <default>['&lt;Super&gt;n']</default>
+      <summary>New window</summary>
+      <description>Open a new window of the focused application</description>
+    </key>
+    <key name="toggle-notifications" type="as">
+      <default>['&lt;Super&gt;period']</default>
+      <summary>Toggle notification focus mode</summary>
+      <description>Enter notification focus mode for keyboard-driven permission handling</description>
+    </key>
+    <key name="focus-border-width" type="i">
+      <default>3</default>
+      <summary>Focus border width</summary>
+      <description>Width of the focus indicator border in pixels</description>
+    </key>
+    <key name="focus-border-color" type="s">
+      <default>'rgba(255,255,255,0.8)'</default>
+      <summary>Focus border color</summary>
+      <description>Color of the focus indicator border (CSS color string)</description>
+    </key>
+    <key name="focus-border-radius" type="i">
+      <default>8</default>
+      <summary>Focus border radius</summary>
+      <description>Border radius of the focus indicator in pixels</description>
+    </key>
+    <key name="focus-background-color" type="s">
+      <default>'rgba(255,255,255,0.05)'</default>
+      <summary>Focus background color</summary>
+      <description>Background color of the focus indicator (CSS color string)</description>
+    </key>
+    <key name="debug-mode" type="b">
+      <default>false</default>
+      <summary>Debug mode</summary>
+      <description>Enable verbose logging and DBus debug interface</description>
+    </key>
     <key name="saved-state" type="s">
       <default>''</default>
       <summary>Saved world state</summary>

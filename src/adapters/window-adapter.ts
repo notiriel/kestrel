@@ -22,7 +22,8 @@ interface TrackedWindow {
 export class WindowAdapter implements WindowPort {
     private _windows: Map<WindowId, TrackedWindow> = new Map();
     private _workAreaY: number = 0;
-    private _monitorWidth: number = 0;
+    private _monitorMinX: number = 0;
+    private _monitorTotalWidth: number = 0;
     private _adjusting: boolean = false;
 
     private _setActorOpacity(metaWindow: Meta.Window, opacity: number): void {
@@ -36,8 +37,9 @@ export class WindowAdapter implements WindowPort {
         this._workAreaY = workAreaY;
     }
 
-    setMonitorWidth(monitorWidth: number): void {
-        this._monitorWidth = monitorWidth;
+    setMonitorBounds(minX: number, totalWidth: number): void {
+        this._monitorMinX = minX;
+        this._monitorTotalWidth = totalWidth;
     }
 
     track(windowId: WindowId, metaWindow: Meta.Window): void {
@@ -121,8 +123,8 @@ export class WindowAdapter implements WindowPort {
 
                 // Clamp to monitor bounds — Mutter rejects positions that push
                 // windows beyond the monitor edge on Wayland.
-                if (this._monitorWidth > 0) {
-                    screenX = Math.max(0, Math.min(screenX, this._monitorWidth - wl.width));
+                if (this._monitorTotalWidth > 0) {
+                    screenX = Math.max(this._monitorMinX, Math.min(screenX, this._monitorMinX + this._monitorTotalWidth - wl.width));
                 }
 
                 // Store target for position-changed and size-changed handlers

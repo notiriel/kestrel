@@ -31,7 +31,7 @@ function mockMethods(...names: string[]) {
 vi.mock('../../src/adapters/monitor-adapter.js', () => ({
     MonitorAdapter: vi.fn().mockImplementation(() => ({
         readPrimaryMonitor: vi.fn().mockReturnValue({
-            count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0,
+            count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0,
         }),
         connectMonitorsChanged: vi.fn(),
         destroy: vi.fn(),
@@ -57,12 +57,12 @@ vi.mock('../../src/adapters/clone-adapter.js', () => ({
 }));
 vi.mock('../../src/adapters/window-adapter.js', () => ({
     WindowAdapter: vi.fn().mockImplementation(() => ({
-        ...mockMethods('setWorkAreaY', 'setMonitorWidth', 'track', 'untrack', 'setWindowFullscreen', 'applyLayout', 'destroy'),
+        ...mockMethods('setWorkAreaY', 'setMonitorBounds', 'track', 'untrack', 'setWindowFullscreen', 'applyLayout', 'destroy'),
         hasUnsettledWindows: vi.fn().mockReturnValue(false),
     })),
 }));
 vi.mock('../../src/adapters/focus-adapter.js', () => ({
-    FocusAdapter: vi.fn().mockImplementation(() => mockMethods('track', 'untrack', 'focus', 'getMetaWindow', 'connectFocusChanged', 'destroy')),
+    FocusAdapter: vi.fn().mockImplementation(() => mockMethods('track', 'untrack', 'focus', 'getMetaWindow', 'openNewWindow', 'connectFocusChanged', 'destroy')),
 }));
 vi.mock('../../src/adapters/keybinding-adapter.js', () => ({
     KeybindingAdapter: vi.fn().mockImplementation(() => mockMethods('connect', 'destroy')),
@@ -73,7 +73,7 @@ vi.mock('../../src/adapters/conflict-detector.js', () => ({
 }));
 vi.mock('../../src/adapters/state-persistence.js', () => ({
     StatePersistence: vi.fn().mockImplementation(() => ({
-        readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3 }),
+        readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' }),
         save: vi.fn(),
         tryRestore: vi.fn().mockReturnValue(null),
     })),
@@ -84,8 +84,40 @@ vi.mock('../../src/adapters/status-overlay-adapter.js', () => ({
         watchWindow: vi.fn(),
         unwatchWindow: vi.fn(),
         setWindowStatus: vi.fn(),
+        getWindowStatusMap: vi.fn().mockReturnValue(new Map()),
         enterOverview: vi.fn(),
         exitOverview: vi.fn(),
+        destroy: vi.fn(),
+    })),
+}));
+vi.mock('../../src/adapters/panel-indicator-adapter.js', () => ({
+    PanelIndicatorAdapter: vi.fn().mockImplementation(() => ({
+        init: vi.fn(),
+        update: vi.fn(),
+        destroy: vi.fn(),
+    })),
+}));
+vi.mock('../../src/adapters/notification-overlay-adapter.js', () => ({
+    NotificationOverlayAdapter: vi.fn().mockImplementation(() => ({
+        init: vi.fn(),
+        showPermission: vi.fn(),
+        showNotification: vi.fn(),
+        getResponse: vi.fn(),
+        getPendingEntries: vi.fn().mockReturnValue([]),
+        respond: vi.fn(),
+        onEntriesChanged: null,
+        destroy: vi.fn(),
+    })),
+}));
+vi.mock('../../src/adapters/notification-focus-mode.js', () => ({
+    NotificationFocusMode: vi.fn().mockImplementation(() => ({
+        toggle: vi.fn(),
+        isActive: false,
+        destroy: vi.fn(),
+    })),
+}));
+vi.mock('../../src/adapters/dbus-service.js', () => ({
+    PaperFlowDBusService: vi.fn().mockImplementation(() => ({
         destroy: vi.fn(),
     })),
 }));
@@ -109,6 +141,7 @@ function createMockSettings(): any {
     return {
         get_int: vi.fn().mockReturnValue(8),
         get_string: vi.fn().mockReturnValue(''),
+        get_boolean: vi.fn().mockReturnValue(false),
         set_string: vi.fn(),
     };
 }
@@ -137,14 +170,14 @@ describe('PaperFlowController', () => {
 
         it('initializes clone adapter with monitor geometry', () => {
             controller.enable();
-            expect(ports.clone.init).toHaveBeenCalledWith(0, 1080);
+            expect(ports.clone.init).toHaveBeenCalledWith(0, 1080, { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' });
             expect(ports.clone.syncWorkspaces).toHaveBeenCalled();
         });
 
         it('configures window adapter with monitor geometry', () => {
             controller.enable();
             expect(ports.window.setWorkAreaY).toHaveBeenCalledWith(0);
-            expect(ports.window.setMonitorWidth).toHaveBeenCalledWith(1920);
+            expect(ports.window.setMonitorBounds).toHaveBeenCalledWith(0, 1920);
         });
 
         it('connects keybindings', () => {
@@ -211,7 +244,7 @@ describe('PaperFlowController', () => {
 
     describe('state restore on enable()', () => {
         it('applies restored world when tryRestore returns state', () => {
-            const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+            const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
             const monitor = ports.monitor.readPrimaryMonitor();
             let restored = createWorld(config, monitor);
             restored = addWindow(restored, 'w-1' as WindowId).world;
@@ -291,7 +324,7 @@ describe('PaperFlowController', () => {
 
             it('handles restored window (already in domain)', () => {
                 // Set up: restore a world with a window already in it
-                const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+                const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
                 const monitor = ports.monitor.readPrimaryMonitor();
                 let restored = createWorld(config, monitor);
                 restored = addWindow(restored, 'w-99' as WindowId).world;
@@ -313,7 +346,7 @@ describe('PaperFlowController', () => {
             });
 
             it('unmaximizes restored window that was maximized', () => {
-                const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3 };
+                const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
                 const monitor = ports.monitor.readPrimaryMonitor();
                 let restored = createWorld(config, monitor);
                 restored = addWindow(restored, 'w-99' as WindowId).world;
@@ -414,13 +447,14 @@ describe('PaperFlowController', () => {
                     totalHeight: 1440,
                     slotWidth: 1280,
                     workAreaY: 32,
+                    stageOffsetX: 0,
                 };
 
                 monitorCallback(newMonitor);
 
                 expect(ports.clone.updateWorkArea).toHaveBeenCalledWith(32, 1440);
                 expect(ports.window.setWorkAreaY).toHaveBeenCalledWith(32);
-                expect(ports.window.setMonitorWidth).toHaveBeenCalledWith(2560);
+                expect(ports.window.setMonitorBounds).toHaveBeenCalledWith(0, 2560);
                 expect(ports.window.applyLayout).toHaveBeenCalled();
             });
         });
@@ -498,7 +532,7 @@ describe('PaperFlowController', () => {
         });
 
         it('monitorChange no-ops when world is null', () => {
-            expect(() => monitorCallback({ count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0 })).not.toThrow();
+            expect(() => monitorCallback({ count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 })).not.toThrow();
         });
     });
 
@@ -565,7 +599,7 @@ describe('PaperFlowController', () => {
 
         it('monitorChange catches errors', () => {
             ports.clone.updateWorkArea.mockImplementation(() => { throw new Error('test'); });
-            expect(() => monitorCallback({ count: 1, totalWidth: 2560, totalHeight: 1440, slotWidth: 1280, workAreaY: 32 })).not.toThrow();
+            expect(() => monitorCallback({ count: 1, totalWidth: 2560, totalHeight: 1440, slotWidth: 1280, workAreaY: 32, stageOffsetX: 0 })).not.toThrow();
         });
     });
 

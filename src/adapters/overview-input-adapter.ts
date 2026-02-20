@@ -32,8 +32,6 @@ export class OverviewInputAdapter {
         });
         this._grab = grab;
 
-        console.log(`[PaperFlow] pushModal result: seatState=${grab.get_seat_state()}`);
-
         // Listen on global stage for key events while modal
         this._keyPressId = global.stage.connect('key-press-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
