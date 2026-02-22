@@ -1,5 +1,5 @@
 <div align="center" style="background:#000; padding: 32px 0;">
-  <img alt="Kestrel" src="Kestrel Hero.svg" width="100%">
+  <img alt="Kestrel" src="kestrel-hero-dark.svg" width="100%">
 </div>
 
 <p align="center">
@@ -8,6 +8,7 @@
 </p>
 
 <p align="center">
+  <a href="https://notiriel.github.io/kestrel/">Project Site</a> &middot;
   <a href="#install">Install</a> &middot;
   <a href="#keybindings">Keybindings</a> &middot;
   <a href="#claude-code-integration">Claude Code</a> &middot;
