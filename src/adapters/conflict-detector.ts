@@ -34,12 +34,12 @@ export class ConflictDetector implements ConflictDetectorPort {
                             this._notifyConflict(uuid);
                         }
                     } catch (e) {
-                        console.error('[PaperFlow] Error in extension-state-changed handler:', e);
+                        console.error('[Kestrel] Error in extension-state-changed handler:', e);
                     }
                 },
             );
         } catch (e) {
-            console.error('[PaperFlow] Failed to connect extension-state-changed:', e);
+            console.error('[Kestrel] Failed to connect extension-state-changed:', e);
         }
     }
 
@@ -51,7 +51,7 @@ export class ConflictDetector implements ConflictDetectorPort {
                     this._notifyConflict(uuid);
                 }
             } catch (e) {
-                console.error(`[PaperFlow] Error checking extension ${uuid}:`, e);
+                console.error(`[Kestrel] Error checking extension ${uuid}:`, e);
             }
         }
     }
@@ -62,16 +62,16 @@ export class ConflictDetector implements ConflictDetectorPort {
 
         try {
             this._source = new Source({
-                title: 'PaperFlow',
+                title: 'Kestrel',
                 iconName: 'dialog-warning-symbolic',
             });
             Main.messageTray.add(this._source);
 
             const notification = new Notification({
                 source: this._source,
-                title: 'PaperFlow: Extension Conflict',
-                body: `"${uuid}" conflicts with PaperFlow keybindings (Super+Arrow). ` +
-                      `Disable it for PaperFlow to work correctly.`,
+                title: 'Kestrel: Extension Conflict',
+                body: `"${uuid}" conflicts with Kestrel keybindings (Super+Arrow). ` +
+                      `Disable it for Kestrel to work correctly.`,
                 isTransient: false,
             });
 
@@ -98,15 +98,15 @@ export class ConflictDetector implements ConflictDetectorPort {
                         );
                     }
 
-                    console.log(`[PaperFlow] Disabled conflicting extension: ${uuid}`); // intentional — user action feedback
+                    console.log(`[Kestrel] Disabled conflicting extension: ${uuid}`); // intentional — user action feedback
                 } catch (e) {
-                    console.error(`[PaperFlow] Failed to disable ${uuid}:`, e);
+                    console.error(`[Kestrel] Failed to disable ${uuid}:`, e);
                 }
             });
 
             this._source.addNotification(notification);
         } catch (e) {
-            console.error('[PaperFlow] Failed to show conflict notification:', e);
+            console.error('[Kestrel] Failed to show conflict notification:', e);
         }
     }
 
@@ -115,7 +115,7 @@ export class ConflictDetector implements ConflictDetectorPort {
             try {
                 Main.extensionManager.disconnect(this._signalId);
             } catch (e) {
-                console.error('[PaperFlow] Failed to disconnect extension-state-changed:', e);
+                console.error('[Kestrel] Failed to disconnect extension-state-changed:', e);
             }
             this._signalId = null;
         }

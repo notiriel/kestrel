@@ -117,7 +117,7 @@ vi.mock('../../src/adapters/notification-focus-mode.js', () => ({
     })),
 }));
 vi.mock('../../src/adapters/dbus-service.js', () => ({
-    PaperFlowDBusService: vi.fn().mockImplementation(() => ({
+    KestrelDBusService: vi.fn().mockImplementation(() => ({
         destroy: vi.fn(),
     })),
 }));
@@ -129,10 +129,10 @@ vi.mock('../../src/adapters/safe-window.js', () => ({
 // Stub global for GNOME Shell env
 (globalThis as any).global = {
     context: { unsafe_mode: false },
-    _paperflow: null,
+    _kestrel: null,
 };
 
-import { PaperFlowController } from '../../src/adapters/controller.js';
+import { KestrelController } from '../../src/adapters/controller.js';
 import { createWorld, addWindow } from '../../src/domain/world.js';
 import type { WindowId } from '../../src/domain/types.js';
 import { createMockControllerPorts } from './mock-ports.js';
@@ -143,18 +143,20 @@ function createMockSettings(): any {
         get_string: vi.fn().mockReturnValue(''),
         get_boolean: vi.fn().mockReturnValue(false),
         set_string: vi.fn(),
+        connect: vi.fn().mockReturnValue(1),
+        disconnect: vi.fn(),
     };
 }
 
-describe('PaperFlowController', () => {
+describe('KestrelController', () => {
     let ports: ReturnType<typeof createMockControllerPorts>;
     let settings: ReturnType<typeof createMockSettings>;
-    let controller: PaperFlowController;
+    let controller: KestrelController;
 
     beforeEach(() => {
         ports = createMockControllerPorts();
         settings = createMockSettings();
-        controller = new PaperFlowController(settings, ports);
+        controller = new KestrelController(settings, ports);
     });
 
     describe('enable()', () => {
@@ -332,7 +334,7 @@ describe('PaperFlowController', () => {
                 ports.statePersistence.tryRestore.mockReturnValue(restored);
 
                 // Re-enable with restored state
-                const ctrl2 = new PaperFlowController(settings, ports);
+                const ctrl2 = new KestrelController(settings, ports);
                 ctrl2.enable();
 
                 const cbs = ports.windowEvent.connect.mock.calls[1][0];
@@ -353,7 +355,7 @@ describe('PaperFlowController', () => {
 
                 ports.statePersistence.tryRestore.mockReturnValue(restored);
 
-                const ctrl2 = new PaperFlowController(settings, ports);
+                const ctrl2 = new KestrelController(settings, ports);
                 ctrl2.enable();
                 const cbs = ports.windowEvent.connect.mock.calls[1][0];
 
@@ -477,7 +479,7 @@ describe('PaperFlowController', () => {
 
     describe('enable() without injected ports (fallback adapters)', () => {
         it('constructs and enables using default adapter constructors', () => {
-            const ctrl = new PaperFlowController(settings);
+            const ctrl = new KestrelController(settings);
             ctrl.enable();
             ctrl.disable();
         });

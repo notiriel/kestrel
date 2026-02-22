@@ -1,14 +1,14 @@
-# PaperFlow Debugging
+# Kestrel Debugging
 
 ## DBus Eval
 
-PaperFlow enables `global.context.unsafe_mode` and exposes `global._paperflow` (the controller instance) for live debugging via DBus Eval.
+Kestrel enables `global.context.unsafe_mode` and exposes `global._kestrel` (the controller instance) for live debugging via DBus Eval.
 
 ### Query the domain model
 
 ```bash
 gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
-  --method org.gnome.Shell.Eval "global._paperflow.debugState()"
+  --method org.gnome.Shell.Eval "global._kestrel.debugState()"
 ```
 
 Returns JSON with the full world state: config, monitor info, workspaces, windows, viewport, and computed layout (scrollX, window positions/sizes, focused window).
@@ -18,11 +18,11 @@ Returns JSON with the full world state: config, monitor info, workspaces, window
 ```bash
 # Super+Right (focus next window)
 gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
-  --method org.gnome.Shell.Eval "global._paperflow._handleFocusRight()"
+  --method org.gnome.Shell.Eval "global._kestrel._handleFocusRight()"
 
 # Super+Left (focus previous window)
 gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
-  --method org.gnome.Shell.Eval "global._paperflow._handleFocusLeft()"
+  --method org.gnome.Shell.Eval "global._kestrel._handleFocusLeft()"
 ```
 
 ### Inspect clone layer
@@ -31,9 +31,9 @@ gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
 # Clone wrapper + inner clone positions, sizes, allocation, clip
 gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
   --method org.gnome.Shell.Eval "
-let layer = global.window_group.get_parent().get_children().find(c => c.name === 'paperflow-layer');
-let strip = layer.get_children().find(c => c.name === 'paperflow-strip');
-let focus = layer.get_children().find(c => c.name === 'paperflow-focus-indicator');
+let layer = global.window_group.get_parent().get_children().find(c => c.name === 'kestrel-layer');
+let strip = layer.get_children().find(c => c.name === 'kestrel-strip');
+let focus = layer.get_children().find(c => c.name === 'kestrel-focus-indicator');
 let r = [];
 for (let wsc of strip.get_children()) {
   let scroll = wsc.get_children()[0];
@@ -70,10 +70,10 @@ global.get_window_actors().map(a => {
 ```bash
 # Correct — pass string WindowId
 gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
-  --method org.gnome.Shell.Eval "global._paperflow._handleCloneClicked('4')"
+  --method org.gnome.Shell.Eval "global._kestrel._handleCloneClicked('4')"
 
 # WRONG — passing a number corrupts focusedWindow type
-# global._paperflow._handleCloneClicked(4)
+# global._kestrel._handleCloneClicked(4)
 ```
 
 ## Screenshots
@@ -92,10 +92,10 @@ Screenshots are saved to `~/Pictures/`.
 
 ## Journal logs
 
-PaperFlow logs to the GNOME Shell journal with `[PaperFlow]` prefix:
+Kestrel logs to the GNOME Shell journal with `[Kestrel]` prefix:
 
 ```bash
-journalctl /usr/bin/gnome-shell --since "5 minutes ago" --no-pager | grep PaperFlow
+journalctl /usr/bin/gnome-shell --since "5 minutes ago" --no-pager | grep Kestrel
 ```
 
 ## Re-enable after crash

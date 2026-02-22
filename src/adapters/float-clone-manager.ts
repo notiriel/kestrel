@@ -21,7 +21,7 @@ export class FloatCloneManager implements FloatClonePort {
 
     init(parentLayer: unknown): void {
         const layer = parentLayer as Clutter.Actor;
-        this._floatLayer = new Clutter.Actor({ name: 'paperflow-float-layer' });
+        this._floatLayer = new Clutter.Actor({ name: 'kestrel-float-layer' });
         const parent = layer.get_parent()!;
         parent.insert_child_above(this._floatLayer, layer);
     }
@@ -30,7 +30,7 @@ export class FloatCloneManager implements FloatClonePort {
         const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
         if (!actor || !this._floatLayer) return;
 
-        const wrapper = new Clutter.Actor({ name: `paperflow-float-${windowId}` });
+        const wrapper = new Clutter.Actor({ name: `kestrel-float-${windowId}` });
         const clone = new Clutter.Clone({ source: actor });
         wrapper.add_child(clone);
         this._floatLayer.add_child(wrapper);
@@ -41,7 +41,7 @@ export class FloatCloneManager implements FloatClonePort {
             try {
                 this._syncFloatClone(wrapper, clone, metaWindow);
             } catch (e) {
-                console.error('[PaperFlow] Error in float position-changed handler:', e);
+                console.error('[Kestrel] Error in float position-changed handler:', e);
             }
         });
 
@@ -49,7 +49,7 @@ export class FloatCloneManager implements FloatClonePort {
             try {
                 this._syncFloatClone(wrapper, clone, metaWindow);
             } catch (e) {
-                console.error('[PaperFlow] Error in float size-changed handler:', e);
+                console.error('[Kestrel] Error in float size-changed handler:', e);
             }
         });
 

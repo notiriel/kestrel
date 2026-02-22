@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kestrel — Your desktop, redesigned for the age of AI agents</title>
+<meta name="description" content="A GNOME Shell extension for supervising multiple AI coding sessions from a single panoramic view. Scrolling tiling, status badges, permission overlays.">
+<style>
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 300 800;
+    font-display: swap;
+    src: url('fonts/Inter.woff2') format('woff2');
+  }
+
+  @font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url('fonts/JetBrainsMono.woff2') format('woff2');
+  }
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --black: #000000;
+    --bg: #050807;
+    --surface: #0a0f0c;
+    --surface-raised: #0f1612;
+    --surface-hover: #141d18;
+    --border: #1c2b2c;
+    --border-light: #243138;
+
+    --green-100: #d1f9e2;
+    --green-200: #9ce5b8;
+    --green-300: #7dd6a4;
+    --green-400: #62af85;
+    --green-500: #416f5c;
+    --green-600: #233334;
+    --green-700: #1c2b2c;
+    --green-glow: rgba(125, 214, 164, 0.08);
+    --green-glow-strong: rgba(125, 214, 164, 0.15);
+
+    --text: #e8ede9;
+    --text-secondary: #9ca8a0;
+    --text-muted: #5a6b60;
+
+    --code-bg: #080d0a;
+    --code-border: #162019;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--black);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: rgba(125, 214, 164, 0.25);
+    color: var(--green-100);
+  }
+
+  a {
+    color: var(--green-300);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  a:hover { color: var(--green-200); }
+
+  code, pre {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  /* ─── Navigation ─── */
+
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(28, 43, 44, 0.5);
+    transition: background 0.3s;
+  }
+
+  nav .nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 40px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  nav .nav-brand {
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    color: var(--green-200);
+    text-transform: uppercase;
+  }
+
+  nav .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+
+  nav .nav-links a {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    transition: color 0.15s;
+  }
+
+  nav .nav-links a:hover { color: var(--green-200); }
+
+  /* ─── Hero ─── */
+
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 120px 40px 80px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1000px;
+    height: 800px;
+    background: radial-gradient(ellipse, rgba(125, 214, 164, 0.04) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .hero-logo {
+    width: min(600px, 80vw);
+    margin-bottom: 48px;
+    opacity: 0.95;
+  }
+
+  .hero-tagline {
+    font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+    color: var(--text-secondary);
+    font-weight: 300;
+    max-width: 640px;
+    text-align: center;
+    line-height: 1.8;
+    margin-bottom: 48px;
+  }
+
+  .hero-tagline strong {
+    color: var(--green-200);
+    font-weight: 500;
+  }
+
+  .hero-cta {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: all 0.2s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-primary {
+    background: var(--green-400);
+    color: var(--black);
+  }
+
+  .btn-primary:hover {
+    background: var(--green-300);
+    color: var(--black);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(125, 214, 164, 0.2);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover {
+    color: var(--green-200);
+    border-color: var(--green-500);
+    background: var(--green-glow);
+  }
+
+  .hero-install {
+    margin-top: 48px;
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 10px;
+    padding: 20px 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .hero-install .prompt { color: var(--green-400); user-select: none; }
+  .hero-install .cmd { color: var(--green-200); }
+
+  /* ─── Sections ─── */
+
+  section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 120px 40px;
+  }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--green-400);
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    margin-bottom: 20px;
+    max-width: 700px;
+  }
+
+  .section-subtitle {
+    font-size: 1.05rem;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    max-width: 600px;
+    font-weight: 300;
+    margin-bottom: 64px;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0 auto;
+    max-width: 1200px;
+  }
+
+  /* ─── Problem Section ─── */
+
+  .problem {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .problem .section-subtitle { max-width: 680px; }
+
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    width: 100%;
+    max-width: 960px;
+  }
+
+  .problem-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px 28px;
+    text-align: left;
+    transition: border-color 0.2s;
+  }
+
+  .problem-card:hover { border-color: var(--green-500); }
+
+  .problem-card .card-icon {
+    font-size: 1.6rem;
+    margin-bottom: 16px;
+    display: block;
+    width: 48px;
+    height: 48px;
+    line-height: 48px;
+    text-align: center;
+    background: var(--green-glow);
+    border-radius: 10px;
+    border: 1px solid rgba(125, 214, 164, 0.1);
+  }
+
+  .problem-card h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--green-100);
+  }
+
+  .problem-card p {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+  }
+
+  /* ─── World Model ─── */
+
+  .world-model {
+    margin-top: 64px;
+    max-width: 960px;
+    width: 100%;
+  }
+
+  .world-model img {
+    width: 100%;
+    height: auto;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+  }
+
+  /* ─── Features ─── */
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 36px 32px;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .feature::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--green-500), transparent);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .feature:hover {
+    border-color: var(--green-500);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .feature:hover::before { opacity: 1; }
+
+  .feature-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--green-400);
+    margin-bottom: 12px;
+  }
+
+  .feature h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+
+  .feature p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+  }
+
+  .feature.feature-highlight {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, var(--surface) 0%, rgba(65, 111, 92, 0.08) 100%);
+    border-color: var(--green-700);
+  }
+
+  /* ─── Keybindings ─── */
+
+  .keybindings-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+
+  .keybindings-table th {
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .keybindings-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(28, 43, 44, 0.3);
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+  }
+
+  .keybindings-table tr:hover td {
+    background: var(--green-glow);
+    color: var(--text);
+  }
+
+  .keybindings-table tr:last-child td { border-bottom: none; }
+
+  kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--green-200);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 3px 8px;
+    white-space: nowrap;
+  }
+
+  .keybinding-group {
+    margin-bottom: 48px;
+  }
+
+  .keybinding-group-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    padding-left: 16px;
+  }
+
+  /* ─── Install Section ─── */
+
+  .install-steps {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin-top: 16px;
+  }
+
+  .install-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    position: relative;
+  }
+
+  .install-step .step-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--green-400);
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+
+  .install-step h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .install-step p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+
+  pre.code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    color: var(--green-200);
+    overflow-x: auto;
+  }
+
+  pre.code-block .comment { color: var(--text-muted); }
+  pre.code-block .cmd { color: var(--green-200); }
+  pre.code-block .flag { color: var(--green-400); }
+
+  /* ─── Architecture ─── */
+
+  .arch-flow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 48px;
+    margin-bottom: 48px;
+    text-align: center;
+  }
+
+  .arch-flow-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+  }
+
+  .arch-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 20px 24px;
+  }
+
+  .arch-node .node-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--green-200);
+  }
+
+  .arch-node .node-desc {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  .arch-arrow {
+    color: var(--green-500);
+    font-size: 1.4rem;
+    padding: 0 4px;
+  }
+
+  .arch-layers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .arch-layer {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+  }
+
+  .arch-layer h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--green-300);
+    margin-bottom: 8px;
+  }
+
+  .arch-layer p {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .arch-layer .path {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 12px;
+    display: block;
+  }
+
+  /* ─── Claude Code ─── */
+
+  .claude-features {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  .claude-feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+    transition: border-color 0.2s;
+  }
+
+  .claude-feature:hover { border-color: var(--green-500); }
+
+  .claude-feature h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--green-100);
+  }
+
+  .claude-feature p {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .claude-flow {
+    margin-top: 48px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+  }
+
+  .claude-flow h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
+  .claude-flow pre {
+    font-size: 0.8rem;
+    line-height: 1.7;
+    color: var(--green-300);
+  }
+
+  .claude-flow .dim { color: var(--text-muted); }
+
+  /* ─── Requirements ─── */
+
+  .req-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .req-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+  }
+
+  .req-list li::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green-400);
+    flex-shrink: 0;
+    position: relative;
+    top: 1px;
+  }
+
+  .req-list code {
+    color: var(--green-300);
+    font-size: 0.85rem;
+  }
+
+  /* ─── Footer ─── */
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 60px 40px;
+    text-align: center;
+  }
+
+  footer .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  footer .footer-brand {
+    font-weight: 700;
+    font-size: 0.88rem;
+    letter-spacing: 0.04em;
+    color: var(--green-300);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  footer .footer-tagline {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+  }
+
+  footer .footer-links {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    list-style: none;
+    margin-bottom: 32px;
+  }
+
+  footer .footer-links a {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+
+  footer .footer-links a:hover { color: var(--green-200); }
+
+  footer .footer-license {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  /* ─── Responsive ─── */
+
+  @media (max-width: 900px) {
+    .problem-grid,
+    .features-grid,
+    .claude-features,
+    .arch-layers {
+      grid-template-columns: 1fr;
+    }
+
+    .feature.feature-highlight { grid-column: 1; }
+
+    nav .nav-links { gap: 20px; }
+
+    section { padding: 80px 24px; }
+
+    .hero { padding: 100px 24px 60px; }
+
+    .world-model { padding: 28px; }
+    .world-model pre { font-size: 0.7rem; }
+  }
+
+  @media (max-width: 600px) {
+    nav .nav-links { display: none; }
+    nav .nav-inner { padding: 0 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Nav ─── -->
+<nav>
+  <div class="nav-inner">
+    <div class="nav-brand">Kestrel</div>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#keybindings">Keybindings</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#claude-code">Claude Code</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="https://github.com/notiriel/kestrel">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ─── Hero ─── -->
+<section class="hero">
+  <img src="kestrel-hero-dark.svg" alt="Kestrel" class="hero-logo">
+
+  <p class="hero-tagline">
+    Your desktop, redesigned for the age of AI agents.<br>
+    A GNOME Shell extension for <strong>supervising multiple AI coding sessions</strong> from a single panoramic view.
+  </p>
+
+  <div class="hero-cta">
+    <a href="#install" class="btn btn-primary">Get Started</a>
+    <a href="https://github.com/notiriel/kestrel" class="btn btn-ghost">View on GitHub</a>
+  </div>
+
+  <div class="hero-install">
+    <span class="prompt">$</span>
+    <span class="cmd">git clone https://github.com/notiriel/kestrel.git && cd kestrel && make install</span>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ─── Problem ─── -->
+<section class="problem" id="problem">
+  <div class="section-label">The Problem</div>
+  <h2 class="section-title" style="text-align:center">Your OS was designed for single-tasking</h2>
+  <p class="section-subtitle" style="text-align:center">
+    You're directing five AI agents in parallel. Each one is coding, asking for permissions, producing results. Your desktop can't keep up.
+  </p>
+
+  <div class="problem-grid">
+    <div class="problem-card">
+      <span class="card-icon">&#x29C9;</span>
+      <h3>Lost agents</h3>
+      <p>Alt-Tab through five terminal windows running Claude Code. By the time you find the right one, you've lost context on the others.</p>
+    </div>
+    <div class="problem-card">
+      <span class="card-icon">&#x23F3;</span>
+      <h3>Missed permissions</h3>
+      <p>An agent needs approval. It stops and waits. You don't see the request for ten minutes. Everything stalls silently.</p>
+    </div>
+    <div class="problem-card">
+      <span class="card-icon">&#x2302;</span>
+      <h3>Desktop chaos</h3>
+      <p>15+ windows across virtual desktops. No spatial logic. Every day starts with "where did I put that?" The OS wasn't built for this.</p>
+    </div>
+  </div>
+
+  <div class="world-model">
+    <img src="overview.svg" alt="Kestrel overview — four workspaces with AI agent sessions, code editors, browsers, and terminals arranged in horizontal strips with status badges and a viewport indicator">
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ─── Features ─── -->
+<section id="features">
+  <div class="section-label">Features</div>
+  <h2 class="section-title">Everything visible. Nothing hidden.</h2>
+  <p class="section-subtitle">
+    Kestrel transforms your desktop into a command strip where every window has a place, every agent has a status, and you never lose sight of what matters.
+  </p>
+
+  <div class="features-grid">
+    <div class="feature feature-highlight">
+      <div class="feature-label">Agent Supervision</div>
+      <h3>Live status badges on every agent session</h3>
+      <p>Each Claude Code window displays a real-time status indicator: working, needs-input, or done. You see the state of your entire fleet without switching a single window. Permission requests surface as overlay cards you can approve or deny inline.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Scrolling Tiling</div>
+      <h3>Horizontal strip, infinite scroll</h3>
+      <p>Windows arrange in horizontal strips at half or full monitor width. Scroll left and right through your workspace. No manual resizing, no overlapping. The strip grows as you open windows and shrinks as you close them.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Virtual Workspaces</div>
+      <h3>Vertical stacking, dynamic creation</h3>
+      <p>Workspaces stack vertically. Navigate up and down between contexts. Empty workspaces are pruned automatically. A fresh one is always waiting at the bottom. Name them for fast jumping via Ulauncher.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Overview</div>
+      <h3>Bird's-eye view of your entire world</h3>
+      <p>Hit the overview key to zoom out and see all workspaces, all windows, all agent statuses at once. Navigate with keyboard or click. Jump to any window instantly.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Multi-Monitor</div>
+      <h3>One viewport across all screens</h3>
+      <p>Multiple monitors combine into a single panoramic viewport. The strip flows seamlessly across screens. More monitors means more windows visible at once.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Keyboard-First</div>
+      <h3>Every action has a binding</h3>
+      <p>Navigate, move, resize, switch workspaces, toggle overview — all from the keyboard. Every binding is configurable via GSettings. Your hands never leave the home row.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Persistence</div>
+      <h3>Layout survives restarts</h3>
+      <p>Window positions, workspace assignments, and focus state persist across screen locks, extension restarts, and session recovery. Your spatial memory stays intact.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ─── Keybindings ─── -->
+<section id="keybindings">
+  <div class="section-label">Keybindings</div>
+  <h2 class="section-title">Muscle memory, not mouse hunting</h2>
+  <p class="section-subtitle">
+    All keybindings are configurable via GSettings. Kestrel takes over the Super key — <code>make disable</code> restores all original GNOME bindings.
+  </p>
+
+  <div class="keybinding-group">
+    <div class="keybinding-group-title">Navigation</div>
+    <table class="keybindings-table">
+      <thead><tr><th>Keybinding</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Super</kbd> + <kbd>&rarr;</kbd></td><td>Focus next window</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>&larr;</kbd></td><td>Focus previous window</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>&darr;</kbd></td><td>Switch to workspace below</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>&uarr;</kbd></td><td>Switch to workspace above</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>-</kbd></td><td>Toggle overview</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="keybinding-group">
+    <div class="keybinding-group-title">Window Management</div>
+    <table class="keybindings-table">
+      <thead><tr><th>Keybinding</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&rarr;</kbd></td><td>Move window right</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&larr;</kbd></td><td>Move window left</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&darr;</kbd></td><td>Move window to workspace below</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&uarr;</kbd></td><td>Move window to workspace above</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>F</kbd></td><td>Toggle half / full width</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>N</kbd></td><td>New window of focused app</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ─── Install ─── -->
+<section id="install">
+  <div class="section-label">Install</div>
+  <h2 class="section-title">Up and running in two minutes</h2>
+  <p class="section-subtitle">
+    Kestrel is a GNOME Shell extension. Build from source, deploy, restart your session.
+  </p>
+
+  <div class="install-steps">
+    <div class="install-step">
+      <div class="step-number">Step 01 &mdash; Requirements</div>
+      <h3>Check your environment</h3>
+      <ul class="req-list">
+        <li>GNOME Shell 45+ on Wayland</li>
+        <li>Node.js 18+ and npm</li>
+        <li><a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> (optional, for agent integration)</li>
+      </ul>
+    </div>
+
+    <div class="install-step">
+      <div class="step-number">Step 02 &mdash; Clone &amp; Build</div>
+      <h3>Build and deploy the extension</h3>
+<pre class="code-block"><span class="cmd">git clone</span> https://github.com/notiriel/kestrel.git
+<span class="cmd">cd</span> kestrel
+<span class="cmd">npm install</span>
+<span class="cmd">make install</span>    <span class="comment"># Compile TypeScript, deploy to GNOME extensions dir</span>
+<span class="cmd">make enable</span>     <span class="comment"># Enable extension, disable conflicting extensions</span></pre>
+    </div>
+
+    <div class="install-step">
+      <div class="step-number">Step 03 &mdash; Restart</div>
+      <h3>Restart your Wayland session</h3>
+      <p>Log out and back in. Kestrel activates on the next session start. Verify with:</p>
+<pre class="code-block"><span class="cmd">make status</span></pre>
+    </div>
+  </div>
+
+  <div class="install-step" style="margin-top: 24px;">
+    <div class="step-number">What make install does</div>
+    <p>Compiles TypeScript to <code>dist/</code>, copies the extension to <code>~/.local/share/gnome-shell/extensions/</code>, compiles GSettings schemas, and symlinks the Claude Code plugin and Ulauncher extension.</p>
+    <p style="margin-bottom:0"><code>make enable</code> enables the GNOME extension, disables conflicting extensions (Ubuntu tiling-assistant, DING, Ubuntu Dock), and registers the Claude Code plugin.</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ─── Claude Code ─── -->
+<section id="claude-code">
+  <div class="section-label">Claude Code Integration</div>
+  <h2 class="section-title">Your agents, visible</h2>
+  <p class="section-subtitle">
+    Kestrel includes a Claude Code plugin that connects your AI sessions to the desktop via DBus hooks. The integration activates automatically.
+  </p>
+
+  <div class="claude-features">
+    <div class="claude-feature">
+      <h3>Session Tracking</h3>
+      <p>Each Claude Code terminal is mapped to its GNOME window automatically via title probes. Kestrel knows which window belongs to which session.</p>
+    </div>
+    <div class="claude-feature">
+      <h3>Status Badges</h3>
+      <p>Window clones display live session status &mdash; working, needs-input, or done &mdash; as colored badges. See your entire fleet at a glance.</p>
+    </div>
+    <div class="claude-feature">
+      <h3>Permission Cards</h3>
+      <p>Tool permission requests appear as overlay cards you can approve or deny inline. No window switching. No missed approvals. No stalled agents.</p>
+    </div>
+    <div class="claude-feature">
+      <h3>Notifications</h3>
+      <p>Fire-and-forget status updates from Claude Code sessions surface as notification cards in the overview. Stay informed without context-switching.</p>
+    </div>
+  </div>
+
+  <div class="claude-flow">
+    <h3>Data Flow</h3>
+<pre><span class="dim">Claude Code</span> &rarr; hook script &rarr; <span class="dim">gdbus call</span> &rarr; Kestrel DBus
+  &rarr; controller &rarr; <span class="dim">inject workspace name</span>
+  &rarr; notification overlay &rarr; <span class="dim">user clicks</span>
+  &larr; hook polls response &larr; <span class="dim">returns decision JSON</span></pre>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ─── Architecture ─── -->
+<section id="architecture">
+  <div class="section-label">Architecture</div>
+  <h2 class="section-title">Hexagonal core, tested in isolation</h2>
+  <p class="section-subtitle">
+    Pure TypeScript domain core with no GNOME imports. Fully testable with Vitest. Adapters handle all platform integration through port interfaces.
+  </p>
+
+  <div class="arch-flow">
+    <div class="arch-flow-diagram">
+      <div class="arch-node">
+        <span class="node-name">Reality</span>
+        <span class="node-desc">GNOME signals</span>
+      </div>
+      <span class="arch-arrow">&rarr;</span>
+      <div class="arch-node">
+        <span class="node-name">Domain</span>
+        <span class="node-desc">Pure world model</span>
+      </div>
+      <span class="arch-arrow">&rarr;</span>
+      <div class="arch-node">
+        <span class="node-name">Adapter</span>
+        <span class="node-desc">Clutter clones</span>
+      </div>
+      <span class="arch-arrow">&rarr;</span>
+      <div class="arch-node">
+        <span class="node-name">Reality</span>
+        <span class="node-desc">Screen output</span>
+      </div>
+    </div>
+    <p style="font-size: 0.85rem; color: var(--text-secondary);">
+      The domain is the source of truth. Adapters never compute layout or focus &mdash; they translate between GNOME signals and domain calls, then apply the domain's output.
+    </p>
+  </div>
+
+  <div class="arch-layers">
+    <div class="arch-layer">
+      <h3>Domain</h3>
+      <p>Aggregate root, navigation, workspace operations, layout computation. Immutable operations returning WorldUpdate. Zero platform dependencies.</p>
+      <span class="path">src/domain/</span>
+    </div>
+    <div class="arch-layer">
+      <h3>Ports</h3>
+      <p>Adapter interfaces for clones, windows, focus, and monitors. Controller depends on ports, never on concrete adapters.</p>
+      <span class="path">src/ports/</span>
+    </div>
+    <div class="arch-layer">
+      <h3>Adapters</h3>
+      <p>GNOME Shell integration via gi:// imports. Clone rendering, window positioning, focus activation, signal handling, DBus service.</p>
+      <span class="path">src/adapters/</span>
+    </div>
+  </div>
+
+  <div style="margin-top: 48px;">
+    <div class="keybinding-group-title" style="margin-bottom: 16px;">Development Commands</div>
+<pre class="code-block"><span class="cmd">make build</span>          <span class="comment"># Compile TypeScript</span>
+<span class="cmd">make test</span>           <span class="comment"># Run all Vitest tests</span>
+<span class="cmd">make dev</span>            <span class="comment"># Build + install + enable</span>
+<span class="cmd">npx vitest run</span> test/domain/world.test.ts  <span class="comment"># Single test file</span>
+
+<span class="comment"># View extension logs</span>
+<span class="cmd">journalctl</span> /usr/bin/gnome-shell <span class="flag">--since</span> "5 minutes ago" <span class="flag">--no-pager</span></pre>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ─── Footer ─── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">Kestrel</div>
+    <div class="footer-tagline">Hover. Watch. Strike when it matters.</div>
+    <ul class="footer-links">
+      <li><a href="https://github.com/notiriel/kestrel">GitHub</a></li>
+      <li><a href="https://github.com/notiriel/kestrel/issues">Issues</a></li>
+      <li><a href="https://github.com/notiriel/kestrel/blob/master/docs/design.md">Design Doc</a></li>
+      <li><a href="https://github.com/notiriel/kestrel/blob/master/docs/solution-design.md">Architecture</a></li>
+    </ul>
+    <div class="footer-license">MIT License &middot; Open source, community-owned</div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,8 +1,8 @@
 {
     "required_api_version": "^2.0.0",
-    "name": "PaperFlow Workspaces",
-    "description": "Rename and switch PaperFlow workspaces",
-    "developer_name": "PaperFlow",
+    "name": "Kestrel Workspaces",
+    "description": "Rename and switch Kestrel workspaces",
+    "developer_name": "Kestrel",
     "icon": "images/icon.svg",
     "preferences": [
         {

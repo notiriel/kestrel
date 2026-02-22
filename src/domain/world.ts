@@ -1,7 +1,7 @@
 import type {
     WindowId,
     WorkspaceId,
-    PaperFlowConfig,
+    KestrelConfig,
     MonitorInfo,
     WorldUpdate,
 } from './types.js';
@@ -25,7 +25,7 @@ export interface World {
     readonly workspaces: readonly Workspace[];
     readonly viewport: Viewport;
     readonly focusedWindow: WindowId | null;
-    readonly config: PaperFlowConfig;
+    readonly config: KestrelConfig;
     readonly monitor: MonitorInfo;
     readonly overviewActive: boolean;
 }
@@ -41,7 +41,7 @@ export function resetWorkspaceCounter(): void {
     workspaceCounter = 0;
 }
 
-export function createWorld(config: PaperFlowConfig, monitor: MonitorInfo): World {
+export function createWorld(config: KestrelConfig, monitor: MonitorInfo): World {
     resetWorkspaceCounter();
     return {
         workspaces: [createWorkspace(nextWorkspaceId())],
@@ -51,6 +51,11 @@ export function createWorld(config: PaperFlowConfig, monitor: MonitorInfo): Worl
         monitor,
         overviewActive: false,
     };
+}
+
+export function updateConfig(world: World, config: KestrelConfig): WorldUpdate {
+    const newWorld: World = { ...world, config };
+    return buildUpdate(adjustViewport(newWorld));
 }
 
 export function updateMonitor(world: World, monitor: MonitorInfo): WorldUpdate {
@@ -378,7 +383,7 @@ export interface RestoreWorkspaceData {
  * Creates workspaces with pre-populated windows, restores viewport and focus.
  */
 export function restoreWorld(
-    config: PaperFlowConfig,
+    config: KestrelConfig,
     monitor: MonitorInfo,
     workspaceData: readonly RestoreWorkspaceData[],
     viewportWorkspaceIndex: number,

@@ -4,7 +4,7 @@ export type WindowId = string & { readonly __brand: 'WindowId' };
 /** Branded type for workspace identity */
 export type WorkspaceId = string & { readonly __brand: 'WorkspaceId' };
 
-export interface PaperFlowConfig {
+export interface KestrelConfig {
     readonly gapSize: number;
     readonly edgeGap: number;
     readonly focusBorderWidth: number;

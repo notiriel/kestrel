@@ -1,13 +1,13 @@
 #!/bin/bash
-# PaperFlow AskUserQuestion hook handler
-# Intercepts AskUserQuestion via PreToolUse, routes to PaperFlow overlay,
+# Kestrel AskUserQuestion hook handler
+# Intercepts AskUserQuestion via PreToolUse, routes to Kestrel overlay,
 # collects answers, and returns them as updatedInput to Claude Code.
 #
 # Uses PreToolUse (not PermissionRequest) so it blocks even in bypassPermissions mode.
 
 set -euo pipefail
 
-LOG="/tmp/paperflow-hooks.log"
+LOG="/tmp/kestrel-hooks.log"
 log() { echo "[$(date '+%H:%M:%S.%3N')] [question] $*" >> "$LOG"; }
 
 INPUT=$(cat)
@@ -23,7 +23,7 @@ if echo "$SCREEN_LOCKED" | grep -q "(true,)"; then
     exit 0
 fi
 
-# Build payload for PaperFlow — pass the full tool_input so the extension
+# Build payload for Kestrel — pass the full tool_input so the extension
 # can extract questions
 PAYLOAD=$(echo "$INPUT" | jq -c '{
     session_id: .session_id,
@@ -34,11 +34,11 @@ PAYLOAD=$(echo "$INPUT" | jq -c '{
     tool_input: .tool_input,
 }')
 
-# Send to PaperFlow via custom DBus interface
+# Send to Kestrel via custom DBus interface
 log "payload: $PAYLOAD"
 RESULT=$(gdbus call --session --dest org.gnome.Shell \
-    --object-path /io/paperflow/Extension \
-    --method io.paperflow.Extension.HandlePermission \
+    --object-path /io/kestrel/Extension \
+    --method io.kestrel.Extension.HandlePermission \
     "$PAYLOAD" 2>&1)
 log "dbus result: $RESULT"
 
@@ -55,8 +55,8 @@ fi
 RESPONSE=""
 for i in $(seq 1 1200); do
     POLL=$(gdbus call --session --dest org.gnome.Shell \
-        --object-path /io/paperflow/Extension \
-        --method io.paperflow.Extension.GetNotificationResponse \
+        --object-path /io/kestrel/Extension \
+        --method io.kestrel.Extension.GetNotificationResponse \
         "$NOTIF_ID" 2>/dev/null || echo "")
 
     # Extract JSON from DBus tuple ('{"action":"allow","answers":{...}}',)

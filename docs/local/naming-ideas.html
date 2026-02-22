@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Name Finalists — Scrolling Tiling WM for GNOME</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0e0f14;
+    --surface: #16171e;
+    --surface-hover: #1c1d26;
+    --border: #2a2b36;
+    --text: #e4e4e8;
+    --text-muted: #8b8c99;
+    --accent: #7c8aff;
+    --accent-dim: #5a64cc;
+    --accent-glow: rgba(124, 138, 255, 0.12);
+    --green: #6ee7a0;
+    --amber: #f0c674;
+    --rose: #f07178;
+    --card-radius: 16px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .hero {
+    padding: 80px 40px 60px;
+    text-align: center;
+    background: linear-gradient(180deg, #12131a 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(ellipse, rgba(124, 138, 255, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero h1 {
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 50%, var(--green) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero .subtitle {
+    font-size: 1.15rem;
+    color: var(--text-muted);
+    max-width: 600px;
+    margin: 0 auto 32px;
+    font-weight: 300;
+    line-height: 1.7;
+  }
+
+  .hero .product-desc {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    padding: 32px 40px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat .number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .stat .label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+  }
+
+  .cards {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 40px 80px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 28px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    padding: 32px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    border-color: var(--accent-dim);
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: var(--card-radius) var(--card-radius) 0 0;
+  }
+
+  .card:nth-child(1)::before { background: linear-gradient(90deg, #7c8aff, #a78bfa); }
+  .card:nth-child(2)::before { background: linear-gradient(90deg, #f0c674, #e8a855); }
+  .card:nth-child(3)::before { background: linear-gradient(90deg, #6ee7a0, #4ecdc4); }
+  .card:nth-child(4)::before { background: linear-gradient(90deg, #f07178, #e8557a); }
+  .card:nth-child(5)::before { background: linear-gradient(90deg, #82aaff, #60a5fa); }
+  .card:nth-child(6)::before { background: linear-gradient(90deg, #c792ea, #a78bfa); }
+  .card:nth-child(7)::before { background: linear-gradient(90deg, #7c8aff, #6ee7a0); }
+  .card:nth-child(8)::before { background: linear-gradient(90deg, #f0c674, #f07178); }
+  .card:nth-child(9)::before { background: linear-gradient(90deg, #4ecdc4, #82aaff); }
+  .card:nth-child(10)::before { background: linear-gradient(90deg, #e8557a, #c792ea); }
+  .card:nth-child(n+11)::before { background: linear-gradient(90deg, #7c8aff, #a78bfa); }
+
+  .card-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+  }
+
+  .card-name {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+  }
+
+  .card-meaning {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .card-section {
+    margin-bottom: 18px;
+  }
+
+  .card-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .card-section-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  .card-section p {
+    font-size: 0.9rem;
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  .tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--accent);
+    background: var(--accent-glow);
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(124, 138, 255, 0.15);
+    margin-top: 20px;
+    text-align: center;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-left: 10px;
+    vertical-align: middle;
+    position: relative;
+    top: -2px;
+  }
+
+  .badge-strong {
+    background: rgba(110, 231, 160, 0.12);
+    color: var(--green);
+    border: 1px solid rgba(110, 231, 160, 0.2);
+  }
+
+  .badge-tentative {
+    background: rgba(240, 198, 116, 0.12);
+    color: var(--amber);
+    border: 1px solid rgba(240, 198, 116, 0.2);
+  }
+
+  .footer {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 768px) {
+    .hero { padding: 48px 24px 40px; }
+    .hero h1 { font-size: 2rem; }
+    .cards { padding: 32px 20px 60px; }
+    .stats { gap: 32px; flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1><span>Name Finalists</span></h1>
+  <p class="subtitle">
+    Candidate names for a GNOME Shell extension that brings scrolling-tiling window management to the Linux desktop. Windows flow in a horizontal strip. Virtual workspaces stack vertically. Smooth, keyboard-driven, productivity-focused.
+  </p>
+  <div class="product-desc">gnome-shell-extension &middot; scrolling tiler &middot; wayland</div>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="number">10</div>
+    <div class="label">Finalists</div>
+  </div>
+  <div class="stat">
+    <div class="number">48+</div>
+    <div class="label">Evaluated</div>
+  </div>
+  <div class="stat">
+    <div class="number">41+</div>
+    <div class="label">Rejected</div>
+  </div>
+</div>
+
+<div class="cards">
+
+  <!-- 1. Runnel -->
+  <div class="card">
+    <div class="card-number">#01</div>
+    <div class="card-name">Runnel <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">A small stream or narrow channel of water</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Runnel captures the essence of flowing movement in a single, elegant word. It suggests windows that glide like water through a channel — smooth, continuous, and natural. Rare enough to own completely, familiar enough to feel right the moment you hear it.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A gentle, persistent stream finding its path. Quiet efficiency. The satisfying smoothness of something that just works. Organic movement constrained by purpose — water flowing through a carved channel, like windows sliding through a tiled strip.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>Three thin, parallel horizontal lines gently curving together — suggesting both a stream of water and a strip of windows. Minimal, geometric, could work as a monochrome icon or a subtle gradient from blue to teal.</p>
+    </div>
+
+    <div class="tagline">"Your desktop, in flow."</div>
+  </div>
+
+  <!-- 2. Reel -->
+  <div class="card">
+    <div class="card-number">#02</div>
+    <div class="card-name">Reel <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">A cylindrical spool; to draw in or scroll through</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Reel is short, punchy, and immediately communicates scrolling. It conjures the physical sensation of pulling through content — reeling windows in and out of view. One syllable, impossible to misspell, and it doubles as a verb: "reel through your workspaces."</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Film strips scrolling through a projector. A fishing reel drawing a line smoothly. The satisfying mechanical precision of a well-made tool. There is a tactile, analog warmth to it — something you can almost feel in your hands as you navigate.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A minimal film-reel circle with two or three rectangular "frames" visible inside — each frame representing a window. Or: a stylized spiral suggesting continuous scrolling motion. Clean lines, works at small sizes for a system tray icon.</p>
+    </div>
+
+    <div class="tagline">"Reel through your desktop."</div>
+  </div>
+
+  <!-- 3. Loggia -->
+  <div class="card">
+    <div class="card-number">#03</div>
+    <div class="card-name">Loggia <span class="badge badge-tentative">Tentative</span></div>
+    <div class="card-meaning">An open-sided gallery or corridor in architecture</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Loggia borrows from classical architecture to name a modern workspace. It speaks to structure, openness, and the elegant arrangement of space. A loggia is where the interior meets the exterior — a gallery that frames views, much like a tiling manager frames your windows.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Italian Renaissance courtyards. Columns framing arched openings that look out onto a garden. A sense of curated perspective — each opening revealing a different view. Sophistication and intentional design. There is weight and permanence to it.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A row of three arched openings seen from within — suggesting columns framing windows (in both the architectural and software sense). Geometric, symmetrical, with a classical feel softened by modern line weights.</p>
+    </div>
+
+    <div class="tagline">"A gallery for your workspace."</div>
+  </div>
+
+  <!-- 4. Vellum -->
+  <div class="card">
+    <div class="card-number">#04</div>
+    <div class="card-name">Vellum <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">Fine parchment used for writing and scrolls</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Vellum connects the digital to the ancient. It is the material scrolls were made of — a premium surface for important work. Naming a scrolling window manager after the original scrolling medium is both poetic and precise. It carries the "paper" lineage of PaperFlow forward while sounding entirely its own.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>The warmth and texture of fine parchment beneath your fingertips. Craftsmanship. Something built to last. A surface that invites careful, deliberate work. Libraries, scriptoriums, the quiet concentration of someone who takes their tools seriously.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A subtly curled sheet of parchment with a horizontal window grid faintly embossed on its surface. Warm cream and gold tones on dark backgrounds. Or: a minimal "V" formed by the edge of a rolled scroll, doubling as window panes.</p>
+    </div>
+
+    <div class="tagline">"The surface for serious work."</div>
+  </div>
+
+  <!-- 5. Frieze -->
+  <div class="card">
+    <div class="card-number">#05</div>
+    <div class="card-name">Frieze <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">A horizontal decorative band in architecture or art</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Frieze is arguably the most semantically perfect name on this list. A frieze is literally a horizontal strip of structured content — panels telling a story in sequence. That is exactly what a scrolling tiling window manager does. One syllable, distinctive, and it borrows gravitas from centuries of art and architecture.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>The Parthenon frieze: sculpted panels flowing in a continuous horizontal band. Greek temples and Renaissance buildings. Narrative told through sequence and structure. Something monumental distilled into a single elegant strip. Art that serves a function.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A horizontal band divided into three or four rectangular segments of varying widths — a direct visual metaphor for tiled windows in a strip. Classical proportions, modern execution. Could incorporate subtle relief/shadow effects to evoke carved stone.</p>
+    </div>
+
+    <div class="tagline">"Your windows, one continuous story."</div>
+  </div>
+
+  <!-- 6. Rail -->
+  <div class="card">
+    <div class="card-number">#06</div>
+    <div class="card-name">Rail <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">A bar or track on which things slide</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Rail is industrial precision in four letters. It says exactly what the software does: windows slide on a rail. No ambiguity, no interpretation needed. It is the kind of name that feels inevitable once you hear it — functional, confident, and impossible to forget. Perfect for a tool that prioritizes getting out of your way.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Steel tracks stretching to the horizon. Precision engineering. The smooth, frictionless glide of a well-oiled mechanism. Speed and reliability. The satisfying click of something snapping into place on its track. Industrial design that values function above all.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A single bold horizontal line with two or three small rectangular blocks sitting on it — windows on a rail. Extremely minimal, instantly readable. Could work as a one-color favicon. Industrial sans-serif type treatment.</p>
+    </div>
+
+    <div class="tagline">"Windows on track."</div>
+  </div>
+
+  <!-- 7. Span -->
+  <div class="card">
+    <div class="card-number">#07</div>
+    <div class="card-name">Span <span class="badge badge-tentative">Tentative</span></div>
+    <div class="card-meaning">To extend across; the full extent of something</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Span is a verb that doubles as a vision statement. Your windows span the desktop. Your workflow spans workspaces. It communicates breadth, reach, and horizontal extent in a single syllable. Approachable and familiar, it feels like a word that was always waiting to name this kind of tool.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A bridge spanning a river. Arms outstretched. The wide-angle view from a mountaintop. Expansion without fragmentation — everything connected across a distance. The confidence of covering ground.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A wide horizontal bracket or bridge arc with window-like segments beneath it. Or: the word "span" with an extended horizontal bar connecting the letters, suggesting the spanning motion itself. Clean, geometric, wide-format.</p>
+    </div>
+
+    <div class="tagline">"Span your workspace."</div>
+  </div>
+
+  <!-- 8. Ribbon -->
+  <div class="card">
+    <div class="card-number">#08</div>
+    <div class="card-name">Ribbon <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">A long, narrow strip of material</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Ribbon describes the visual reality of a scrolling tiler with effortless clarity. Your windows form a ribbon — a continuous, flowing strip that you scroll through. Everyone knows the word, everyone can picture it, and yet no one has claimed it for a window manager. It is visual, tactile, and immediately understood.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Silk unfurling in the wind. A gymnast's ribbon tracing smooth arcs through space. Gift wrapping — something polished and well-presented. The elegant continuity of a single unbroken line. There is grace in it, a sense of something that flows without effort or friction.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A single flowing ribbon shape that curves gently, with subtle window-pane divisions along its length. Or: a stylized "R" whose tail extends into a long horizontal ribbon. Smooth gradients, rounded edges. Could use a deep purple-to-blue gradient for richness.</p>
+    </div>
+
+    <div class="tagline">"One ribbon. Every window."</div>
+  </div>
+
+  <!-- 9. Shuttle -->
+  <div class="card">
+    <div class="card-number">#09</div>
+    <div class="card-name">Shuttle <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">The tool that carries thread back and forth across a loom</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Shuttle names the motion itself. On a loom, the shuttle carries thread horizontally in a precise, rhythmic back-and-forth — exactly how you navigate a scrolling tiler. It suggests both craft and speed. The word already lives in people's minds as something that moves efficiently between two points, making the metaphor instant.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>The rhythmic clack of a weaving loom. A shuttle bus gliding between stops. Purposeful, horizontal movement with no wasted energy. Craft and precision — something handmade with care. There is a warmth to the textile connection, an artisanal quality that elevates a technical tool.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A streamlined shuttle shape (the weaving tool is a slim, pointed oval) oriented horizontally, with faint vertical lines through it suggesting window divisions. Or: a minimal arrow-like shape pointing both left and right, implying bidirectional navigation. Warm wood tones or sleek metallic finish.</p>
+    </div>
+
+    <div class="tagline">"Navigate with intent."</div>
+  </div>
+
+  <!-- 10. Selvage -->
+  <div class="card">
+    <div class="card-number">#10</div>
+    <div class="card-name">Selvage <span class="badge badge-strong">Strong</span></div>
+    <div class="card-meaning">The finished, structured edge of woven fabric</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Selvage is for those who appreciate craft at its most precise. It names the part of woven fabric that does not fray — the clean, intentional edge that holds everything together. A tiling window manager is exactly that: structure imposed on chaos, clean edges where there would otherwise be overlap. Rare enough to own entirely, beautiful enough to remember.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>The crisp edge of premium denim. Precision tailoring. The satisfaction of things being exactly where they should be. A craftsperson's attention to the details most people never notice. Quality you can feel at the margins — literally. Structure as an aesthetic choice.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A clean horizontal line with a subtle woven texture pattern along one edge — structured and precise. Or: two parallel lines with fine crosshatching between them, evoking both fabric weave and window grid. Monochrome works beautifully; the name does the heavy lifting.</p>
+    </div>
+
+    <div class="tagline">"Clean edges. No loose ends."</div>
+  </div>
+
+</div>
+
+<div class="footer">
+  10 finalists documented. Evaluation complete.
+</div>
+
+</body>
+</html>

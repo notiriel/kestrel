@@ -47,14 +47,14 @@ export class WindowAdapter implements WindowPort {
             try {
                 this._onSizeChanged(windowId);
             } catch (e) {
-                console.debug('[PaperFlow] Error in window size-changed handler:', e);
+                console.debug('[Kestrel] Error in window size-changed handler:', e);
             }
         });
         const positionChangedId = metaWindow.connect('position-changed', () => {
             try {
                 this._onPositionChanged(windowId);
             } catch (e) {
-                console.debug('[PaperFlow] Error in window position-changed handler:', e);
+                console.debug('[Kestrel] Error in window position-changed handler:', e);
             }
         });
         this._windows.set(windowId, {
@@ -172,7 +172,7 @@ export class WindowAdapter implements WindowPort {
                     this._adjusting = false;
                 }
             } catch (e) {
-                console.debug('[PaperFlow] move_resize_frame skipped (dead window?):', e);
+                console.debug('[Kestrel] move_resize_frame skipped (dead window?):', e);
                 this.untrack(wl.windowId);
             }
         }

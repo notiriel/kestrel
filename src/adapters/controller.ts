@@ -1,6 +1,6 @@
 import type { WindowId, WorkspaceId, MonitorInfo } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, buildUpdate, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from '../domain/world.js';
+import { createWorld, addWindow, removeWindow, setFocus, updateMonitor, updateConfig, buildUpdate, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from '../domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from '../domain/window-operations.js';
 import { computeLayout } from '../domain/layout.js';
@@ -31,14 +31,14 @@ import { NavigationHandler } from './navigation-handler.js';
 import { StatusOverlayAdapter } from './status-overlay-adapter.js';
 import { PanelIndicatorAdapter } from './panel-indicator-adapter.js';
 import { NotificationOverlayAdapter } from './notification-overlay-adapter.js';
-import { PaperFlowDBusService } from './dbus-service.js';
+import { KestrelDBusService } from './dbus-service.js';
 import { NotificationFocusMode } from './notification-focus-mode.js';
 import { safeWindow } from './safe-window.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
 
-export class PaperFlowController {
+export class KestrelController {
     private _settings: Gio.Settings;
     private _ports: Partial<ControllerPorts>;
     private _world: World | null = null;
@@ -58,12 +58,13 @@ export class PaperFlowController {
     private _statusOverlay: StatusOverlayAdapter | null = null;
     private _panelIndicator: import('./panel-indicator-adapter.js').PanelIndicatorAdapter | null = null;
     private _notificationOverlay: import('./notification-overlay-adapter.js').NotificationOverlayAdapter | null = null;
-    private _dbusService: PaperFlowDBusService | null = null;
+    private _dbusService: KestrelDBusService | null = null;
     private _notificationFocusMode: NotificationFocusMode | null = null;
     private _extensionPath: string;
     private _debugMode: boolean = false;
     private _internalFocusChange: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
+    private _settingsChangedId: number = 0;
 
     constructor(settings: Gio.Settings, ports?: Partial<ControllerPorts>, extensionPath?: string) {
         this._settings = settings;
@@ -74,7 +75,7 @@ export class PaperFlowController {
 
     enable(): void {
         try {
-            console.log('[PaperFlow] enabling...');
+            console.log('[Kestrel] enabling...');
 
             // Read debug mode from settings
             this._debugMode = this._settings.get_boolean('debug-mode');
@@ -83,7 +84,7 @@ export class PaperFlowController {
                 // Enable DBus Eval for development (gdbus call org.gnome.Shell.Eval)
                 (global as any).context.unsafe_mode = true;
                 // Expose controller on global for DBus debugging
-                (global as any)._paperflow = this;
+                (global as any)._kestrel = this;
             }
 
             // 0. Check for conflicting extensions
@@ -136,7 +137,7 @@ export class PaperFlowController {
                     this._applyLayout(update.layout, true);
                     this._focusWindow(update.world.focusedWindow);
                 } catch (e) {
-                    console.error('[PaperFlow] Error switching workspace from panel:', e);
+                    console.error('[Kestrel] Error switching workspace from panel:', e);
                 }
             });
 
@@ -160,7 +161,7 @@ export class PaperFlowController {
             });
 
             // Export DBus service for hook scripts
-            this._dbusService = new PaperFlowDBusService({
+            this._dbusService = new KestrelDBusService({
                 handleNotification: (payload) => this.handleNotification(payload),
                 handlePermissionRequest: (payload) => this.handlePermissionRequest(payload),
                 setWindowStatus: (sessionId, status) => this.setWindowStatus(sessionId, status),
@@ -291,11 +292,11 @@ export class PaperFlowController {
                 },
                 onFloatWindowReady: (windowId: WindowId, metaWindow: unknown) => {
                     const rawMetaWindow = metaWindow as Meta.Window;
-                    this._log(`[PaperFlow] float window added: ${windowId} title="${rawMetaWindow.get_title()}"`);
+                    this._log(`[Kestrel] float window added: ${windowId} title="${rawMetaWindow.get_title()}"`);
                     this._cloneAdapter?.addFloatClone(windowId, safeWindow(rawMetaWindow));
                 },
                 onFloatWindowDestroyed: (windowId: WindowId) => {
-                    this._log(`[PaperFlow] float window removed: ${windowId}`);
+                    this._log(`[Kestrel] float window removed: ${windowId}`);
                     this._cloneAdapter?.removeFloatClone(windowId);
                 },
                 onWindowFullscreenChanged: (windowId: WindowId, isFullscreen: boolean) => {
@@ -324,18 +325,32 @@ export class PaperFlowController {
                 this._shellAdapter?.hideOverview();
             }, 1000);
 
-            console.log('[PaperFlow] enabled');
+            // 12. Live settings reload
+            this._settingsChangedId = this._settings.connect('changed', (_settings: Gio.Settings, key: string) => {
+                try {
+                    this._onSettingChanged(key);
+                } catch (e) {
+                    console.error('[Kestrel] settings changed error:', e);
+                }
+            });
+
+            console.log('[Kestrel] enabled');
         } catch (e) {
-            console.error('[PaperFlow] Failed to enable:', e);
+            console.error('[Kestrel] Failed to enable:', e);
         }
     }
 
     disable(): void {
         try {
-            console.log('[PaperFlow] disabling...');
+            console.log('[Kestrel] disabling...');
 
             if (this._world) {
                 this._statePersistence.save(this._world);
+            }
+
+            if (this._settingsChangedId) {
+                this._settings.disconnect(this._settingsChangedId);
+                this._settingsChangedId = 0;
             }
 
             if (this._overviewDismissTimeout !== null) {
@@ -395,13 +410,13 @@ export class PaperFlowController {
 
             this._world = null;
             if (this._debugMode) {
-                (global as any)._paperflow = null;
+                (global as any)._kestrel = null;
                 (global as any).context.unsafe_mode = false;
             }
 
-            console.log('[PaperFlow] disabled');
+            console.log('[Kestrel] disabled');
         } catch (e) {
-            console.error('[PaperFlow] Failed to disable:', e);
+            console.error('[Kestrel] Failed to disable:', e);
         }
     }
 
@@ -417,13 +432,27 @@ export class PaperFlowController {
         if (this._debugMode) console.log(msg);
     }
 
+    private _onSettingChanged(key: string): void {
+        if (key === 'saved-state' || key === 'debug-mode') return;
+        if (!this._world) return;
+
+        this._log(`[Kestrel] setting changed: ${key}`);
+
+        const config = this._statePersistence.readConfig();
+        const update = updateConfig(this._world, config);
+        this._setWorld(update.world);
+
+        this._cloneAdapter?.updateConfig?.(config);
+        this._applyLayout(update.layout, true);
+    }
+
     /** Centralized world state setter — updates panel indicator after every change. */
     private _setWorld(world: World): void {
         this._world = world;
         this._panelIndicator?.update(world, this._statusOverlay ?? undefined);
     }
 
-    /** Serializable snapshot for DBus debugging: global._paperflow.debugState() */
+    /** Serializable snapshot for DBus debugging: global._kestrel.debugState() */
     debugState(): string {
         if (!this._world) return '{"error":"no world"}';
         const layout = buildUpdate(this._world).layout;
@@ -601,7 +630,7 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('windowReady')) return;
 
-            this._log(`[PaperFlow] window added: ${windowId} title="${rawMetaWindow.get_title()}" wmclass="${rawMetaWindow.get_wm_class()}"`);
+            this._log(`[Kestrel] window added: ${windowId} title="${rawMetaWindow.get_title()}" wmclass="${rawMetaWindow.get_wm_class()}"`);
 
             this._statusOverlay?.watchWindow(windowId, rawMetaWindow);
 
@@ -662,7 +691,7 @@ export class PaperFlowController {
             this._focusWindow(this._world.focusedWindow);
             this._settlementRetry?.start();
         } catch (e) {
-            console.error('[PaperFlow] Error handling window ready:', e);
+            console.error('[Kestrel] Error handling window ready:', e);
         }
     }
 
@@ -671,7 +700,7 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('windowDestroyed')) return;
 
-            this._log(`[PaperFlow] window removed: ${windowId}`);
+            this._log(`[Kestrel] window removed: ${windowId}`);
 
             const oldScrollX = this._world.viewport.scrollX;
             const oldWsId = wsIdAt(this._world, this._world.viewport.workspaceIndex);
@@ -693,7 +722,7 @@ export class PaperFlowController {
             this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
         } catch (e) {
-            console.error('[PaperFlow] Error handling window destroyed:', e);
+            console.error('[Kestrel] Error handling window destroyed:', e);
         }
     }
 
@@ -702,7 +731,7 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('fullscreenChanged')) return;
 
-            this._log(`[PaperFlow] fullscreen changed: ${windowId} → ${isFullscreen}`);
+            this._log(`[Kestrel] fullscreen changed: ${windowId} → ${isFullscreen}`);
 
             const update = isFullscreen
                 ? enterFullscreen(this._world, windowId)
@@ -715,7 +744,7 @@ export class PaperFlowController {
             this._applyLayout(update.layout, true);
             this._focusWindow(this._world.focusedWindow);
         } catch (e) {
-            console.error('[PaperFlow] Error handling fullscreen change:', e);
+            console.error('[Kestrel] Error handling fullscreen change:', e);
         }
     }
 
@@ -724,7 +753,7 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('windowMaximized')) return;
 
-            this._log(`[PaperFlow] window maximized: ${windowId} → widening to 2-slot`);
+            this._log(`[Kestrel] window maximized: ${windowId} → widening to 2-slot`);
 
             const metaWindow = this._focusAdapter?.getMetaWindow(windowId) as Meta.Window | undefined;
             if (metaWindow) {
@@ -738,7 +767,7 @@ export class PaperFlowController {
             this._focusWindow(this._world.focusedWindow);
             this._settlementRetry?.start();
         } catch (e) {
-            console.error('[PaperFlow] Error handling window maximized:', e);
+            console.error('[Kestrel] Error handling window maximized:', e);
         }
     }
 
@@ -774,7 +803,7 @@ export class PaperFlowController {
 
             this._applyLayout(update.layout, true);
         } catch (e) {
-            console.error('[PaperFlow] Error handling external focus:', e);
+            console.error('[Kestrel] Error handling external focus:', e);
         }
     }
 
@@ -785,7 +814,7 @@ export class PaperFlowController {
             if (!focusedWindow) return;
             this._focusAdapter?.openNewWindow(focusedWindow);
         } catch (e) {
-            console.error('[PaperFlow] Error opening new window:', e);
+            console.error('[Kestrel] Error opening new window:', e);
         }
     }
 
@@ -794,7 +823,7 @@ export class PaperFlowController {
             if (!this._world) return;
             if (!this._guard?.check('monitorChange')) return;
 
-            this._log('[PaperFlow] monitors changed');
+            this._log('[Kestrel] monitors changed');
 
             const update = updateMonitor(this._world, monitor);
             this._setWorld(update.world);
@@ -805,7 +834,7 @@ export class PaperFlowController {
 
             this._applyLayout(update.layout, false);
         } catch (e) {
-            console.error('[PaperFlow] Error handling monitor change:', e);
+            console.error('[Kestrel] Error handling monitor change:', e);
         }
     }
 }

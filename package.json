@@ -1,13 +1,13 @@
 {
-  "name": "paperflow",
+  "name": "kestrel",
   "version": "0.1.0",
   "private": true,
   "description": "Niri-style scrolling tiling window manager for GNOME Shell, with deep Claude Code integration",
-  "author": "PaperFlow Contributors",
+  "author": "Kestrel Contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/notiriel/paperflow.git"
+    "url": "https://github.com/notiriel/kestrel.git"
   },
   "keywords": [
     "gnome-shell-extension",

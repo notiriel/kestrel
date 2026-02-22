@@ -44,7 +44,7 @@ export class OverviewHandler {
                 this._enter();
             }
         } catch (e) {
-            console.error('[PaperFlow] Error handling toggle overview:', e);
+            console.error('[Kestrel] Error handling toggle overview:', e);
         }
     }
 
@@ -96,7 +96,7 @@ export class OverviewHandler {
                 this._overviewTransform,
             );
         } catch (e) {
-            console.error('[PaperFlow] Error handling overview navigate:', e);
+            console.error('[Kestrel] Error handling overview navigate:', e);
         }
     }
 
@@ -110,7 +110,7 @@ export class OverviewHandler {
 
             this._exitVisual(update.layout);
         } catch (e) {
-            console.error('[PaperFlow] Error handling overview confirm:', e);
+            console.error('[Kestrel] Error handling overview confirm:', e);
         }
     }
 
@@ -129,7 +129,7 @@ export class OverviewHandler {
 
             this._exitVisual(update.layout);
         } catch (e) {
-            console.error('[PaperFlow] Error handling overview cancel:', e);
+            console.error('[Kestrel] Error handling overview cancel:', e);
         }
     }
 
@@ -166,7 +166,7 @@ export class OverviewHandler {
             this._deps.setWorld(update.world);
             this.handleConfirm();
         } catch (e) {
-            console.error('[PaperFlow] Error handling overview click:', e);
+            console.error('[Kestrel] Error handling overview click:', e);
         }
     }
 

@@ -1,5 +1,5 @@
 {
-  "description": "PaperFlow GNOME Shell integration — session probing, status tracking, permission overlay, and idle notifications",
+  "description": "Kestrel GNOME Shell integration — session probing, status tracking, permission overlay, and idle notifications",
   "hooks": {
     "SessionStart": [
       {
@@ -7,11 +7,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-probe.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-probe.sh"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-status.sh done"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh done"
           }
         ]
       }
@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-status.sh needs-input"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh needs-input"
           }
         ]
       }
@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-status.sh working",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh working",
             "timeout": 5
           }
         ]
@@ -45,9 +45,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-question.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-question.sh",
             "timeout": 600,
-            "statusMessage": "Waiting for PaperFlow question response"
+            "statusMessage": "Waiting for Kestrel question response"
           }
         ]
       },
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-status.sh working",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh working",
             "timeout": 5
           }
         ]
@@ -68,9 +68,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-permission.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-permission.sh",
             "timeout": 600,
-            "statusMessage": "Waiting for PaperFlow permission response"
+            "statusMessage": "Waiting for Kestrel permission response"
           }
         ]
       }
@@ -81,11 +81,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-status.sh done"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh done"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-notify.sh \"Agent done\"",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-notify.sh \"Agent done\"",
             "timeout": 10
           }
         ]
@@ -97,7 +97,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/paperflow-status.sh end"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh end"
           }
         ]
       }

@@ -1,8 +1,8 @@
 {
-  "uuid": "paperflow@paperflow.github.com",
-  "name": "PaperFlow",
+  "uuid": "kestrel@kestrel.github.com",
+  "name": "Kestrel",
   "description": "Niri-style scrolling tiling for GNOME",
   "shell-version": ["45", "46", "47"],
-  "url": "https://github.com/notiriel/paperflow",
-  "settings-schema": "org.gnome.shell.extensions.paperflow"
+  "url": "https://github.com/notiriel/kestrel",
+  "settings-schema": "org.gnome.shell.extensions.kestrel"
 }

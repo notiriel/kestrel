@@ -1,6 +1,6 @@
-/* PaperFlow styles — notification overlay uses inline styles on St actors */
+/* Kestrel styles — notification overlay uses inline styles on St actors */
 
-.paperflow-ws-label {
+.kestrel-ws-label {
     font-size: 14px;
     font-weight: bold;
     color: rgba(255, 255, 255, 0.6);

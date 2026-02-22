@@ -34,7 +34,7 @@ export class ReconciliationGuard {
 
         if (count >= this._hardThreshold) {
             console.error(
-                `[PaperFlow] CIRCUIT BREAKER: ${count} reconciliations in ${this._windowMs}ms (trigger: ${label}). Blocking for ${this._cooldownMs}ms.`,
+                `[Kestrel] CIRCUIT BREAKER: ${count} reconciliations in ${this._windowMs}ms (trigger: ${label}). Blocking for ${this._cooldownMs}ms.`,
             );
             this._cooldownUntil = now + this._cooldownMs;
             this._timestamps = [];
@@ -43,7 +43,7 @@ export class ReconciliationGuard {
 
         if (count >= this._softThreshold) {
             console.warn(
-                `[PaperFlow] Loop warning: ${count} reconciliations in ${this._windowMs}ms (trigger: ${label})`,
+                `[Kestrel] Loop warning: ${count} reconciliations in ${this._windowMs}ms (trigger: ${label})`,
             );
         }
 

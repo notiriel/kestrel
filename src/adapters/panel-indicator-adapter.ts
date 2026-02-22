@@ -33,12 +33,12 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         try {
             this._switchCallback = switchCallback;
 
-            this._indicator = new PanelMenu.Button(0.0, 'PaperFlow', false);
+            this._indicator = new PanelMenu.Button(0.0, 'Kestrel', false);
 
             const box = new St.BoxLayout({ style_class: 'panel-status-indicators-box' });
 
             this._label = new St.Label({
-                text: 'PaperFlow',
+                text: 'Kestrel',
                 y_align: Clutter.ActorAlign.CENTER,
             });
             box.add_child(this._label);
@@ -60,9 +60,9 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
                 }
             });
 
-            Main.panel.addToStatusArea('paperflow', this._indicator);
+            Main.panel.addToStatusArea('kestrel', this._indicator);
         } catch (e) {
-            console.error('[PaperFlow] Error creating panel indicator:', e);
+            console.error('[Kestrel] Error creating panel indicator:', e);
         }
     }
 
@@ -83,7 +83,7 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
                 this._statusDot.text = currentStatus ? (STATUS_ICONS[currentStatus] ?? '') : '';
             }
         } catch (e) {
-            console.error('[PaperFlow] Error updating panel indicator:', e);
+            console.error('[Kestrel] Error updating panel indicator:', e);
         }
     }
 
@@ -99,7 +99,7 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
             this._lastWorld = null;
             this._lastStatusOverlay = undefined;
         } catch (e) {
-            console.error('[PaperFlow] Error destroying panel indicator:', e);
+            console.error('[Kestrel] Error destroying panel indicator:', e);
         }
     }
 
@@ -125,7 +125,7 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
                 try {
                     this._switchCallback?.(wsIndex);
                 } catch (e) {
-                    console.error('[PaperFlow] Error switching workspace from panel:', e);
+                    console.error('[Kestrel] Error switching workspace from panel:', e);
                 }
             });
             menu.addMenuItem(item);

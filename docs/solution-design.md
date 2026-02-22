@@ -1,4 +1,4 @@
-# PaperFlow Solution Design
+# Kestrel Solution Design
 
 ## Architecture: Hexagonal (Ports & Adapters)
 
@@ -14,7 +14,7 @@ The codebase is split into three layers:
 │    ├── workspaces: Workspace[]                       │
 │    ├── viewport: Viewport                            │
 │    ├── focusedWindow: WindowId | null                │
-│    └── config: PaperFlowConfig                       │
+│    └── config: KestrelConfig                       │
 │                                                      │
 │  Workspace                                           │
 │    ├── id: WorkspaceId                               │
@@ -90,7 +90,7 @@ The codebase is split into three layers:
 │    StatePersistence      Save/restore world state    │
 │                                                      │
 │  Extension Lifecycle:                                │
-│    PaperFlowController   enable() / disable()        │
+│    KestrelController   enable() / disable()        │
 │                          wires ports ↔ adapters      │
 └──────────────────────────────────────────────────────┘
 ```
@@ -99,14 +99,14 @@ The codebase is split into three layers:
 
 ### 1. Single GNOME Workspace
 
-All windows live on one GNOME workspace. PaperFlow workspaces are virtual — the domain model tracks which windows belong to which workspace, and the adapter layer shows/hides window actors accordingly.
+All windows live on one GNOME workspace. Kestrel workspaces are virtual — the domain model tracks which windows belong to which workspace, and the adapter layer shows/hides window actors accordingly.
 
-**Why:** GNOME's workspace switching has its own animation system, signal timing, and policies (`_checkWorkspaces`, `WorkspaceAnimation`) that conflict with custom tiling. The previous PaperWM fork's worst bugs came from this conflict. With a single workspace, PaperFlow has complete control over all transitions.
+**Why:** GNOME's workspace switching has its own animation system, signal timing, and policies (`_checkWorkspaces`, `WorkspaceAnimation`) that conflict with custom tiling. The previous PaperWM fork's worst bugs came from this conflict. With a single workspace, Kestrel has complete control over all transitions.
 
 **Implications:**
-- Window visibility is managed by PaperFlow (hide actors not on the current virtual workspace)
-- Alt-Tab must be overridden to scope to the current PaperFlow workspace
-- GNOME Overview is fully replaced by PaperFlow's overview
+- Window visibility is managed by Kestrel (hide actors not on the current virtual workspace)
+- Alt-Tab must be overridden to scope to the current Kestrel workspace
+- GNOME Overview is fully replaced by Kestrel's overview
 - GNOME's dynamic workspace settings are irrelevant
 
 ### 2. Target State Model (No Animation Intents)
@@ -186,8 +186,8 @@ We use `Clutter.Clone` instances of `WindowActor`s for the tiling view. Real `Wi
 
 ```
 global.stage
-  └── global.window_group (real WindowActors — hidden by PaperFlow)
-  └── paperflow-layer (Clutter.Actor, inserted above window_group)
+  └── global.window_group (real WindowActors — hidden by Kestrel)
+  └── kestrel-layer (Clutter.Actor, inserted above window_group)
         └── workspace-strip (Clutter.Actor, translated Y for workspace switch)
               └── workspace-0 (Clutter.Actor)
               │     └── scroll-container (Clutter.Actor, translated X for scrolling)
@@ -265,7 +265,7 @@ The domain is the **source of truth** for layout. GNOME is the source of truth f
 | Monitor added/removed | `monitors-changed` | Domain updates viewport widthSlots, recomputes all layouts. |
 
 **Outbound sync (domain → GNOME):** After every domain operation, the adapter:
-1. Calls `Meta.Window.move_resize_frame()` to set the real window geometry (even though it's hidden — this ensures correct size if PaperFlow is disabled)
+1. Calls `Meta.Window.move_resize_frame()` to set the real window geometry (even though it's hidden — this ensures correct size if Kestrel is disabled)
 2. Updates clone positions and sizes
 3. Animates the layout via `ease()`
 
@@ -301,7 +301,7 @@ Monitor change (plug/unplug/rearrange)
     │   Returns WorldUpdate
     │
     └── Adapter applies layout:
-        - Resizes paperflow-layer to span all monitors
+        - Resizes kestrel-layer to span all monitors
         - Resizes all scroll-containers
         - Recalculates slot pixel widths
         - Animates to new positions
@@ -324,7 +324,7 @@ interface MonitorInfo {
 
 Based on Tiling Shell and Pop Shell patterns.
 
-**Type definition strategy:** Use `@girs/*` packages for GIR-based APIs (St, Clutter, Meta, GLib, Gio — auto-generated from introspection, reliable). Use `@girs/gnome-shell` for Shell JS APIs (hand-maintained, experimental). Where `@girs/gnome-shell` types are missing or wrong, add local `.d.ts` overrides in `src/types/`. This is manageable because PaperFlow's GNOME Shell API surface is narrow (keybindings, layoutManager, overview, a few Main.* functions).
+**Type definition strategy:** Use `@girs/*` packages for GIR-based APIs (St, Clutter, Meta, GLib, Gio — auto-generated from introspection, reliable). Use `@girs/gnome-shell` for Shell JS APIs (hand-maintained, experimental). Where `@girs/gnome-shell` types are missing or wrong, add local `.d.ts` overrides in `src/types/`. This is manageable because Kestrel's GNOME Shell API surface is narrow (keybindings, layoutManager, overview, a few Main.* functions).
 
 ```
 src/
@@ -412,7 +412,7 @@ Makefile           ← build, install, test targets
 ### Build & Install
 
 ```makefile
-UUID = paperflow@paperflow.github.com
+UUID = kestrel@kestrel.github.com
 INSTALL_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 
 build:
@@ -450,15 +450,15 @@ dev: install
 
 ### GNOME Shell Overrides
 
-Things PaperFlow must disable/replace:
+Things Kestrel must disable/replace:
 
 | What | Why | How |
 |---|---|---|
 | Workspace switching animation | We manage all transitions | Override `Main.wm._workspaceAnimation` |
 | Dynamic workspace creation | We use a single GNOME workspace | Set `dynamic-workspaces` to false, force 1 workspace |
 | Edge tiling (half-screen snap) | Conflicts with our tiling | Disable `org.gnome.mutter` `edge-tiling` |
-| Overview (Activities) | Replaced by PaperFlow overview | Override Super key, block `Main.overview.toggle()` |
-| Alt-Tab | Must scope to PaperFlow workspace | Replace `switcherPopup` or filter window list |
+| Overview (Activities) | Replaced by Kestrel overview | Override Super key, block `Main.overview.toggle()` |
+| Alt-Tab | Must scope to Kestrel workspace | Replace `switcherPopup` or filter window list |
 | `attach-modal-dialogs` | Dialogs should tile normally | Disable via mutter setting |
 
 All overrides must be **saved on enable() and restored on disable()** — clean teardown is critical.
@@ -484,8 +484,8 @@ function shouldTile(metaWindow: Meta.Window): boolean {
 **Keybindings** use `Main.wm.addKeybinding()` backed by a GSettings schema:
 
 ```xml
-<!-- schemas/org.gnome.shell.extensions.paperflow.gschema.xml -->
-<schema id="org.gnome.shell.extensions.paperflow">
+<!-- schemas/org.gnome.shell.extensions.kestrel.gschema.xml -->
+<schema id="org.gnome.shell.extensions.kestrel">
   <key name="focus-right" type="as">
     <default>['&lt;Super&gt;Right']</default>
   </key>
@@ -553,11 +553,11 @@ class AnimatorAdapter {
 // src/extension.ts
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-export default class PaperFlowExtension extends Extension {
-    private controller?: PaperFlowController;
+export default class KestrelExtension extends Extension {
+    private controller?: KestrelController;
 
     enable(): void {
-        this.controller = new PaperFlowController(this.getSettings());
+        this.controller = new KestrelController(this.getSettings());
         this.controller.enable();
     }
 
@@ -568,10 +568,10 @@ export default class PaperFlowExtension extends Extension {
 }
 ```
 
-`PaperFlowController` is the composition root that wires domain ↔ adapters:
+`KestrelController` is the composition root that wires domain ↔ adapters:
 
 ```typescript
-class PaperFlowController {
+class KestrelController {
     enable(): void {
         // 1. Read config
         // 2. Create domain World (empty)
@@ -580,7 +580,7 @@ class PaperFlowController {
         // 5. Connect signals (window-created, etc.)
         // 6. Register keybindings
         // 7. Enumerate existing windows → addWindow for each
-        // 8. Insert PaperFlow actor layer into stage
+        // 8. Insert Kestrel actor layer into stage
     }
 
     disable(): void {
@@ -597,14 +597,14 @@ class PaperFlowController {
 
 ## App Launcher Integration
 
-PaperFlow integrates with an external app launcher (e.g., ULauncher) for text-based workspace navigation. A plugin provides:
+Kestrel integrates with an external app launcher (e.g., ULauncher) for text-based workspace navigation. A plugin provides:
 - Switch to a workspace by name (e.g., typing `ws: project-alpha`)
 - Rename the current workspace
 
 This is a separate component, not part of the core extension. Communication could be via:
 - A simple file/socket protocol that the launcher plugin reads
 - D-Bus interface exposed by the extension
-- Reading PaperFlow's state from GSettings
+- Reading Kestrel's state from GSettings
 
 ## Implementation Phases
 
@@ -618,7 +618,7 @@ This is a separate component, not part of the core extension. Communication coul
 ### Phase 1b: First Window Tiles ✅
 - Domain: World, Workspace, TiledWindow, Viewport, LayoutEngine
 - Adapters: WindowEventAdapter, CloneAdapter, MonitorAdapter, WindowAdapter
-- PaperFlowController wires everything
+- KestrelController wires everything
 - Result: Windows tile horizontally at half-width. No navigation, no animation yet — just correct positioning.
 
 ### Phase 2: Navigation + Animation ✅
@@ -654,7 +654,7 @@ This is a separate component, not part of the core extension. Communication coul
 - Lock screen resilience: persist window→workspace mappings across disable/enable cycles
 - Fullscreen step-out model
 - Mouse interaction (click focus, Super+drag, Super+scroll)
-- Alt-Tab override scoped to PaperFlow workspace
+- Alt-Tab override scoped to Kestrel workspace
 - Focus indicator styling
 - Configuration UI (GNOME prefs)
 - Window minimum size auto-promotion

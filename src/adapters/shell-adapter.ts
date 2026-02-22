@@ -13,7 +13,7 @@ export class ShellAdapter implements ShellPort {
                 Main.overview.hide();
             }
         } catch (e) {
-            console.error('[PaperFlow] Error hiding overview:', e);
+            console.error('[Kestrel] Error hiding overview:', e);
         }
     }
 
@@ -23,7 +23,7 @@ export class ShellAdapter implements ShellPort {
                 try {
                     shellWm.completed_destroy(actor);
                 } catch (e) {
-                    console.error('[PaperFlow] Error completing destroy:', e);
+                    console.error('[Kestrel] Error completing destroy:', e);
                 }
             },
         );
@@ -33,7 +33,7 @@ export class ShellAdapter implements ShellPort {
                 try {
                     shellWm.completed_minimize(actor);
                 } catch (e) {
-                    console.error('[PaperFlow] Error completing minimize:', e);
+                    console.error('[Kestrel] Error completing minimize:', e);
                 }
             },
         );
@@ -43,7 +43,7 @@ export class ShellAdapter implements ShellPort {
                 try {
                     shellWm.completed_unminimize(actor);
                 } catch (e) {
-                    console.error('[PaperFlow] Error completing unminimize:', e);
+                    console.error('[Kestrel] Error completing unminimize:', e);
                 }
             },
         );

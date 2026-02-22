@@ -10,20 +10,20 @@ export type { KeybindingCallbacks };
 const MUTTER_SCHEMA = 'org.gnome.mutter';
 const OVERLAY_KEY = 'overlay-key';
 
-/** Mutter keybindings that conflict with PaperFlow's Super+Arrow combos. */
+/** Mutter keybindings that conflict with Kestrel's Super+Arrow combos. */
 const MUTTER_KB_SCHEMA = 'org.gnome.mutter.keybindings';
 const CONFLICTING_MUTTER_KEYS = [
     'toggle-tiled-left',            // <Super>Left
     'toggle-tiled-right',           // <Super>Right
 ] as const;
 
-/** Shell keybindings that conflict with PaperFlow's Super+key combos. */
+/** Shell keybindings that conflict with Kestrel's Super+key combos. */
 const SHELL_KB_SCHEMA = 'org.gnome.shell.keybindings';
 const CONFLICTING_SHELL_KEYS = [
     'toggle-message-tray',          // <Super>m — conflicts with overview toggle
 ] as const;
 
-/** WM keybindings that conflict with PaperFlow's Super+key combos. */
+/** WM keybindings that conflict with Kestrel's Super+key combos. */
 const WM_SCHEMA = 'org.gnome.desktop.wm.keybindings';
 const CONFLICTING_WM_KEYS = [
     'switch-applications',          // <Super>Tab
@@ -53,7 +53,7 @@ export class KeybindingAdapter implements KeybindingPort {
             }
             this._savedBindings.push({ schemaId, bindings });
         } catch (e) {
-            console.error(`[PaperFlow] Failed to disable keybindings in ${schemaId}:`, e);
+            console.error(`[Kestrel] Failed to disable keybindings in ${schemaId}:`, e);
         }
     }
 
@@ -66,7 +66,7 @@ export class KeybindingAdapter implements KeybindingPort {
                     settings.set_strv(key, saved);
                 }
             } catch (e) {
-                console.error(`[PaperFlow] Failed to restore keybindings in ${schemaId}:`, e);
+                console.error(`[Kestrel] Failed to restore keybindings in ${schemaId}:`, e);
             }
         }
         this._savedBindings = [];
@@ -80,7 +80,7 @@ export class KeybindingAdapter implements KeybindingPort {
             this._savedOverlayKey = mutterSettings.get_string(OVERLAY_KEY);
             mutterSettings.set_string(OVERLAY_KEY, '');
         } catch (e) {
-            console.error('[PaperFlow] Failed to disable overlay-key:', e);
+            console.error('[Kestrel] Failed to disable overlay-key:', e);
         }
 
         this._saveAndDisable(MUTTER_KB_SCHEMA, CONFLICTING_MUTTER_KEYS);
@@ -97,7 +97,7 @@ export class KeybindingAdapter implements KeybindingPort {
             ['move-down', callbacks.onMoveDown],
             ['move-up', callbacks.onMoveUp],
             ['toggle-size', callbacks.onToggleSize],
-            ['paperflow-toggle-overview', callbacks.onToggleOverview],
+            ['kestrel-toggle-overview', callbacks.onToggleOverview],
             ['new-window', callbacks.onNewWindow],
             ['toggle-notifications', callbacks.onToggleNotifications],
         ];
@@ -113,7 +113,7 @@ export class KeybindingAdapter implements KeybindingPort {
                 );
                 this._bound.push(name);
             } catch (e) {
-                console.error(`[PaperFlow] Failed to add keybinding ${name}:`, e);
+                console.error(`[Kestrel] Failed to add keybinding ${name}:`, e);
             }
         }
     }
@@ -123,7 +123,7 @@ export class KeybindingAdapter implements KeybindingPort {
             try {
                 Main.wm.removeKeybinding(name);
             } catch (e) {
-                console.error(`[PaperFlow] Failed to remove keybinding ${name}:`, e);
+                console.error(`[Kestrel] Failed to remove keybinding ${name}:`, e);
             }
         }
         this._bound = [];
@@ -134,7 +134,7 @@ export class KeybindingAdapter implements KeybindingPort {
                 const mutterSettings = new Gio.Settings({ schema_id: MUTTER_SCHEMA });
                 mutterSettings.set_string(OVERLAY_KEY, this._savedOverlayKey);
             } catch (e) {
-                console.error('[PaperFlow] Failed to restore overlay-key:', e);
+                console.error('[Kestrel] Failed to restore overlay-key:', e);
             }
             this._savedOverlayKey = null;
         }

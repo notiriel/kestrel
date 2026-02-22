@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { WindowId, PaperFlowConfig, MonitorInfo, WorldUpdate } from '../../src/domain/types.js';
+import type { WindowId, KestrelConfig, MonitorInfo, WorldUpdate } from '../../src/domain/types.js';
 import { createWorld, addWindow } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
@@ -7,7 +7,7 @@ import { NavigationHandler, type NavigationDeps } from '../../src/adapters/navig
 import { createMockClonePort } from './mock-ports.js';
 import { moveDown, moveUp } from '../../src/domain/window-operations.js';
 
-const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,

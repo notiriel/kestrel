@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.gnome.shell.extensions.paperflow"
-          path="/org/gnome/shell/extensions/paperflow@paperflow.github.com/">
+  <schema id="org.gnome.shell.extensions.kestrel"
+          path="/org/gnome/shell/extensions/kestrel@kestrel.github.com/">
     <key name="gap-size" type="i">
       <default>8</default>
       <summary>Gap between windows</summary>
@@ -57,7 +57,7 @@
       <summary>Toggle window size</summary>
       <description>Toggle the focused window between half and full width</description>
     </key>
-    <key name="paperflow-toggle-overview" type="as">
+    <key name="kestrel-toggle-overview" type="as">
       <default>['&lt;Super&gt;minus']</default>
       <summary>Toggle overview</summary>
       <description>Toggle the bird's-eye overview of all workspaces</description>

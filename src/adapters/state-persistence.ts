@@ -1,4 +1,4 @@
-import type { WindowId, PaperFlowConfig, MonitorInfo } from '../domain/types.js';
+import type { WindowId, KestrelConfig, MonitorInfo } from '../domain/types.js';
 import type { World, RestoreWorkspaceData } from '../domain/world.js';
 import type { StatePersistencePort } from '../ports/state-persistence-port.js';
 import { restoreWorld } from '../domain/world.js';
@@ -13,7 +13,7 @@ export class StatePersistence implements StatePersistencePort {
         this._settings = settings;
     }
 
-    readConfig(): PaperFlowConfig {
+    readConfig(): KestrelConfig {
         return {
             gapSize: this._settings.get_int('gap-size'),
             edgeGap: this._settings.get_int('edge-gap'),
@@ -39,11 +39,11 @@ export class StatePersistence implements StatePersistencePort {
             };
             this._settings.set_string('saved-state', JSON.stringify(state));
         } catch (e) {
-            console.error('[PaperFlow] Error saving state:', e);
+            console.error('[Kestrel] Error saving state:', e);
         }
     }
 
-    tryRestore(config: PaperFlowConfig, monitor: MonitorInfo): World | null {
+    tryRestore(config: KestrelConfig, monitor: MonitorInfo): World | null {
         try {
             const json = this._settings.get_string('saved-state');
             if (!json) return null;
@@ -86,7 +86,7 @@ export class StatePersistence implements StatePersistencePort {
 
             return world;
         } catch (e) {
-            console.error('[PaperFlow] Error restoring state:', e);
+            console.error('[Kestrel] Error restoring state:', e);
             return null;
         }
     }

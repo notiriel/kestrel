@@ -1,8 +1,8 @@
 #!/bin/bash
-# Usage: paperflow-status.sh <status>
+# Usage: kestrel-status.sh <status>
 # Reads session_id from stdin JSON, sets window status via DBus
 
-LOG="/tmp/paperflow-hooks.log"
+LOG="/tmp/kestrel-hooks.log"
 log() { echo "[$(date '+%H:%M:%S.%3N')] [status] $*" >> "$LOG"; }
 
 INPUT=$(cat)
@@ -11,6 +11,6 @@ log "--- status hook fired --- status=$1 session=$SESSION_ID"
 log "stdin: $INPUT"
 
 RESULT=$(gdbus call --session --dest org.gnome.Shell \
-  --object-path /io/paperflow/Extension \
-  --method io.paperflow.Extension.SetWindowStatus \
+  --object-path /io/kestrel/Extension \
+  --method io.kestrel.Extension.SetWindowStatus \
   "$SESSION_ID" "$1" 2>&1) && log "dbus ok: $RESULT" || log "dbus error: $RESULT"

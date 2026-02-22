@@ -35,7 +35,7 @@ export class NavigationHandler {
             this._deps.applyLayout(update.layout, true);
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
-            console.error(`[PaperFlow] Error handling ${label}:`, e);
+            console.error(`[Kestrel] Error handling ${label}:`, e);
         }
     }
 
@@ -60,7 +60,7 @@ export class NavigationHandler {
             this._deps.applyLayout(update.layout, true);
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
-            console.error(`[PaperFlow] Error handling ${label}:`, e);
+            console.error(`[Kestrel] Error handling ${label}:`, e);
         }
     }
 
@@ -108,7 +108,7 @@ export class NavigationHandler {
 
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
-            console.error(`[PaperFlow] Error handling ${label}:`, e);
+            console.error(`[Kestrel] Error handling ${label}:`, e);
         }
     }
 

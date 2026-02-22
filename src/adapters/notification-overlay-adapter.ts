@@ -3,6 +3,7 @@ import type { OverlayNotification, QuestionDefinition } from '../domain/notifica
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
+import Graphene from 'gi://Graphene';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 interface Easeable {
@@ -14,7 +15,9 @@ const QUESTION_CARD_WIDTH = 600;
 const CARD_MARGIN = 12;
 const CARD_RIGHT_OFFSET = QUESTION_CARD_WIDTH - CARD_WIDTH; // Right-align normal cards in wide container
 const COLLAPSED_H = 62;
-const STACK_OFFSET_Y = 6;
+const STACK_OFFSET_Y = 4;
+const STACK_SCALE_STEP = 0.05;
+const STACK_OPACITY_STEP = 0.05;
 const ANIMATION_DURATION = 300;
 const AUTO_ADVANCE_DELAY = 300;
 
@@ -135,11 +138,11 @@ export class NotificationOverlayAdapter implements NotificationPort {
                         this._repositionToMonitor(monitor);
                     }
                 } catch (e) {
-                    console.error('[PaperFlow] Error repositioning notification overlay:', e);
+                    console.error('[Kestrel] Error repositioning notification overlay:', e);
                 }
             });
         } catch (e) {
-            console.error('[PaperFlow] Error creating notification overlay:', e);
+            console.error('[Kestrel] Error creating notification overlay:', e);
         }
     }
 
@@ -165,7 +168,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
             this._relayout();
             this.onEntriesChanged?.();
         } catch (e) {
-            console.error('[PaperFlow] Error showing permission notification:', e);
+            console.error('[Kestrel] Error showing permission notification:', e);
         }
     }
 
@@ -189,7 +192,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
             this._relayout();
             this.onEntriesChanged?.();
         } catch (e) {
-            console.error('[PaperFlow] Error showing notification:', e);
+            console.error('[Kestrel] Error showing notification:', e);
         }
     }
 
@@ -250,7 +253,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
             this._relayout();
             this.onEntriesChanged?.();
         } catch (e) {
-            console.error('[PaperFlow] Error showing question notification:', e);
+            console.error('[Kestrel] Error showing question notification:', e);
         }
     }
 
@@ -398,7 +401,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
                 this._container = null;
             }
         } catch (e) {
-            console.error('[PaperFlow] Error destroying notification overlay:', e);
+            console.error('[Kestrel] Error destroying notification overlay:', e);
         }
     }
 
@@ -412,28 +415,30 @@ export class NotificationOverlayAdapter implements NotificationPort {
             translation_x: CARD_RIGHT_OFFSET + 60,
         });
 
-        // Header row: title left, workspace name right
+        // Header row: workspace name (bold) left, title right
         const header = new St.BoxLayout({
             style: 'spacing: 8px;',
             x_expand: true,
         });
-        const titleLabel = new St.Label({
-            text: notif.title,
-            style: `font-weight: bold; font-size: 13px; color: ${TEXT};`,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.START,
-        });
-        titleLabel.clutter_text.ellipsize = 3; // Pango.EllipsizeMode.END
-        header.add_child(titleLabel);
 
         if (notif.workspaceName) {
             const wsLabel = new St.Label({
                 text: notif.workspaceName,
-                style: `font-family: monospace; font-size: 11px; color: ${TEXT_DIM};`,
-                x_align: Clutter.ActorAlign.END,
+                style: `font-weight: bold; font-size: 13px; color: ${TEXT};`,
+                x_align: Clutter.ActorAlign.START,
             });
+            wsLabel.clutter_text.ellipsize = 3; // Pango.EllipsizeMode.END
             header.add_child(wsLabel);
         }
+
+        const titleLabel = new St.Label({
+            text: notif.title,
+            style: `font-size: 11px; color: ${TEXT_DIM};`,
+            x_expand: true,
+            x_align: notif.workspaceName ? Clutter.ActorAlign.END : Clutter.ActorAlign.START,
+        });
+        titleLabel.clutter_text.ellipsize = 3; // Pango.EllipsizeMode.END
+        header.add_child(titleLabel);
         card.add_child(header);
 
         // Message — truncated when collapsed, wrapped when expanded
@@ -527,43 +532,44 @@ export class NotificationOverlayAdapter implements NotificationPort {
         card.add_child(expandWrapper);
 
         // Progress bar for permission and question cards (shows remaining timeout)
+        // Animate scale_x (not width) — St's box layout overrides width on allocation
         let progressBar: St.Widget | null = null;
         let progressTimeoutId: number | null = null;
         if (notif.type === 'permission' || notif.type === 'question') {
-            const barFullWidth = CARD_WIDTH - 32; // card width minus padding
             progressBar = new St.Widget({
                 style: `background-color: ${ACCENT}; border-radius: 0 0 12px 12px; margin-top: 4px;`,
                 height: 3,
-                width: barFullWidth,
+                x_expand: true,
+                pivot_point: new Graphene.Point({ x: 0, y: 0.5 }),
             });
             card.add_child(progressBar);
 
             let elapsed = 0;
             const totalTicks = PERMISSION_TIMEOUT_SECS / PROGRESS_TICK_SECS;
             const bar = progressBar;
+
+            // Kick off the first segment immediately — scale_x works even before mapping
+            const firstFraction = Math.max(0, 1 - 1 / totalTicks);
+            (bar as unknown as Easeable).ease({
+                scale_x: firstFraction,
+                duration: PROGRESS_TICK_SECS * 1000,
+                mode: Clutter.AnimationMode.LINEAR,
+            });
+
             progressTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, PROGRESS_TICK_SECS, () => {
                 try {
                     elapsed++;
-                    const fraction = Math.max(0, 1 - elapsed / totalTicks);
-                    const targetWidth = Math.round(barFullWidth * fraction);
+                    const fraction = Math.max(0, 1 - (elapsed + 1) / totalTicks);
                     (bar as unknown as Easeable).ease({
-                        width: targetWidth,
+                        scale_x: fraction,
                         duration: PROGRESS_TICK_SECS * 1000,
                         mode: Clutter.AnimationMode.LINEAR,
                     });
-                    if (elapsed >= totalTicks) return GLib.SOURCE_REMOVE;
+                    if (elapsed + 1 >= totalTicks) return GLib.SOURCE_REMOVE;
                     return GLib.SOURCE_CONTINUE;
                 } catch {
                     return GLib.SOURCE_REMOVE;
                 }
-            });
-
-            // Start the initial animation immediately (first tick is delayed)
-            const firstFraction = 1 - 1 / totalTicks;
-            (progressBar as unknown as Easeable).ease({
-                width: Math.round(barFullWidth * firstFraction),
-                duration: PROGRESS_TICK_SECS * 1000,
-                mode: Clutter.AnimationMode.LINEAR,
             });
         }
 
@@ -609,7 +615,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
             try {
                 onClick();
             } catch (e) {
-                console.error('[PaperFlow] Error in notification button click:', e);
+                console.error('[Kestrel] Error in notification button click:', e);
             }
         });
         return btn;
@@ -712,7 +718,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
                     try {
                         entry.card.destroy();
                     } catch (e) {
-                        console.error('[PaperFlow] Error cleaning up dismissed card:', e);
+                        console.error('[Kestrel] Error cleaning up dismissed card:', e);
                     }
                 },
             });
@@ -751,7 +757,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
                 try {
                     entry.card.destroy();
                 } catch (e) {
-                    console.error('[PaperFlow] Error cleaning up dismissed card:', e);
+                    console.error('[Kestrel] Error cleaning up dismissed card:', e);
                 }
             },
         });
@@ -776,9 +782,15 @@ export class NotificationOverlayAdapter implements NotificationPort {
             for (let i = 0; i < count; i++) {
                 const entry = entries[i]!;
                 entry.card.reactive = true;
-                const cardHeight = entry.cardExpanded
-                    ? entry.card.height
-                    : COLLAPSED_H;
+                let cardHeight = COLLAPSED_H;
+                if (entry.cardExpanded) {
+                    // Don't read entry.card.height — the expandWrapper ease animation
+                    // may not have updated the St allocation yet, giving a stale value.
+                    // Compute the target height from the expandWrapper content's natural height.
+                    const inner = entry.expandWrapper.get_first_child();
+                    const expandH = inner ? inner.get_preferred_height(-1)[1] : 0;
+                    cardHeight = COLLAPSED_H + expandH;
+                }
 
                 // Right-align non-expanded cards; expanded question cards sit at x=0
                 const isExpandedQuestion = entry.cardExpanded && entry.notification.type === 'question';
@@ -801,20 +813,35 @@ export class NotificationOverlayAdapter implements NotificationPort {
             this._container.height = y > 0 ? y : -1;
         } else {
             // Collapsed: stack with peek — first (oldest) card in front
+            // Cards scale down by STACK_SCALE_STEP per depth, fade by STACK_OPACITY_STEP,
+            // and their bottom borders are staggered by STACK_OFFSET_Y pixels.
             for (let i = count - 1; i >= 0; i--) {
                 const entry = entries[i]!;
                 // Only the front card (first) is reactive
                 entry.card.reactive = (i === 0);
-                const opacity = i > 4 ? 0 : Math.round(255 * (1 - i * 0.15));
+
+                const scale = Math.max(0, 1 - i * STACK_SCALE_STEP);
+                const opacity = i > 4 ? 0 : Math.round(255 * Math.max(0, 1 - i * STACK_OPACITY_STEP));
+
+                // Position so bottom borders stagger by STACK_OFFSET_Y each.
+                // Front card (i=0): y=0, bottom at COLLAPSED_H.
+                // Card i: scaled height = COLLAPSED_H * scale, so
+                //   y = (COLLAPSED_H - COLLAPSED_H * scale) + i * STACK_OFFSET_Y
+                // This aligns the scaled card's bottom edge STACK_OFFSET_Y * i below the front card's bottom.
+                const scaledHeight = COLLAPSED_H * scale;
+                const ty = (COLLAPSED_H - scaledHeight) + i * STACK_OFFSET_Y;
 
                 const isExpandedQuestion = entry.cardExpanded && entry.notification.type === 'question';
                 const tx = isExpandedQuestion ? 0 : CARD_RIGHT_OFFSET;
 
+                // Pivot from top-center so scale shrinks towards top-right
+                entry.card.pivot_point = new Graphene.Point({ x: 0.5, y: 0 });
+
                 (entry.card as unknown as Easeable).ease({
-                    translation_y: i * STACK_OFFSET_Y,
+                    translation_y: ty,
                     translation_x: tx,
-                    scale_x: 1,
-                    scale_y: 1,
+                    scale_x: scale,
+                    scale_y: scale,
                     opacity: Math.max(opacity, 0),
                     duration: ANIMATION_DURATION,
                     mode: Clutter.AnimationMode.EASE_OUT_QUAD,

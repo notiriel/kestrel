@@ -15,7 +15,7 @@ const STATUS_COLORS: Record<ClaudeStatus, string> = {
 
 const ICON_SIZE = 75;
 const ICON_PADDING = 10;
-const PROBE_PATTERN = /^paper_flow_probe_(.+)$/;
+const PROBE_PATTERN = /^kestrel_probe_(.+)$/;
 
 interface TitleSignalEntry {
     metaWindow: { disconnect(id: number): void; get_title(): string | null };
@@ -49,7 +49,7 @@ export class StatusOverlayAdapter {
             try {
                 this._onTitleChanged(windowId, metaWindow);
             } catch (e) {
-                console.error('[PaperFlow] Error in title change handler:', e);
+                console.error('[Kestrel] Error in title change handler:', e);
             }
         });
         this._titleSignals.set(windowId, { metaWindow, signalId });
@@ -84,7 +84,7 @@ export class StatusOverlayAdapter {
     setWindowStatus(sessionId: string, status: string): void {
         const windowId = this._sessionToWindowId.get(sessionId);
         if (!windowId) {
-            console.log(`[PaperFlow] setWindowStatus: unknown session ${sessionId}`);
+            console.log(`[Kestrel] setWindowStatus: unknown session ${sessionId}`);
             return;
         }
 
@@ -101,7 +101,7 @@ export class StatusOverlayAdapter {
 
         const validStatus = status as ClaudeStatus;
         if (!STATUS_COLORS[validStatus]) {
-            console.log(`[PaperFlow] setWindowStatus: unknown status ${status}`);
+            console.log(`[Kestrel] setWindowStatus: unknown status ${status}`);
             return;
         }
 

@@ -22,7 +22,7 @@ export function safeWindow(metaWindow: Meta.Window): Meta.Window {
             // Check liveness before accessing anything (except the probe itself)
             if (prop !== 'get_compositor_private' && !target.get_compositor_private()) {
                 throw new Error(
-                    `[PaperFlow] Dead Meta.Window: cannot access ${String(prop)}`,
+                    `[Kestrel] Dead Meta.Window: cannot access ${String(prop)}`,
                 );
             }
 

@@ -1,13 +1,15 @@
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
+import Gtk from 'gi://Gtk';
+import Gdk from 'gi://Gdk';
 
-export default class PaperFlowPreferences extends ExtensionPreferences {
+export default class KestrelPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window: Adw.PreferencesWindow): void {
         const settings = this.getSettings();
 
         const page = new Adw.PreferencesPage({
-            title: 'PaperFlow',
+            title: 'Kestrel',
             icon_name: 'preferences-desktop-display-symbolic',
         });
         window.add(page);
@@ -50,16 +52,44 @@ export default class PaperFlowPreferences extends ExtensionPreferences {
         settings.bind('focus-border-radius', borderRadiusRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         focusGroup.add(borderRadiusRow);
 
-        const borderColorRow = new Adw.EntryRow({
-            title: 'Border Color',
-        });
-        settings.bind('focus-border-color', borderColorRow, 'text', Gio.SettingsBindFlags.DEFAULT);
-        focusGroup.add(borderColorRow);
+        this._addColorRow(focusGroup, settings, 'focus-border-color', 'Border Color', 'Color of the focus indicator border');
+        this._addColorRow(focusGroup, settings, 'focus-background-color', 'Background Color', 'Background color behind the focused window');
+    }
 
-        const bgColorRow = new Adw.EntryRow({
-            title: 'Background Color',
+    private _addColorRow(group: Adw.PreferencesGroup, settings: Gio.Settings, key: string, title: string, subtitle: string): void {
+        const dialog = new Gtk.ColorDialog({ with_alpha: true });
+        const button = new Gtk.ColorDialogButton({ dialog });
+
+        // Initialize from current setting
+        const rgba = new Gdk.RGBA();
+        rgba.parse(settings.get_string(key));
+        button.set_rgba(rgba);
+
+        // Write back on change
+        let updating = false;
+        button.connect('notify::rgba', () => {
+            if (updating) return;
+            const c = button.get_rgba();
+            const css = `rgba(${Math.round(c.red * 255)},${Math.round(c.green * 255)},${Math.round(c.blue * 255)},${Math.round(c.alpha * 100) / 100})`;
+            updating = true;
+            settings.set_string(key, css);
+            updating = false;
         });
-        settings.bind('focus-background-color', bgColorRow, 'text', Gio.SettingsBindFlags.DEFAULT);
-        focusGroup.add(bgColorRow);
+
+        // Sync if changed externally
+        settings.connect(`changed::${key}`, () => {
+            if (updating) return;
+            updating = true;
+            const r = new Gdk.RGBA();
+            r.parse(settings.get_string(key));
+            button.set_rgba(r);
+            updating = false;
+        });
+
+        button.valign = Gtk.Align.CENTER;
+
+        const row = new Adw.ActionRow({ title, subtitle });
+        row.add_suffix(button);
+        group.add(row);
     }
 }

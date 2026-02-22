@@ -81,7 +81,7 @@ export class WindowEventAdapter implements WindowEventPort {
                 try {
                     this._handleWindowCreated(metaWindow);
                 } catch (e) {
-                    console.error('[PaperFlow] Error in window-created handler:', e);
+                    console.error('[Kestrel] Error in window-created handler:', e);
                 }
             },
         );
@@ -102,7 +102,7 @@ export class WindowEventAdapter implements WindowEventPort {
                     this._watchActorDestroy(actor as Meta.WindowActor, windowId, true);
                 }
             } catch (e) {
-                console.error('[PaperFlow] Error enumerating window:', e);
+                console.error('[Kestrel] Error enumerating window:', e);
             }
         }
     }
@@ -181,7 +181,7 @@ export class WindowEventAdapter implements WindowEventPort {
                     this._callbacks?.onWindowDestroyed(windowId);
                 }
             } catch (e) {
-                console.error('[PaperFlow] Error in actor destroy handler:', e);
+                console.error('[Kestrel] Error in actor destroy handler:', e);
             }
         });
         this._actorDestroyIds.set(windowId, destroyId);
@@ -192,7 +192,7 @@ export class WindowEventAdapter implements WindowEventPort {
                 try {
                     this._callbacks?.onWindowFullscreenChanged(windowId, metaWindow.fullscreen);
                 } catch (e) {
-                    console.error('[PaperFlow] Error in fullscreen handler:', e);
+                    console.error('[Kestrel] Error in fullscreen handler:', e);
                 }
             });
             this._fullscreenSignalIds.set(windowId, { metaWindow, signalId });
@@ -204,7 +204,7 @@ export class WindowEventAdapter implements WindowEventPort {
                         this._callbacks?.onWindowMaximized(windowId);
                     }
                 } catch (e) {
-                    console.error('[PaperFlow] Error in maximize handler:', e);
+                    console.error('[Kestrel] Error in maximize handler:', e);
                 }
             });
             this._maximizeSignalIds.set(windowId, { metaWindow, signalId: maxSignalId });

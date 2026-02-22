@@ -1,19 +1,19 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "paperflow-local",
-  "description": "PaperFlow GNOME Shell extension development tools",
+  "name": "kestrel-local",
+  "description": "Kestrel GNOME Shell extension development tools",
   "owner": {
-    "name": "PaperFlow"
+    "name": "Kestrel"
   },
   "plugins": [
     {
-      "name": "paperflow",
-      "description": "Quality-gate hooks and specialized agents for PaperFlow development",
+      "name": "kestrel",
+      "description": "Quality-gate hooks and specialized agents for Kestrel development",
       "version": "1.0.0",
       "author": {
-        "name": "PaperFlow"
+        "name": "Kestrel"
       },
-      "source": "./paperflow-plugin",
+      "source": "./kestrel-plugin",
       "category": "development"
     }
   ]

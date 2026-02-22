@@ -1,4 +1,4 @@
-# PaperFlow Design Document
+# Kestrel Design Document
 
 ## Core Concept: The World
 
@@ -25,7 +25,7 @@ Y  ├────────┼────────┼──────�
 
 - The World contains multiple **workspaces** stacked vertically.
 - Each workspace is an independent horizontal strip of windows.
-- **PaperFlow workspaces are virtual** — all windows live on a single GNOME workspace. PaperFlow owns the entire 2D plane and manages visibility, focus, and positioning itself. This avoids fighting GNOME's workspace switching animation system.
+- **Kestrel workspaces are virtual** — all windows live on a single GNOME workspace. Kestrel owns the entire 2D plane and manages visibility, focus, and positioning itself. This avoids fighting GNOME's workspace switching animation system.
 - **Dynamic growth:** There is always exactly one empty workspace at the bottom. When a window is added to it, a new empty workspace is created below. The World always has room to grow.
 - Empty workspaces in the middle (all windows closed) are removed, except the trailing empty one.
 - **Named workspaces:** Workspaces can be given names for identification in the overview and for text-based navigation (e.g., jumping to a workspace by typing its name in an app launcher).

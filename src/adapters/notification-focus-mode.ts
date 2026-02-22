@@ -90,7 +90,7 @@ export class NotificationFocusMode {
 
             this._enter(entries);
         } catch (e) {
-            console.error('[PaperFlow] Error toggling notification focus mode:', e);
+            console.error('[Kestrel] Error toggling notification focus mode:', e);
         }
     }
 
@@ -103,7 +103,7 @@ export class NotificationFocusMode {
 
         // Backdrop — fullscreen dimmed overlay
         this._backdrop = new St.Widget({
-            name: 'paperflow-focus-backdrop',
+            name: 'kestrel-focus-backdrop',
             style: 'background-color: rgba(0,0,0,0.6);',
             reactive: true,
             x: monitor.x,
@@ -115,7 +115,7 @@ export class NotificationFocusMode {
 
         // Preview container — left half, centered
         this._previewContainer = new Clutter.Actor({
-            name: 'paperflow-focus-preview',
+            name: 'kestrel-focus-preview',
             x: monitor.x,
             y: monitor.y,
             width: Math.floor(monitor.width / 2),
@@ -125,7 +125,7 @@ export class NotificationFocusMode {
 
         // Card container — right half, centered
         this._cardContainer = new Clutter.Actor({
-            name: 'paperflow-focus-cards',
+            name: 'kestrel-focus-cards',
             x: Math.floor(monitor.width / 2),
             y: 0,
             width: Math.floor(monitor.width / 2),
@@ -169,7 +169,7 @@ export class NotificationFocusMode {
                 try {
                     return this._handleKeyPress(event);
                 } catch (e) {
-                    console.error('[PaperFlow] Error in focus mode key handler:', e);
+                    console.error('[Kestrel] Error in focus mode key handler:', e);
                     return Clutter.EVENT_PROPAGATE;
                 }
             },
@@ -184,7 +184,7 @@ export class NotificationFocusMode {
                     this._exit();
                     return Clutter.EVENT_STOP;
                 } catch (e) {
-                    console.error('[PaperFlow] Error in focus mode click handler:', e);
+                    console.error('[Kestrel] Error in focus mode click handler:', e);
                     return Clutter.EVENT_PROPAGATE;
                 }
             },
@@ -228,7 +228,7 @@ export class NotificationFocusMode {
                 try {
                     Main.popModal(grab);
                 } catch (e) {
-                    console.error('[PaperFlow] Error in focus mode popModal:', e);
+                    console.error('[Kestrel] Error in focus mode popModal:', e);
                 }
                 return GLib.SOURCE_REMOVE;
             });
@@ -247,7 +247,7 @@ export class NotificationFocusMode {
                         Main.layoutManager.removeChrome(backdrop);
                         backdrop.destroy();
                     } catch (e) {
-                        console.error('[PaperFlow] Error cleaning up focus mode:', e);
+                        console.error('[Kestrel] Error cleaning up focus mode:', e);
                     }
                 },
             });
@@ -907,7 +907,7 @@ export class NotificationFocusMode {
             this._currentIndex = Math.min(this._currentIndex, this._entryIds.length - 1);
             this._updateCounter();
         } catch (e) {
-            console.error('[PaperFlow] Error handling focus mode entries change:', e);
+            console.error('[Kestrel] Error handling focus mode entries change:', e);
         }
     }
 
@@ -934,7 +934,7 @@ export class NotificationFocusMode {
                 try {
                     Main.popModal(this._grab);
                 } catch (e) {
-                    console.error('[PaperFlow] Error in focus mode destroy popModal:', e);
+                    console.error('[Kestrel] Error in focus mode destroy popModal:', e);
                 }
                 this._grab = null;
             }

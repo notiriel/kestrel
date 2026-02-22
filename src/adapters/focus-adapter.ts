@@ -27,7 +27,7 @@ export class FocusAdapter implements FocusPort {
         try {
             Main.activateWindow(metaWindow);
         } catch (e) {
-            console.error('[PaperFlow] Failed to activate window:', e);
+            console.error('[Kestrel] Failed to activate window:', e);
             this._windows.delete(windowId);
         }
     }
@@ -38,7 +38,7 @@ export class FocusAdapter implements FocusPort {
         const tracker = Shell.WindowTracker.get_default();
         const app = tracker.get_window_app(metaWindow);
         if (!app) {
-            console.log('[PaperFlow] No app found for focused window');
+            console.log('[Kestrel] No app found for focused window');
             return;
         }
         app.open_new_window(-1);
@@ -54,7 +54,7 @@ export class FocusAdapter implements FocusPort {
                 if (!this._windows.has(windowId)) return;
                 callback(windowId);
             } catch (e) {
-                console.error('[PaperFlow] Error in focus-changed handler:', e);
+                console.error('[Kestrel] Error in focus-changed handler:', e);
             }
         });
     }

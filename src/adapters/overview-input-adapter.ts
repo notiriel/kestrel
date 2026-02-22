@@ -38,7 +38,7 @@ export class OverviewInputAdapter {
                 try {
                     return this._handleKeyPress(event, callbacks);
                 } catch (e) {
-                    console.error('[PaperFlow] Error in overview key handler:', e);
+                    console.error('[Kestrel] Error in overview key handler:', e);
                     return Clutter.EVENT_PROPAGATE;
                 }
             },
@@ -54,7 +54,7 @@ export class OverviewInputAdapter {
                     callbacks.onClick(x, y);
                     return Clutter.EVENT_STOP;
                 } catch (e) {
-                    console.error('[PaperFlow] Error in overview click handler:', e);
+                    console.error('[Kestrel] Error in overview click handler:', e);
                     return Clutter.EVENT_PROPAGATE;
                 }
             },
@@ -79,7 +79,7 @@ export class OverviewInputAdapter {
                 try {
                     Main.popModal(grab);
                 } catch (e) {
-                    console.error('[PaperFlow] Error in popModal:', e);
+                    console.error('[Kestrel] Error in popModal:', e);
                 }
                 return GLib.SOURCE_REMOVE;
             });
@@ -100,7 +100,7 @@ export class OverviewInputAdapter {
             try {
                 Main.popModal(this._grab);
             } catch (e) {
-                console.error('[PaperFlow] Error in destroy popModal:', e);
+                console.error('[Kestrel] Error in destroy popModal:', e);
             }
             this._grab = null;
         }

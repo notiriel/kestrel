@@ -2,7 +2,7 @@ import Gio from 'gi://Gio';
 
 const INTERFACE_XML = `
 <node>
-  <interface name="io.paperflow.Extension">
+  <interface name="io.kestrel.Extension">
     <method name="HandleNotification">
       <arg name="payload"  direction="in"  type="s"/>
       <arg name="response" direction="out" type="s"/>
@@ -22,19 +22,19 @@ const INTERFACE_XML = `
   </interface>
 </node>`;
 
-const OBJECT_PATH = '/io/paperflow/Extension';
+const OBJECT_PATH = '/io/kestrel/Extension';
 
-export interface PaperFlowDBusCallbacks {
+export interface KestrelDBusCallbacks {
     handleNotification(payload: string): string;
     handlePermissionRequest(payload: string): string;
     setWindowStatus(sessionId: string, status: string): void;
     getNotificationResponse(id: string): string;
 }
 
-export class PaperFlowDBusService {
+export class KestrelDBusService {
     private _dbus: Gio.DBusExportedObject | null = null;
 
-    constructor(callbacks: PaperFlowDBusCallbacks) {
+    constructor(callbacks: KestrelDBusCallbacks) {
         const handler = {
             HandleNotification(payload: string): string {
                 try {
@@ -54,7 +54,7 @@ export class PaperFlowDBusService {
                 try {
                     callbacks.setWindowStatus(sessionId, status);
                 } catch (e) {
-                    console.error('[PaperFlow] DBus SetWindowStatus error:', e);
+                    console.error('[Kestrel] DBus SetWindowStatus error:', e);
                 }
             },
             GetNotificationResponse(id: string): string {
@@ -75,7 +75,7 @@ export class PaperFlowDBusService {
             try {
                 this._dbus.unexport();
             } catch (e) {
-                console.error('[PaperFlow] Error unexporting DBus service:', e);
+                console.error('[Kestrel] Error unexporting DBus service:', e);
             }
             this._dbus = null;
         }

@@ -1,12 +1,12 @@
-UUID = paperflow@paperflow.github.com
+UUID = kestrel@kestrel.github.com
 INSTALL_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
-PLUGIN_DIR = $(HOME)/.claude/plugins/paperflow
-PLUGIN_CACHE_DIR = $(HOME)/.claude/plugins/cache/paperflow-local/paperflow/1.0.0
-ULAUNCHER_DIR = $(HOME)/.local/share/ulauncher/extensions/paperflow-workspaces
+PLUGIN_DIR = $(HOME)/.claude/plugins/kestrel
+PLUGIN_CACHE_DIR = $(HOME)/.claude/plugins/cache/kestrel-local/kestrel/1.0.0
+ULAUNCHER_DIR = $(HOME)/.local/share/ulauncher/extensions/kestrel-workspaces
 SETTINGS_JSON = $(HOME)/.claude/settings.json
 CURDIR_ABS = $(shell pwd)
 
-# Extensions that PaperFlow's conflict-detector disables at runtime
+# Extensions that Kestrel's conflict-detector disables at runtime
 CONFLICTING_EXTS = tiling-assistant@ubuntu.com ding@rastersoft.com ubuntu-dock@ubuntu.com
 
 build:
@@ -27,18 +27,18 @@ install: build
 	cp schemas/*.xml $(INSTALL_DIR)/schemas/
 	glib-compile-schemas $(INSTALL_DIR)/schemas/
 	# Claude Code plugin — symlink + copy hooks to cache
-	ln -sfn $(CURDIR_ABS)/paperflow-plugin $(PLUGIN_DIR)
+	ln -sfn $(CURDIR_ABS)/kestrel-plugin $(PLUGIN_DIR)
 	mkdir -p $(PLUGIN_CACHE_DIR)/hooks
-	chmod +x paperflow-plugin/hooks/*.sh
-	cp paperflow-plugin/hooks/* $(PLUGIN_CACHE_DIR)/hooks/
+	chmod +x kestrel-plugin/hooks/*.sh
+	cp kestrel-plugin/hooks/* $(PLUGIN_CACHE_DIR)/hooks/
 	chmod +x $(PLUGIN_CACHE_DIR)/hooks/*.sh
 	# Ulauncher extension — symlink
 	mkdir -p $(dir $(ULAUNCHER_DIR))
-	ln -sfn $(CURDIR_ABS)/ulauncher-paperflow $(ULAUNCHER_DIR)
+	ln -sfn $(CURDIR_ABS)/ulauncher-kestrel $(ULAUNCHER_DIR)
 	@echo ""
 	@echo "Installed. Run 'make enable' to activate, then restart your session."
 
-# ── Enable PaperFlow ────────────────────────────────────────────────
+# ── Enable Kestrel ────────────────────────────────────────────────
 enable:
 	# Enable GNOME extension
 	gnome-extensions enable $(UUID)
@@ -56,7 +56,7 @@ enable:
 	done
 	# Enable Claude Code plugin
 	@if [ -f $(SETTINGS_JSON) ]; then \
-		jq '.enabledPlugins["paperflow@paperflow-local"] = true' $(SETTINGS_JSON) > $(SETTINGS_JSON).tmp \
+		jq '.enabledPlugins["kestrel@kestrel-local"] = true' $(SETTINGS_JSON) > $(SETTINGS_JSON).tmp \
 		&& mv $(SETTINGS_JSON).tmp $(SETTINGS_JSON); \
 	fi
 	# Clean stale hooks from settings.json (plugin handles these now)
@@ -66,9 +66,9 @@ enable:
 		echo "Cleaned stale hooks from settings.json"; \
 	fi
 	@echo ""
-	@echo "PaperFlow enabled. Restart your session for changes to take effect."
+	@echo "Kestrel enabled. Restart your session for changes to take effect."
 
-# ── Disable PaperFlow ───────────────────────────────────────────────
+# ── Disable Kestrel ───────────────────────────────────────────────
 disable:
 	# Disable GNOME extension
 	gnome-extensions disable $(UUID) 2>/dev/null || true
@@ -94,11 +94,11 @@ disable:
 	gsettings reset org.gnome.desktop.wm.keybindings move-to-monitor-down
 	# Disable Claude Code plugin
 	@if [ -f $(SETTINGS_JSON) ]; then \
-		jq '.enabledPlugins["paperflow@paperflow-local"] = false' $(SETTINGS_JSON) > $(SETTINGS_JSON).tmp \
+		jq '.enabledPlugins["kestrel@kestrel-local"] = false' $(SETTINGS_JSON) > $(SETTINGS_JSON).tmp \
 		&& mv $(SETTINGS_JSON).tmp $(SETTINGS_JSON); \
 	fi
 	@echo ""
-	@echo "PaperFlow disabled. Restart your session for changes to take effect."
+	@echo "Kestrel disabled. Restart your session for changes to take effect."
 
 # ── Show status ─────────────────────────────────────────────────────
 status:
@@ -122,7 +122,7 @@ status:
 	@if [ -L $(PLUGIN_DIR) ]; then \
 		echo -n "  Symlink: "; readlink $(PLUGIN_DIR); \
 		if [ -f $(SETTINGS_JSON) ]; then \
-			echo -n "  Enabled: "; jq -r '.enabledPlugins["paperflow@paperflow-local"] // false' $(SETTINGS_JSON); \
+			echo -n "  Enabled: "; jq -r '.enabledPlugins["kestrel@kestrel-local"] // false' $(SETTINGS_JSON); \
 		fi; \
 	else \
 		echo "  Not installed"; \

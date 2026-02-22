@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { WindowId, WorkspaceId, PaperFlowConfig, MonitorInfo } from '../../src/domain/types.js';
+import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
 import { createWorld, addWindow, enterFullscreen, exitFullscreen, buildUpdate } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
@@ -7,7 +7,7 @@ import { createTiledWindow } from '../../src/domain/window.js';
 import { computeLayout } from '../../src/domain/layout.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
 
-const config: PaperFlowConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,

@@ -1,4 +1,4 @@
-"""PaperFlow workspace switcher for ULauncher."""
+"""Kestrel workspace switcher for ULauncher."""
 
 import json
 import logging
@@ -59,7 +59,7 @@ def gnome_eval(expr: str) -> str:
         return ""
 
 
-class PaperFlowExtension(Extension):
+class KestrelExtension(Extension):
     def __init__(self):
         super().__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
@@ -85,23 +85,23 @@ class KeywordQueryEventListener(EventListener):
                 ExtensionResultItem(
                     icon="images/icon.svg",
                     name=f'Rename workspace to "{name}"',
-                    description="Rename the current PaperFlow workspace",
+                    description="Rename the current Kestrel workspace",
                     on_enter=RunScriptAction(
                         f"gdbus call --session --dest org.gnome.Shell "
                         f"--object-path /org/gnome/Shell "
                         f"--method org.gnome.Shell.Eval "
-                        f"\"global._paperflow.renameCurrentWorkspace('{escaped}')\"",
+                        f"\"global._kestrel.renameCurrentWorkspace('{escaped}')\"",
                     ),
                 )
             ])
 
         # Mode 2: ws <query> — list and filter workspaces
-        workspaces_json = gnome_eval("global._paperflow.listWorkspaces()")
+        workspaces_json = gnome_eval("global._kestrel.listWorkspaces()")
         if not workspaces_json:
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon="images/icon.svg",
-                    name="PaperFlow not available",
+                    name="Kestrel not available",
                     description="Extension may not be running",
                     on_enter=DoNothingAction(),
                 )
@@ -147,7 +147,7 @@ class KeywordQueryEventListener(EventListener):
                     f"gdbus call --session --dest org.gnome.Shell "
                     f"--object-path /org/gnome/Shell "
                     f"--method org.gnome.Shell.Eval "
-                    f"\"global._paperflow.switchToWorkspaceByName('{escaped_name}')\"",
+                    f"\"global._kestrel.switchToWorkspaceByName('{escaped_name}')\"",
                 ),
             ))
 
@@ -163,4 +163,4 @@ class KeywordQueryEventListener(EventListener):
 
 
 if __name__ == "__main__":
-    PaperFlowExtension().run()
+    KestrelExtension().run()

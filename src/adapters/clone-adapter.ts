@@ -1,4 +1,4 @@
-import type { WindowId, WorkspaceId, LayoutState, PaperFlowConfig } from '../domain/types.js';
+import type { WindowId, WorkspaceId, LayoutState, KestrelConfig } from '../domain/types.js';
 import type { ClonePort, OverviewTransform } from '../ports/clone-port.js';
 import { safeDisconnect } from './signal-utils.js';
 import { FloatCloneManager } from './float-clone-manager.js';
@@ -56,7 +56,7 @@ export class CloneAdapter implements ClonePort {
     private _focusBorderRadius: number = 8;
     private _focusBgColor: string = 'rgba(255,255,255,0.05)';
 
-    init(workAreaY: number, monitorHeight: number, config?: PaperFlowConfig): void {
+    init(workAreaY: number, monitorHeight: number, config?: KestrelConfig): void {
         this._workAreaY = workAreaY;
         this._monitorHeight = monitorHeight;
 
@@ -68,7 +68,7 @@ export class CloneAdapter implements ClonePort {
         }
 
         this._layer = new Clutter.Actor({
-            name: 'paperflow-layer',
+            name: 'kestrel-layer',
             clip_to_allocation: true,
         });
 
@@ -78,11 +78,11 @@ export class CloneAdapter implements ClonePort {
         this._layer.set_position(0, this._workAreaY);
         this._layer.set_size(stage.width, monitorHeight);
 
-        this._workspaceStrip = new Clutter.Actor({ name: 'paperflow-strip' });
+        this._workspaceStrip = new Clutter.Actor({ name: 'kestrel-strip' });
         this._layer.add_child(this._workspaceStrip);
 
         this._focusIndicator = new St.Widget({
-            name: 'paperflow-focus-indicator',
+            name: 'kestrel-focus-indicator',
             style: this._buildFocusStyle(),
             visible: false,
             reactive: false,
@@ -94,7 +94,7 @@ export class CloneAdapter implements ClonePort {
         this._floatCloneManager.init(this._layer);
     }
 
-    updateConfig(config: PaperFlowConfig): void {
+    updateConfig(config: KestrelConfig): void {
         this._focusBorderWidth = config.focusBorderWidth;
         this._focusBorderColor = config.focusBorderColor;
         this._focusBorderRadius = config.focusBorderRadius;
@@ -134,12 +134,12 @@ export class CloneAdapter implements ClonePort {
         if (existing) return existing;
 
         const container = new Clutter.Actor({
-            name: `paperflow-ws-${wsId}`,
+            name: `kestrel-ws-${wsId}`,
         });
         container.set_size(global.stage.width, this._monitorHeight);
 
         const scrollContainer = new Clutter.Actor({
-            name: `paperflow-scroll-${wsId}`,
+            name: `kestrel-scroll-${wsId}`,
         });
         container.add_child(scrollContainer);
 
@@ -147,7 +147,7 @@ export class CloneAdapter implements ClonePort {
 
         const nameLabel = new St.Label({
             text: '',
-            style_class: 'paperflow-ws-label',
+            style_class: 'kestrel-ws-label',
             y_align: Clutter.ActorAlign.START,
             visible: false,
         });
@@ -168,7 +168,7 @@ export class CloneAdapter implements ClonePort {
         const wc = this._getOrCreateWorkspaceContainer(workspaceId);
 
         const wrapper = new Clutter.Actor({
-            name: `paperflow-clone-${windowId}`,
+            name: `kestrel-clone-${windowId}`,
             reactive: false,
             clip_to_allocation: true,
         });
@@ -182,7 +182,7 @@ export class CloneAdapter implements ClonePort {
                 this._allocateClone(windowId);
                 this._refreshFocusIndicatorForWindow(windowId);
             } catch (e) {
-                console.error('[PaperFlow] Error in size-changed handler:', e);
+                console.error('[Kestrel] Error in size-changed handler:', e);
             }
         });
 
@@ -466,7 +466,7 @@ export class CloneAdapter implements ClonePort {
 
         if (!this._overviewBg) {
             this._overviewBg = new St.Widget({
-                name: 'paperflow-overview-bg',
+                name: 'kestrel-overview-bg',
                 style: `background-color: ${OVERVIEW_BG_COLOR};`,
                 reactive: false,
                 x: 0,

@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Name Finalists v2 — AI Agent Command Center for GNOME</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0b10;
+    --surface: #13141c;
+    --surface-hover: #1a1b25;
+    --border: #252633;
+    --text: #e4e4e8;
+    --text-muted: #8b8c99;
+    --accent: #7c8aff;
+    --accent-dim: #5a64cc;
+    --accent-glow: rgba(124, 138, 255, 0.12);
+    --green: #6ee7a0;
+    --amber: #f0c674;
+    --rose: #f07178;
+    --cyan: #82d8d8;
+    --card-radius: 16px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .hero {
+    padding: 80px 40px 60px;
+    text-align: center;
+    background: linear-gradient(180deg, #0f1018 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 700px;
+    height: 500px;
+    background: radial-gradient(ellipse, rgba(124, 138, 255, 0.06) 0%, rgba(110, 231, 160, 0.03) 40%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero h1 {
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--cyan) 0%, var(--accent) 50%, #c792ea 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero .subtitle {
+    font-size: 1.15rem;
+    color: var(--text-muted);
+    max-width: 680px;
+    margin: 0 auto 32px;
+    font-weight: 300;
+    line-height: 1.7;
+  }
+
+  .hero .product-desc {
+    display: inline-flex;
+    gap: 20px;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  .product-desc .sep { color: var(--border); }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    padding: 32px 40px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat { text-align: center; }
+
+  .stat .number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .stat .label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+  }
+
+  .cards {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 40px 80px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 28px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    padding: 32px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    border-color: var(--accent-dim);
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: var(--card-radius) var(--card-radius) 0 0;
+  }
+
+  .card:nth-child(1)::before { background: linear-gradient(90deg, #82d8d8, #7c8aff); }
+  .card:nth-child(2)::before { background: linear-gradient(90deg, #f0c674, #e8a855); }
+  .card:nth-child(3)::before { background: linear-gradient(90deg, #6ee7a0, #4ecdc4); }
+  .card:nth-child(4)::before { background: linear-gradient(90deg, #f07178, #c792ea); }
+  .card:nth-child(5)::before { background: linear-gradient(90deg, #82aaff, #60a5fa); }
+  .card:nth-child(6)::before { background: linear-gradient(90deg, #c792ea, #a78bfa); }
+  .card:nth-child(7)::before { background: linear-gradient(90deg, #7c8aff, #6ee7a0); }
+  .card:nth-child(8)::before { background: linear-gradient(90deg, #f0c674, #f07178); }
+  .card:nth-child(9)::before { background: linear-gradient(90deg, #4ecdc4, #82aaff); }
+  .card:nth-child(10)::before { background: linear-gradient(90deg, #e8557a, #c792ea); }
+  .card:nth-child(11)::before { background: linear-gradient(90deg, #82d8d8, #6ee7a0); }
+  .card:nth-child(12)::before { background: linear-gradient(90deg, #f0c674, #82aaff); }
+  .card:nth-child(13)::before { background: linear-gradient(90deg, #f07178, #f0c674); }
+  .card:nth-child(14)::before { background: linear-gradient(90deg, #6ee7a0, #82aaff); }
+  .card:nth-child(15)::before { background: linear-gradient(90deg, #a78bfa, #82d8d8); }
+  .card:nth-child(16)::before { background: linear-gradient(90deg, #60a5fa, #c792ea); }
+  .card:nth-child(17)::before { background: linear-gradient(90deg, #e8a855, #6ee7a0); }
+  .card:nth-child(n+18)::before { background: linear-gradient(90deg, #7c8aff, #a78bfa); }
+
+  .card-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+  }
+
+  .card-name {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+  }
+
+  .card-meaning {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .card-section { margin-bottom: 18px; }
+  .card-section:last-child { margin-bottom: 0; }
+
+  .card-section-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  .card-section p {
+    font-size: 0.9rem;
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  .tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--accent);
+    background: var(--accent-glow);
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(124, 138, 255, 0.15);
+    margin-top: 20px;
+    text-align: center;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-left: 10px;
+    vertical-align: middle;
+    position: relative;
+    top: -2px;
+  }
+
+  .badge-approved {
+    background: rgba(110, 231, 160, 0.12);
+    color: var(--green);
+    border: 1px solid rgba(110, 231, 160, 0.2);
+  }
+
+  .badge-unanimous {
+    background: rgba(130, 216, 216, 0.12);
+    color: var(--cyan);
+    border: 1px solid rgba(130, 216, 216, 0.2);
+  }
+
+  .critic-votes {
+    display: flex;
+    gap: 6px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .critic-vote {
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(124, 138, 255, 0.08);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 80px 40px;
+    color: var(--text-muted);
+  }
+
+  .empty-state .icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+    opacity: 0.3;
+  }
+
+  .empty-state p {
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 768px) {
+    .hero { padding: 48px 24px 40px; }
+    .hero h1 { font-size: 2rem; }
+    .cards { padding: 32px 20px 60px; }
+    .stats { gap: 32px; flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1><span>Name Finalists v2</span></h1>
+  <p class="subtitle">
+    Candidate names for a GNOME Shell extension that serves as mission control for AI-assisted development. Direct a fleet of Claude Code sessions from a horizontal command strip with live status badges, permission overlays, and workspace awareness.
+  </p>
+  <div class="product-desc">
+    <span>ai agent supervisor</span>
+    <span class="sep">|</span>
+    <span>gnome-shell-extension</span>
+    <span class="sep">|</span>
+    <span>command center</span>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="number" id="finalist-count">17</div>
+    <div class="label">Finalists</div>
+  </div>
+  <div class="stat">
+    <div class="number">3</div>
+    <div class="label">Critics</div>
+  </div>
+  <div class="stat">
+    <div class="number" id="status-label">Active</div>
+    <div class="label">Status</div>
+  </div>
+</div>
+
+<div class="cards" id="card-container">
+
+  <!-- 1. Loft -->
+  <div class="card">
+    <div class="card-number">#01</div>
+    <div class="card-name">Loft <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">An elevated open space, typically the upper level of a building with high ceilings and clear sightlines</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Loft places you above the work floor with an unobstructed view of everything happening below. It is the command position — elevated, calm, aware. For an AI agent supervisor, it captures the feeling of overseeing a productive workshop from a quiet, well-lit mezzanine where every agent's status is visible at a glance.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Open-plan creative studios with exposed beams and tall windows. The top-floor office where the whole operation is visible. An architect's workspace — clean, elevated, designed for clear thinking. Calm authority without barriers. You are not in the trenches; you are directing from a position of clarity.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A simple geometric roofline — two angled lines forming an open peak — with a subtle row of small rectangles beneath suggesting agent windows visible from above. Minimal, architectural, works beautifully as a monochrome extension icon. The upward angle conveys elevation and oversight.</p>
+    </div>
+
+    <div class="tagline">"Rise above the noise."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Strong Approve</span>
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 2. Mast -->
+  <div class="card">
+    <div class="card-number">#02</div>
+    <div class="card-name">Mast <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">The tall vertical spar on a ship; the highest point where the lookout watches the horizon</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>From the mast, you see everything before anyone else does. It is the ship's command post for situational awareness — the place where the lookout scans the horizon and reports back. For supervising AI agents, Mast captures that watchful calm: you are not micromanaging, you are keeping the big picture in focus while your crew works.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A crow's nest high above the deck, scanning a vast ocean. Nautical command — steady hands, long horizons, quiet confidence. The person at the mast sees trouble before it arrives and opportunity before it passes. Far-seeing authority without aggression, vigilance without anxiety.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A single vertical line topped with a small observation platform or circle — the mast and crow's nest, abstracted to pure geometry. Could include a subtle horizontal crossbar suggesting the yard arm. Clean nautical iconography that reads instantly at any size.</p>
+    </div>
+
+    <div class="tagline">"See everything. Miss nothing."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approve</span>
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 3. Perch -->
+  <div class="card">
+    <div class="card-number">#03</div>
+    <div class="card-name">Perch <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">A high resting place where a bird of prey sits and surveys its territory</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Perch is the raptor's command post. A falcon does not chase blindly — it finds the highest point, settles, and watches the entire landscape with patient precision. For an AI agent supervisor, Perch captures exactly that posture: elevated, watchful, ready to act when the moment demands it, calm and composed until then.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A hawk on a high branch, eyes scanning the field below. The quiet intensity of focused observation. Natural authority — not imposed, but earned through position and patience. The stillness before decisive action. There is an alertness to it that feels alive without being anxious.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A minimal bird silhouette perched on a horizontal line — the line doubling as both a branch and a status bar. Or: a single sharp angular shape suggesting a raptor's profile, geometric and compact. Works at icon size with strong negative space.</p>
+    </div>
+
+    <div class="tagline">"Watch. Decide. Act."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 4. Roost -->
+  <div class="card">
+    <div class="card-number">#04</div>
+    <div class="card-name">Roost <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">The place where birds settle and rest; a commanding home base for observation</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Roost is where you come home to survey your domain. It carries the warmth of a home base combined with the elevated position of a watchtower. Your AI agents fan out across the codebase, but you return to the roost to see the full picture — who is working, who needs attention, who has finished. It is mission control with a natural, grounded character.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A bird of prey returning to its high nest at dusk, surveying the day's territory. Home base, but elevated. The place where all threads converge. There is a sense of gathering and settling — agents reporting back to a central vantage point. Warm authority, not cold control.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A nest-like circle or cradle shape elevated on a single line — suggesting both a high vantage point and a gathering place. Or: a simplified rooftop silhouette with small shapes nestled beneath it, evoking agents under one roof. Organic curves balanced with geometric structure.</p>
+    </div>
+
+    <div class="tagline">"Where your agents come home."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 5. Ledge -->
+  <div class="card">
+    <div class="card-number">#05</div>
+    <div class="card-name">Ledge <span class="badge badge-unanimous">Unanimous</span></div>
+    <div class="card-meaning">A narrow horizontal surface projecting from a wall or cliff; an overlook</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Ledge is the unexpected choice that feels inevitable once you hear it. You are standing on the ledge — not in danger, but in command. Below you, the full landscape of your AI agents at work. It is a raw, grounded word that suggests natural authority: no office, no hierarchy, just an elevated vantage point carved from the rock itself.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A rocky outcrop overlooking a valley at dawn. The surveyor's perch before the map is drawn. Something solid, weathered, and permanent beneath your feet. The confidence of standing on firm ground with a wide-open view. Not glass towers or polished control rooms — something older and more honest.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A single horizontal line with a subtle downward step at one end — the ledge itself, abstracted to pure geometry. Or: a minimal silhouette of an angular cliff face with a flat top. Monochrome, raw, architectural. Works at any size and feels unlike anything else in the extension ecosystem.</p>
+    </div>
+
+    <div class="tagline">"The view from here changes everything."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approve</span>
+      <span class="critic-vote">Critic 2: Approved</span>
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 6. Galley -->
+  <div class="card">
+    <div class="card-number">#06</div>
+    <div class="card-name">Galley <span class="badge badge-unanimous">Unanimous</span></div>
+    <div class="card-meaning">A ship with oarsmen rowing in coordinated rhythm; a long narrow workspace</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Galley maps directly to the product's visual reality: a horizontal strip of agents, each at their station, working in coordinated parallel. The captain walks the galley, inspecting each station, granting permissions, reading status. It is one of the rare names where the metaphor and the UX are structurally identical — a row of synchronized workers under one commander's eye.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Oarsmen pulling in unison. A ship's kitchen where every station has a purpose. Coordinated, rhythmic, parallel effort under watchful supervision. The drumbeat that keeps everyone in sync. There is both discipline and craft in it — a well-run galley is a thing of beauty, each part contributing to forward motion.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A long, narrow vessel seen from above — a sleek hull shape with evenly spaced oar marks or station dividers along its length, echoing the horizontal strip of agent windows. Or: a row of small identical shapes (oars or stations) in perfect alignment. Nautical precision meets workspace layout.</p>
+    </div>
+
+    <div class="tagline">"Every agent at their station."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approve</span>
+      <span class="critic-vote">Critic 2: Approved</span>
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 7. Canopy -->
+  <div class="card">
+    <div class="card-number">#07</div>
+    <div class="card-name">Canopy <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">The uppermost layer of a forest; the transparent enclosure over a cockpit</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Canopy works on two levels. In nature, it is the highest layer of the forest — where the most light reaches, where the broadest view unfolds. In aviation, it is the transparent dome of a fighter cockpit — total situational awareness, every instrument visible. Both meanings converge on the same idea: overhead coverage with complete visibility of everything beneath.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Sunlight filtering through a forest canopy, dappled and alive. A fighter pilot scanning instruments through a crystal-clear dome. Protective oversight that does not obscure — you see everything while being sheltered from the noise. It is expansive and natural, suggesting a system that covers your whole operation without weighing it down.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A wide, gentle arc — like a canopy or dome — with small rectangular shapes arranged beneath it, representing agent windows under your protective field of view. Or: an abstract tree-top silhouette with branching lines suggesting both organic coverage and structured observation. Green-to-teal gradients for the natural reading, steel-blue for the cockpit reading.</p>
+    </div>
+
+    <div class="tagline">"Everything under one view."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 2: Approved</span>
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 8. Vigil -->
+  <div class="card">
+    <div class="card-number">#08</div>
+    <div class="card-name">Vigil <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">A period of keeping awake to watch or pray; sustained, purposeful watchfulness</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Vigil is quiet devotion made into a name. It does not shout or command — it simply stays awake, attentive, present. Keeping vigil over your AI agents means you are there when they need you, watching the work unfold with patient focus. It is the most human word on this list: not a place or a thing, but an act of care.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A candle burning steadily through the night. A lighthouse keeper watching the dark water. The calm focus of someone who has chosen to stay awake while others sleep. Sustained attention that is neither anxious nor passive — it is purposeful, warm, and deeply reliable. The opposite of surveillance: this is watchfulness born from responsibility, not suspicion.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A single flame — minimal, geometric, perhaps formed from a simple teardrop shape atop a thin vertical line. Or: a small circle of light radiating outward, suggesting a candle's glow or a watchtower beacon. Warm amber tones on dark backgrounds. Quiet and iconic.</p>
+    </div>
+
+    <div class="tagline">"Quietly watching. Always ready."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Strong Approve</span>
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 9. Keel -->
+  <div class="card">
+    <div class="card-number">#09</div>
+    <div class="card-name">Keel <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">The central structural beam running along the bottom of a ship; the foundation that keeps everything steady</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Keel reframes the supervisor role from above to beneath. You are not the lookout in the crow's nest — you are the backbone that holds the entire operation together. Without the keel, the ship falls apart. It suggests deep, structural authority: the kind of oversight that is so fundamental it becomes invisible, yet nothing works without it.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>The hidden spine of a great ship, cutting through water with quiet certainty. "Even keel" — stability under pressure, balance in chaos. The structural integrity that lets everyone else do their jobs. There is a humility to it: the keel does not need to be seen, but everything depends on it being there.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A single clean horizontal line with a subtle V-shape beneath it — the ship's hull in cross-section, the keel as the lowest stabilizing point. Or: a long, tapered form like a ship's keel viewed from below, minimal and precise. Steel-blue or deep navy. Engineered, not decorative.</p>
+    </div>
+
+    <div class="tagline">"The steady line beneath it all."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approve</span>
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 10. Corso -->
+  <div class="card">
+    <div class="card-number">#10</div>
+    <div class="card-name">Corso <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">Italian for a grand boulevard or main street; a wide, elegant thoroughfare for promenading</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Corso is the grand boulevard of your development operation. You walk the corso, glancing into each storefront — each agent's workspace — at an unhurried pace. It maps perfectly to the horizontal scrolling UX while carrying the elegance of Italian urbanism. The foreign-language origin sidesteps English-word collision problems entirely, giving it a distinctive identity that no search engine will confuse.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Via del Corso in Rome: a wide, sunlit avenue lined with activity on both sides. The Italian passeggiata — an evening stroll where you see and are seen, where the rhythm of walking reveals the life of the city. Elegant, unhurried oversight. Each agent is a shopfront along the corso, and you are the one who walks the full length, taking it all in.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A long horizontal line flanked by evenly spaced vertical marks — a boulevard with buildings on both sides, abstracted to geometry. Or: a classical arch framing a perspective view down a long street. Warm Mediterranean tones — terracotta, stone, gold — or rendered in clean monochrome for a modern take on classical form.</p>
+    </div>
+
+    <div class="tagline">"Walk the line. See it all."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approve</span>
+    </div>
+  </div>
+
+  <!-- 11. Parapet -->
+  <div class="card">
+    <div class="card-number">#11</div>
+    <div class="card-name">Parapet <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">A low protective wall along the edge of a roof, bridge, or fortification; a defensive vantage point</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Parapet is where the defender stands to survey the field. It is the architectural edge between safety and the open world — a fortified position designed specifically for oversight. For an AI agent supervisor, it captures the feeling of standing at the boundary, protected but fully aware, scanning the entire operation from a position that was built for exactly this purpose.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Castle walls at dawn, a guard scanning the horizon. The rooftop edge of a tall building, the city spread below. A deliberate boundary between your space and the world beyond — not a barrier, but a vantage point. There is a sense of fortification without isolation: you are protected, but you see everything. Architectural authority, centuries deep.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A crenellated wall silhouette — the classic castle battlement shape with its alternating merlons and gaps. Abstracted to clean geometry, it reads as both a fortification and a row of windows or agent slots. Stone grey or warm sandstone tones. Distinctive and immediately recognizable at icon size.</p>
+    </div>
+
+    <div class="tagline">"Your vantage. Your command."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 3: Approved</span>
+    </div>
+  </div>
+
+  <!-- 12. Kestrel -->
+  <div class="card">
+    <div class="card-number">#12</div>
+    <div class="card-name">Kestrel <span class="badge badge-unanimous">Unanimous</span></div>
+    <div class="card-meaning">A small falcon that hovers in place while scanning the ground below with extraordinary precision</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Kestrel is the raptor that hovers — perfectly still in the air, eyes locked on the ground below, seeing every movement before deciding to act. No other bird captures the AI supervisor's posture so precisely: suspended above the action, completely aware, choosing the exact right moment to intervene. It is calm mastery of attention, embodied in a name.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A small falcon hanging motionless against the wind, wings adjusting with micro-precision while its gaze stays fixed below. The patience of a predator who watches instead of chasing. Agility in stillness. Natural, elegant efficiency — the kestrel uses less energy hovering than any other raptor. Maximum awareness, minimum intervention.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A minimal kestrel silhouette hovering with wings spread wide — a clean geometric shape that reads as both a bird and a pair of eyes scanning below. Or: a stylized "K" with wing-like extensions. Warm amber and slate tones. Distinctive, memorable, works beautifully at icon scale.</p>
+    </div>
+
+    <div class="tagline">"Hover. Watch. Strike when it matters."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approved</span>
+      <span class="critic-vote">Critic 2: Approved</span>
+      <span class="critic-vote">Critic 3: Standout</span>
+    </div>
+  </div>
+
+  <!-- 13. Cupola -->
+  <div class="card">
+    <div class="card-number">#13</div>
+    <div class="card-name">Cupola <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">A dome-shaped observation module; the ISS module astronauts use to observe Earth and monitor operations</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Cupola is the observation dome on the International Space Station — the window through which astronauts watch the entire planet. For an AI agent command center, the metaphor is pitch-perfect: you are floating above the operation, looking through a panoramic window at everything happening below. It carries the wonder of space exploration and the precision of mission control in a single word.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>An astronaut floating in the ISS Cupola, Earth filling every window. The 360-degree observation dome where science meets awe. Panoramic awareness in the most extraordinary setting humanity has built. It also echoes architectural cupolas — the domed roof of a cathedral or capitol, a structure designed to let light in and let vision out.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A dome shape with multiple window panes — directly referencing the ISS Cupola's distinctive seven-window design. Or: a simple half-circle with radiating lines suggesting both a dome and a panoramic field of view. Deep space blue with warm interior light. Futuristic but grounded.</p>
+    </div>
+
+    <div class="tagline">"The view from orbit."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 2: Approved</span>
+      <span class="critic-vote">Critic 3: Standout</span>
+    </div>
+  </div>
+
+  <!-- 14. Eyrie -->
+  <div class="card">
+    <div class="card-number">#14</div>
+    <div class="card-name">Eyrie <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">The nest of a bird of prey, built at a high, inaccessible vantage point</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Eyrie is the eagle's command post — a nest built at the highest point of the landscape, chosen specifically for its unobstructed view of everything below. It is where the raptor returns to survey its domain. For an AI supervisor, Eyrie names the place you inhabit: elevated, secure, with total situational awareness. The word itself contains "eye" — vision encoded in the name.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A cliff-face nest high above a valley, wind and open sky. The remote, powerful solitude of a raptor's home. A position chosen not for comfort but for vision. There is wildness in it — untamed, uncompromising authority. The eyrie is not built for others to visit; it is built for seeing.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A nest shape perched on a cliff edge — angular, geometric, suggesting both a high vantage and a secure base. Or: an eye formed from the negative space of a nest shape. Mountain greys and sky blues. Raw, natural, powerful.</p>
+    </div>
+
+    <div class="tagline">"Command from the highest point."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approved</span>
+      <span class="critic-vote">Critic 2: Approved</span>
+    </div>
+  </div>
+
+  <!-- 15. Cairn -->
+  <div class="card">
+    <div class="card-number">#15</div>
+    <div class="card-name">Cairn <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">A mound of stones built as a landmark or trail marker, guiding travelers through uncertain terrain</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Cairn is the human-made landmark that says "you are here, and the path continues this way." In a world where AI agents explore code autonomously, you are the cairn — the fixed point of orientation, the marker that keeps everything on course. It suggests guidance without control, presence without interference. You do not walk the path for your agents; you mark it.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>Stacked stones on a misty mountain trail. The moment of relief when you spot one in unfamiliar terrain. Ancient wayfinding, human intention made visible in the landscape. Quiet, deliberate, enduring. A cairn does not move, but it changes everything about the journey for those who pass it.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>Stacked stones — three or four rounded shapes balanced on top of each other, clean and geometric. Or: a triangular arrangement of circles suggesting both stones and a directional marker. Earth tones: warm stone greys, moss greens. Organic, grounded, immediately iconic.</p>
+    </div>
+
+    <div class="tagline">"The fixed point in a moving world."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 1: Approved</span>
+      <span class="critic-vote">Critic 2: Approved</span>
+    </div>
+  </div>
+
+  <!-- 16. Crest -->
+  <div class="card">
+    <div class="card-number">#16</div>
+    <div class="card-name">Crest <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">The top of a hill or wave; the highest point of visibility before the view opens up</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Crest is the moment you reach the top of the hill and the entire landscape unfolds before you. It names the experience of switching to your command view and suddenly seeing every agent, every status, every workspace at once. One syllable, universally understood, and it carries the exhilaration of arrival — you climbed through the complexity and now you can see.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>The summit of a ridge, the moment the fog clears. A wave at its peak before it breaks. The coat of arms on a shield — heraldic, authoritative. The highest point of a cycle, where everything is visible. There is triumph in it, and calm — you have arrived at the place where seeing is effortless.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A clean mountain-crest line — a single angular peak. Or: a wave crest rendered as a smooth curve. Could incorporate a small eye or beacon at the apex. Simple enough for a favicon, distinctive enough for a brand. Cool blues and whites, or warm golden hour tones.</p>
+    </div>
+
+    <div class="tagline">"See everything from the top."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 2: Approved</span>
+    </div>
+  </div>
+
+  <!-- 17. Coign -->
+  <div class="card">
+    <div class="card-number">#17</div>
+    <div class="card-name">Coign <span class="badge badge-approved">Approved</span></div>
+    <div class="card-meaning">A projecting corner of a wall; from "coign of vantage" — the ideal position for observation (Shakespeare)</div>
+
+    <div class="card-section">
+      <div class="card-section-label">The Pitch</div>
+      <p>Coign comes from Shakespeare's "coign of vantage" — the perfect corner from which to observe everything. It is rare, distinctive, and carries centuries of literary weight. For those who know, it is a knowing reference; for those who don't, it is intriguing and memorable. A five-letter word with zero search collisions and a meaning that could not be more precise for an observation tool.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">What It Evokes</div>
+      <p>A stone corner in a castle wall, perfectly positioned for watching the courtyard below. Shakespeare's Macbeth — "where they most breed and haunt, I have observed, the air is delicate" from the coign of vantage scene. Architectural precision. The smartest position in the room, chosen by someone who understands geometry and sight lines.</p>
+    </div>
+
+    <div class="card-section">
+      <div class="card-section-label">Logo Concept</div>
+      <p>A corner shape — two lines meeting at an angle with an eye or point at the vertex. Or: a projecting stone block rendered in clean isometric geometry, suggesting both architecture and perspective. Warm stone tones or cool geometric greys. Uncommon and distinguished.</p>
+    </div>
+
+    <div class="tagline">"The vantage point that sees all angles."</div>
+
+    <div class="critic-votes">
+      <span class="critic-vote">Critic 2: Approved</span>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  17 finalists documented. Round 2 complete.
+</div>
+
+</body>
+</html>

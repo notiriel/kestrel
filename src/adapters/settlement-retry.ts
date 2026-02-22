@@ -61,7 +61,7 @@ export class SettlementRetry {
                 this._step++;
                 this._scheduleNext();
             } catch (e) {
-                console.error('[PaperFlow] Error in settlement retry:', e);
+                console.error('[Kestrel] Error in settlement retry:', e);
             }
             return GLib.SOURCE_REMOVE;
         });

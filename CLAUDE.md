@@ -83,15 +83,15 @@ B is focused. WS2 has D, E.
 - `focus-adapter.ts` — Activates windows via `Meta.Window.activate()`
 - `monitor-adapter.ts` — Reads monitor geometry, listens for layout changes
 
-**Entry point**: `src/extension.ts` — Standard GNOME extension `enable()`/`disable()` delegating to `PaperFlowController`.
+**Entry point**: `src/extension.ts` — Standard GNOME extension `enable()`/`disable()` delegating to `KestrelController`.
 
 ## Claude Code Hook Integration
 
-PaperFlow integrates with Claude Code via a plugin (`paperflow-plugin/`) that registers shell hooks for Claude Code lifecycle events. The hooks communicate with the GNOME extension over session DBus.
+Kestrel integrates with Claude Code via a plugin (`kestrel-plugin/`) that registers shell hooks for Claude Code lifecycle events. The hooks communicate with the GNOME extension over session DBus.
 
 ### DBus interface
 
-The extension exports `io.paperflow.Extension` at `/io/paperflow/Extension` (see `src/adapters/dbus-service.ts`):
+The extension exports `io.kestrel.Extension` at `/io/kestrel/Extension` (see `src/adapters/dbus-service.ts`):
 
 | Method | Args | Returns | Purpose |
 |--------|------|---------|---------|
@@ -102,14 +102,14 @@ The extension exports `io.paperflow.Extension` at `/io/paperflow/Extension` (see
 
 ### Hook scripts
 
-All scripts live in `paperflow-plugin/hooks/` and log to `/tmp/paperflow-hooks.log` with `[scriptname]` prefix.
+All scripts live in `kestrel-plugin/hooks/` and log to `/tmp/kestrel-hooks.log` with `[scriptname]` prefix.
 
 | Script | Claude Code event | What it does |
 |--------|------------------|--------------|
-| `paperflow-probe.sh` | `SessionStart` | Writes a terminal title escape sequence (`paper_flow_probe_<session_id>`) so the extension can map session IDs to GNOME windows |
-| `paperflow-status.sh` | `SessionStart`, `Notification`, `Stop`, `SessionEnd` | Calls `SetWindowStatus` to update the clone's status badge (`done`, `working`, `needs-input`, `end`) |
-| `paperflow-notify.sh` | `Notification`, `Stop` | Calls `HandleNotification` — fire-and-forget, no response needed |
-| `paperflow-permission.sh` | `PermissionRequest` | Calls `HandlePermission`, then polls `GetNotificationResponse` every 0.5s (up to 10 min) until the user clicks Allow/Deny/Always. Outputs Claude Code decision JSON. |
+| `kestrel-probe.sh` | `SessionStart` | Writes a terminal title escape sequence (`kestrel_probe_<session_id>`) so the extension can map session IDs to GNOME windows |
+| `kestrel-status.sh` | `SessionStart`, `Notification`, `Stop`, `SessionEnd` | Calls `SetWindowStatus` to update the clone's status badge (`done`, `working`, `needs-input`, `end`) |
+| `kestrel-notify.sh` | `Notification`, `Stop` | Calls `HandleNotification` — fire-and-forget, no response needed |
+| `kestrel-permission.sh` | `PermissionRequest` | Calls `HandlePermission`, then polls `GetNotificationResponse` every 0.5s (up to 10 min) until the user clicks Allow/Deny/Always. Outputs Claude Code decision JSON. |
 
 ### Data flow
 
@@ -125,7 +125,7 @@ Claude Code -(lifecycle event)-> hook script -(gdbus call)-> GNOME extension DBu
 
 ### Hook registration
 
-`paperflow-plugin/hooks/hooks.json` maps Claude Code events to scripts:
+`kestrel-plugin/hooks/hooks.json` maps Claude Code events to scripts:
 - **SessionStart**: probe + status(done)
 - **Notification**: status(needs-input) + notify
 - **PermissionRequest**: permission (blocking, 10 min timeout)
@@ -135,7 +135,7 @@ Claude Code -(lifecycle event)-> hook script -(gdbus call)-> GNOME extension DBu
 ## Key Design Decisions
 
 - **Clone-based rendering**: Real `WindowActor`s can't be reparented from `global.window_group` on Wayland. `Clutter.Clone` allows free positioning on a custom layer for horizontal scrolling.
-- **Single GNOME workspace**: All windows on one GNOME workspace; PaperFlow workspaces are virtual (domain-managed) to avoid GNOME workspace animation conflicts.
+- **Single GNOME workspace**: All windows on one GNOME workspace; Kestrel workspaces are virtual (domain-managed) to avoid GNOME workspace animation conflicts.
 - **Target-state model**: Domain computes only final layout positions, not transitions. Adapters will handle animation (Clutter.ease) separately.
 - **GObject subclassing**: Use `GObject.registerClass()` + `_init()`, not `constructor()`.
 - **`gi://` ambient types**: Declared in `src/ambient.d.ts`; runtime types from `@girs/*` packages.
@@ -144,14 +144,14 @@ Claude Code -(lifecycle event)-> hook script -(gdbus call)-> GNOME extension DBu
 
 - All signal handlers wrapped in try/catch to avoid crashing GNOME Shell
 - All signal IDs and timeout IDs tracked for cleanup in `destroy()` methods
-- Console logs prefixed with `[PaperFlow]`
+- Console logs prefixed with `[Kestrel]`
 - Window filtering: only `Meta.WindowType.NORMAL`, not `is_above()`, not transient
 
 ## Design Docs
 
 - `docs/design.md` — Product design spec (keybindings, UX, phasing)
 - `docs/solution-design.md` — Technical architecture (data model, adapter contracts, phase breakdown)
-- `docs/debug.md` — Live debugging via DBus Eval (`global._paperflow`), journal logs, crash recovery
+- `docs/debug.md` — Live debugging via DBus Eval (`global._kestrel`), journal logs, crash recovery
 
 ## General Principles
 

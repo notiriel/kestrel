@@ -1,11 +1,11 @@
 #!/bin/bash
-# PaperFlow PermissionRequest hook handler
-# Reads PermissionRequest JSON from stdin, sends to PaperFlow overlay,
+# Kestrel PermissionRequest hook handler
+# Reads PermissionRequest JSON from stdin, sends to Kestrel overlay,
 # waits for user response, outputs Claude Code decision JSON.
 
 set -euo pipefail
 
-LOG="/tmp/paperflow-hooks.log"
+LOG="/tmp/kestrel-hooks.log"
 log() { echo "[$(date '+%H:%M:%S.%3N')] [permission] $*" >> "$LOG"; }
 
 INPUT=$(cat)
@@ -29,7 +29,7 @@ if echo "$SCREEN_LOCKED" | grep -q "(true,)"; then
     exit 0
 fi
 
-# Build payload for PaperFlow
+# Build payload for Kestrel
 PAYLOAD=$(echo "$INPUT" | jq -c '{
     session_id: .session_id,
     type: "permission",
@@ -39,11 +39,11 @@ PAYLOAD=$(echo "$INPUT" | jq -c '{
     tool_name: (.tool_name // null),
 }')
 
-# Send to PaperFlow via custom DBus interface, get notification ID
+# Send to Kestrel via custom DBus interface, get notification ID
 log "payload: $PAYLOAD"
 RESULT=$(gdbus call --session --dest org.gnome.Shell \
-    --object-path /io/paperflow/Extension \
-    --method io.paperflow.Extension.HandlePermission \
+    --object-path /io/kestrel/Extension \
+    --method io.kestrel.Extension.HandlePermission \
     "$PAYLOAD" 2>&1)
 log "dbus result: $RESULT"
 
@@ -51,7 +51,7 @@ log "dbus result: $RESULT"
 NOTIF_ID=$(echo "$RESULT" | grep -oP 'notif-[0-9a-f-]+')
 
 if [ -z "$NOTIF_ID" ]; then
-    # Fallback: allow if PaperFlow is not available
+    # Fallback: allow if Kestrel is not available
     jq -n '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"allow"}}}'
     exit 0
 fi
@@ -59,8 +59,8 @@ fi
 # Poll for user decision via DBus (up to 10 minutes)
 for i in $(seq 1 1200); do
     POLL=$(gdbus call --session --dest org.gnome.Shell \
-        --object-path /io/paperflow/Extension \
-        --method io.paperflow.Extension.GetNotificationResponse \
+        --object-path /io/kestrel/Extension \
+        --method io.kestrel.Extension.GetNotificationResponse \
         "$NOTIF_ID" 2>/dev/null || echo "")
 
     # Extract the JSON response string from DBus tuple ('{"action":"allow"}',)
@@ -84,7 +84,7 @@ case "$RESPONSE" in
         jq -n '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"allow"}}}'
         ;;
     deny)
-        jq -n '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"deny",message:"Denied from PaperFlow overlay"}}}'
+        jq -n '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"deny",message:"Denied from Kestrel overlay"}}}'
         ;;
     always)
         # Allow + apply the first permission suggestion if available
@@ -100,6 +100,6 @@ case "$RESPONSE" in
         jq -n '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"ask"}}}'
         ;;
     *)
-        jq -n '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"deny",message:"Unknown response from PaperFlow"}}}'
+        jq -n '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"deny",message:"Unknown response from Kestrel"}}}'
         ;;
 esac
