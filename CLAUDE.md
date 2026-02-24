@@ -22,7 +22,7 @@ If GNOME crashes, it sets `disable-user-extensions=true` in dconf — re-enable 
 
 ## Architecture
 
-Hexagonal architecture with a pure domain core and GNOME Shell adapters. This project follows hexagonal/ports-and-adapters architecture. Never import GNOME Shell APIs (Main, Meta, etc.) directly in domain or controller layers. All platform interactions must go through adapter interfaces.
+Hexagonal architecture with a pure domain core and GNOME Shell adapters. This project follows hexagonal/ports-and-adapters architecture. Never import GNOME Shell APIs (Main, Meta, etc.) directly in domain layers. All platform interactions must go through adapter interfaces.
 
 ### Core data flow
 
@@ -63,7 +63,7 @@ B is focused. WS2 has D, E.
 
 ### Ports
 
-`src/ports/` — Adapter interfaces (no `gi://` imports). Controller depends on ports, not concrete adapters.
+`src/ports/` — Adapter interfaces (no `gi://` imports). Extension depends on ports, not concrete adapters.
 - `clone-port.ts` — `ClonePort` interface + `OverviewTransform` type
 - `window-port.ts` — `WindowPort` interface (positioning, settlement check)
 - `focus-port.ts` — `FocusPort` interface (focus activation, tracking)
@@ -72,18 +72,20 @@ B is focused. WS2 has D, E.
 ### Adapters
 
 `src/adapters/` — GNOME Shell integration via `gi://` imports. Each adapter `implements` its corresponding port.
-- `controller.ts` — Composition root; wires domain ↔ adapters in `enable()`/`disable()`
-- `overview-handler.ts` — Overview mode enter/exit/navigate/click logic (extracted from controller)
+- `overview-handler.ts` — Overview mode enter/exit/navigate/click logic
 - `navigation-handler.ts` — Unified keybinding handlers: `handleSimpleCommand`, `handleVerticalFocus`, `handleVerticalMove`
+- `window-lifecycle-handler.ts` — Window add/remove/fullscreen/maximize handling
+- `notification-coordinator.ts` — Orchestrates status overlay, notification overlay, DBus service, and focus mode
+- `world-holder.ts` — Holds current `World` state, fires panel update on change
 - `settlement-retry.ts` — Exponential-backoff layout retry for async Wayland configures
 - `state-persistence.ts` — Save/restore world state across disable/enable cycles
 - `window-event-adapter.ts` — Listens for `window-created`/`destroy` signals, waits for `first-frame`
 - `clone-adapter.ts` — Creates `Clutter.Clone` of `WindowActor`s on a custom layer above `global.window_group`
 - `window-adapter.ts` — Positions real `Meta.Window`s via `move_resize_frame()`
-- `focus-adapter.ts` — Activates windows via `Meta.Window.activate()`
+- `focus-adapter.ts` — Activates windows via `Meta.Window.activate()`, suppresses feedback loops via `focusInternal()`
 - `monitor-adapter.ts` — Reads monitor geometry, listens for layout changes
 
-**Entry point**: `src/extension.ts` — Standard GNOME extension `enable()`/`disable()` delegating to `KestrelController`.
+**Entry point**: `src/extension.ts` — Composition root. `KestrelExtension` extends the GNOME `Extension` base class and wires domain ↔ adapters in `enable()`/`disable()`.
 
 ## Claude Code Hook Integration
 
@@ -115,7 +117,7 @@ All scripts live in `kestrel-plugin/hooks/` and log to `/tmp/kestrel-hooks.log` 
 
 ```
 Claude Code -(lifecycle event)-> hook script -(gdbus call)-> GNOME extension DBus
-  -> controller.handlePermissionRequest / handleNotification
+  -> notification-coordinator.handlePermissionRequest / handleNotification
   -> injects current workspace name from domain
   -> notification-overlay-adapter renders card
   -> user clicks button -> response written

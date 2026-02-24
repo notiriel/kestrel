@@ -13,6 +13,10 @@ export interface KeybindingCallbacks {
     onToggleOverview: () => void;
     onNewWindow: () => void;
     onToggleNotifications: () => void;
+    onToggleHelp: () => void;
+    onCloseWindow: () => void;
+    onLaunchWorkspaceSwitcher: () => void;
+    onLaunchWorkspaceRename: () => void;
 }
 
 export interface KeybindingPort {

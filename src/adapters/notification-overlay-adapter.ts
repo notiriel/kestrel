@@ -1,10 +1,13 @@
 import type { NotificationPort, NotificationInitOptions } from '../ports/notification-port.js';
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
+import type { QuestionState } from './notification-adapter-types.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Graphene from 'gi://Graphene';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
+export type { QuestionState } from './notification-adapter-types.js';
 
 interface Easeable {
     ease(params: Record<string, unknown>): void;
@@ -21,29 +24,20 @@ const STACK_OPACITY_STEP = 0.05;
 const ANIMATION_DURATION = 300;
 const AUTO_ADVANCE_DELAY = 300;
 
-// Colors from the design proposal
-const SURFACE = '#1a1a1f';
-const SURFACE_HOVER = '#1f1f25';
-const BORDER = '#2a2a32';
-const BORDER_HOVER = '#3a3a44';
-const TEXT = '#e4e4e8';
-const TEXT_DIM = '#7b7b86';
-const ACCENT = '#c97f4a';
-const GREEN = '#4a9e6e';
+// Kestrel brand palette
+const SURFACE = '#0a0f0c';
+const SURFACE_HOVER = '#0f1612';
+const BORDER = '#1c2b2c';
+const BORDER_HOVER = '#243138';
+const TEXT = '#e8ede9';
+const TEXT_DIM = '#9ca8a0';
+const ACCENT = '#62af85';
+const GREEN = '#7dd6a4';
 const RED = '#c95a5a';
 const BLUE = '#5a8ec9';
 
 const PERMISSION_TIMEOUT_SECS = 600; // 10 minutes
 const PROGRESS_TICK_SECS = 10;
-
-export interface QuestionState {
-    currentPage: number;
-    answers: Map<number, string[]>;
-    questions: readonly QuestionDefinition[];
-    pageContainer: St.BoxLayout | null;
-    navBar: St.BoxLayout | null;
-    autoAdvanceTimeoutId: number | null;
-}
 
 interface NotifEntry {
     notification: OverlayNotification;
@@ -484,7 +478,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
             buttonRow.add_child(this._makeButton('Deny', RED, `rgba(201,90,90,0.08)`, `rgba(201,90,90,0.2)`, () => {
                 this._respond(notif.id, 'deny');
             }));
-            buttonRow.add_child(this._makeButton('Allow', GREEN, `rgba(74,158,110,0.08)`, `rgba(74,158,110,0.2)`, () => {
+            buttonRow.add_child(this._makeButton('Allow', GREEN, `rgba(125,214,164,0.08)`, `rgba(125,214,164,0.2)`, () => {
                 this._respond(notif.id, 'allow');
             }));
             buttonRow.add_child(this._makeButton('Always', BLUE, `rgba(90,142,201,0.08)`, `rgba(90,142,201,0.2)`, () => {
@@ -516,7 +510,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
                 style: 'spacing: 6px; margin-top: 10px;',
                 x_expand: true,
             });
-            buttonRow.add_child(this._makeButton('Visit', ACCENT, `rgba(201,127,74,0.08)`, `rgba(201,127,74,0.2)`, () => {
+            buttonRow.add_child(this._makeButton('Visit', ACCENT, `rgba(98,175,133,0.08)`, `rgba(98,175,133,0.2)`, () => {
                 if (notif.sessionId && this._onVisitSession) {
                     this._onVisitSession(notif.sessionId);
                 }
@@ -936,15 +930,15 @@ export class NotificationOverlayAdapter implements NotificationPort {
             const allAnswered = qs.questions.every((_, i) => (qs.answers.get(i) ?? []).length > 0);
 
             buttonRow.add_child(this._makeButton('Send', GREEN,
-                allAnswered ? `rgba(74,158,110,0.08)` : `transparent`,
-                allAnswered ? `rgba(74,158,110,0.2)` : BORDER,
+                allAnswered ? `rgba(125,214,164,0.08)` : `transparent`,
+                allAnswered ? `rgba(125,214,164,0.2)` : BORDER,
                 () => {
                     if (allAnswered) this.questionSend(entry.notification.id);
                 }));
             buttonRow.add_child(this._makeButton('Dismiss', TEXT_DIM, `transparent`, BORDER, () => {
                 this.questionDismiss(entry.notification.id);
             }));
-            buttonRow.add_child(this._makeButton('Visit', ACCENT, `rgba(201,127,74,0.08)`, `rgba(201,127,74,0.2)`, () => {
+            buttonRow.add_child(this._makeButton('Visit', ACCENT, `rgba(98,175,133,0.08)`, `rgba(98,175,133,0.2)`, () => {
                 this.questionVisit(entry.notification.id);
             }));
             pageContainer.add_child(buttonRow);

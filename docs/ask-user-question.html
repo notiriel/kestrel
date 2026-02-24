@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AskUserQuestion Widget</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg-deep: #0a0b0f;
+    --bg-surface: #12131a;
+    --bg-card: #181922;
+    --bg-elevated: #1e2030;
+    --bg-option: #1a1c2a;
+    --bg-option-hover: #222438;
+    --bg-option-selected: #1c2847;
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-option: rgba(255, 255, 255, 0.08);
+    --border-selected: rgba(99, 144, 255, 0.5);
+    --text-primary: #e4e6f0;
+    --text-secondary: #8b8fa4;
+    --text-muted: #5c6078;
+    --accent: #6390ff;
+    --accent-glow: rgba(99, 144, 255, 0.15);
+    --accent-soft: rgba(99, 144, 255, 0.08);
+    --recommended: #34d399;
+    --recommended-bg: rgba(52, 211, 153, 0.08);
+    --recommended-border: rgba(52, 211, 153, 0.3);
+    --warning: #f59e0b;
+    --critical: #ef4444;
+    --abort: #ef4444;
+    --abort-hover: #dc2626;
+    --success: #34d399;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-deep);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Outfit', sans-serif;
+    color: var(--text-primary);
+    padding: 20px;
+  }
+
+  /* ---- WIDGET CONTAINER ---- */
+  .auq-widget {
+    width: 100%;
+    max-width: 520px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    position: relative;
+  }
+
+  /* ---- TIMEOUT BAR ---- */
+  .auq-timeout-track {
+    height: 3px;
+    background: rgba(255, 255, 255, 0.04);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .auq-timeout-bar {
+    height: 100%;
+    width: 100%;
+    background: var(--accent);
+    transform-origin: left;
+    transition: background-color 0.5s ease;
+  }
+
+  .auq-timeout-bar.warning { background: var(--warning); }
+  .auq-timeout-bar.critical {
+    background: var(--critical);
+    animation: pulse-critical 0.6s ease-in-out infinite;
+  }
+
+  @keyframes pulse-critical {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  /* ---- HEADER ---- */
+  .auq-header {
+    padding: 16px 20px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .auq-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .auq-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--accent-soft);
+    border: 1px solid rgba(99, 144, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .auq-icon svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .auq-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+  }
+
+  .auq-timer {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border-subtle);
+    transition: color 0.5s ease, border-color 0.5s ease, background 0.5s ease;
+    min-width: 48px;
+    text-align: center;
+  }
+
+  .auq-timer.warning {
+    color: var(--warning);
+    border-color: rgba(245, 158, 11, 0.25);
+    background: rgba(245, 158, 11, 0.06);
+  }
+
+  .auq-timer.critical {
+    color: var(--critical);
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.08);
+  }
+
+  /* ---- PAGES CONTAINER ---- */
+  .auq-pages {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .auq-page {
+    padding: 20px;
+    display: none;
+    animation: fadeSlideIn 0.3s ease forwards;
+  }
+
+  .auq-page.active { display: block; }
+
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateX(12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes fadeSlideInReverse {
+    from { opacity: 0; transform: translateX(-12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .auq-page.reverse { animation-name: fadeSlideInReverse; }
+
+  /* ---- QUESTION HEADER ---- */
+  .auq-q-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+
+  .auq-q-text {
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .auq-q-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
+  /* ---- OPTIONS ---- */
+  .auq-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .auq-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg-option);
+    border: 1px solid var(--border-option);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition);
+    position: relative;
+  }
+
+  .auq-option:hover {
+    background: var(--bg-option-hover);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .auq-option.selected {
+    background: var(--bg-option-selected);
+    border-color: var(--border-selected);
+    box-shadow: 0 0 0 1px var(--border-selected), 0 0 12px var(--accent-glow);
+  }
+
+  .auq-option.recommended {
+    border-color: var(--recommended-border);
+    background: var(--recommended-bg);
+  }
+
+  .auq-option.recommended.selected {
+    border-color: var(--recommended-border);
+    box-shadow: 0 0 0 1px var(--recommended-border), 0 0 12px rgba(52, 211, 153, 0.12);
+  }
+
+  .auq-radio, .auq-check {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    transition: all var(--transition);
+  }
+
+  .auq-check { border-radius: 4px; }
+
+  .auq-radio::after, .auq-check::after {
+    content: '';
+    display: block;
+    transition: all var(--transition);
+  }
+
+  .auq-radio::after {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: transparent;
+  }
+
+  .auq-check::after {
+    width: 10px;
+    height: 7px;
+    border-left: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+    transform: rotate(-45deg) translateY(-1px);
+  }
+
+  .selected .auq-radio {
+    border-color: var(--accent);
+  }
+
+  .selected .auq-radio::after {
+    background: var(--accent);
+  }
+
+  .selected .auq-check {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  .selected .auq-check::after {
+    border-color: #fff;
+  }
+
+  .recommended.selected .auq-radio { border-color: var(--recommended); }
+  .recommended.selected .auq-radio::after { background: var(--recommended); }
+  .recommended.selected .auq-check { border-color: var(--recommended); background: var(--recommended); }
+
+  .auq-opt-content { flex: 1; min-width: 0; }
+
+  .auq-opt-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .auq-recommended-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--recommended);
+    background: rgba(52, 211, 153, 0.1);
+    padding: 2px 7px;
+    border-radius: 3px;
+    line-height: 1.4;
+  }
+
+  .auq-opt-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+
+  /* ---- OTHER / FREE TEXT ---- */
+  .auq-other-option {
+    margin-top: 4px;
+  }
+
+  .auq-other-option .auq-opt-content {
+    width: 100%;
+  }
+
+  .auq-other-input {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-option);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 13px;
+    outline: none;
+    transition: all var(--transition);
+    display: none;
+  }
+
+  .auq-other-input.visible { display: block; }
+
+  .auq-other-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  .auq-other-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  /* ---- SUMMARY PAGE ---- */
+  .auq-summary-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  .auq-summary-item {
+    background: var(--bg-option);
+    border: 1px solid var(--border-option);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+  }
+
+  .auq-summary-header-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .auq-summary-question {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+
+  .auq-summary-answer {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  .auq-summary-edit {
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color var(--transition);
+    text-decoration: none;
+    margin-top: 4px;
+    display: inline-block;
+  }
+
+  .auq-summary-edit:hover { color: var(--accent); }
+
+  /* ---- FOOTER ---- */
+  .auq-footer {
+    padding: 14px 20px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .auq-step-dots {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .auq-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    opacity: 0.3;
+    transition: all var(--transition);
+    cursor: pointer;
+  }
+
+  .auq-dot.active {
+    opacity: 1;
+    background: var(--accent);
+    width: 18px;
+    border-radius: 3px;
+  }
+
+  .auq-dot.completed {
+    opacity: 0.6;
+    background: var(--accent);
+  }
+
+  .auq-dot.summary-dot.active {
+    background: var(--success);
+  }
+
+  .auq-nav-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  .auq-btn {
+    font-family: 'Outfit', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 18px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-option);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+
+  .auq-btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .auq-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .auq-btn:disabled:hover {
+    background: transparent;
+    color: var(--text-secondary);
+    border-color: var(--border-option);
+  }
+
+  .auq-btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .auq-btn-primary:hover {
+    background: #5480ee;
+    border-color: #5480ee;
+    color: #fff;
+  }
+
+  .auq-btn-primary:disabled {
+    opacity: 0.35;
+  }
+
+  .auq-btn-primary:disabled:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .auq-btn-submit {
+    background: var(--success);
+    border-color: var(--success);
+    color: #0a0b0f;
+    font-weight: 600;
+  }
+
+  .auq-btn-submit:hover {
+    background: #2bc48d;
+    border-color: #2bc48d;
+    color: #0a0b0f;
+  }
+
+  .auq-btn-abort {
+    border-color: rgba(239, 68, 68, 0.25);
+    color: var(--abort);
+    background: rgba(239, 68, 68, 0.06);
+  }
+
+  .auq-btn-abort:hover {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: var(--abort-hover);
+  }
+
+  /* ---- TIMEOUT OVERLAY ---- */
+  .auq-timeout-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 11, 15, 0.92);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 10;
+    border-radius: 14px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .auq-timeout-overlay.visible { display: flex; }
+
+  .auq-timeout-icon {
+    font-size: 28px;
+    margin-bottom: 4px;
+  }
+
+  .auq-timeout-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .auq-timeout-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* ---- DEMO CONTROLS ---- */
+  .demo-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+  }
+
+  .demo-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 6px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+
+  .demo-btn:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+
+  .demo-output {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    max-width: 400px;
+    max-height: 300px;
+    overflow: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    z-index: 100;
+    display: none;
+  }
+
+  .demo-output.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div class="auq-widget" id="widget">
+  <!-- Timeout progress bar -->
+  <div class="auq-timeout-track">
+    <div class="auq-timeout-bar" id="timeoutBar"></div>
+  </div>
+
+  <!-- Header -->
+  <div class="auq-header">
+    <div class="auq-header-left">
+      <div class="auq-icon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r="0.5"/></svg>
+      </div>
+      <span class="auq-title">Claude needs your input</span>
+    </div>
+    <div class="auq-timer" id="timerDisplay">60s</div>
+  </div>
+
+  <!-- Question pages (injected by JS) -->
+  <div class="auq-pages" id="pagesContainer"></div>
+
+  <!-- Footer -->
+  <div class="auq-footer">
+    <div class="auq-step-dots" id="stepDots"></div>
+    <div class="auq-nav-buttons" id="navButtons"></div>
+  </div>
+
+  <!-- Timeout overlay -->
+  <div class="auq-timeout-overlay" id="timeoutOverlay">
+    <div class="auq-timeout-icon">⏱</div>
+    <div class="auq-timeout-text">Time expired</div>
+    <div class="auq-timeout-sub">The request has been automatically aborted.</div>
+  </div>
+</div>
+
+<!-- Debug output panel -->
+<div class="demo-output" id="demoOutput"></div>
+
+<!-- Demo controls -->
+<div class="demo-controls">
+  <button class="demo-btn" onclick="loadExample('basic')">Example: Basic</button>
+  <button class="demo-btn" onclick="loadExample('multi')">Example: Multi-Select</button>
+  <button class="demo-btn" onclick="loadExample('full')">Example: Full (3 Qs)</button>
+</div>
+
+<script>
+/**
+ * AskUserQuestion Widget
+ *
+ * Renders Claude Code's AskUserQuestion tool input as a paginated
+ * notification widget. One question per page, final page = summary.
+ *
+ * Usage:
+ *   const widget = new AskUserQuestionWidget(containerEl, {
+ *     input: { questions: [...] },
+ *     timeoutSeconds: 60,
+ *     onSubmit: (output) => { ... },
+ *     onAbort: () => { ... },
+ *     onTimeout: () => { ... },
+ *   });
+ */
+class AskUserQuestionWidget {
+  constructor(container, options) {
+    this.container = container;
+    this.input = options.input;
+    this.timeoutSeconds = options.timeoutSeconds ?? 60;
+    this.onSubmit = options.onSubmit ?? (() => {});
+    this.onAbort = options.onAbort ?? (() => {});
+    this.onTimeout = options.onTimeout ?? (() => {});
+
+    this.questions = this.input.questions.map(q => this._parseQuestion(q));
+    this.totalPages = this.questions.length + 1; // +1 for summary
+    this.currentPage = 0;
+    this.answers = new Array(this.questions.length).fill(null);
+    this.timedOut = false;
+    this.submitted = false;
+
+    this._render();
+    this._startTimer();
+  }
+
+  /** Parse a question, extracting "(Recommended)" from labels */
+  _parseQuestion(q) {
+    const options = q.options.map(opt => {
+      const isRecommended = /\(Recommended\)\s*$/i.test(opt.label);
+      const cleanLabel = opt.label.replace(/\s*\(Recommended\)\s*$/i, '').trim();
+      return { label: cleanLabel, rawLabel: opt.label, description: opt.description, recommended: isRecommended };
+    });
+    return {
+      question: q.question,
+      header: q.header,
+      options,
+      multiSelect: q.multiSelect ?? false,
+    };
+  }
+
+  /** Build all DOM */
+  _render() {
+    const pages = this.container.querySelector('#pagesContainer');
+    pages.innerHTML = '';
+
+    // Question pages
+    this.questions.forEach((q, qi) => {
+      const page = document.createElement('div');
+      page.className = 'auq-page' + (qi === 0 ? ' active' : '');
+      page.dataset.page = qi;
+      page.innerHTML = this._renderQuestionPage(q, qi);
+      pages.appendChild(page);
+    });
+
+    // Summary page
+    const summary = document.createElement('div');
+    summary.className = 'auq-page';
+    summary.dataset.page = 'summary';
+    summary.id = 'summaryPage';
+    pages.appendChild(summary);
+
+    this._renderDots();
+    this._renderNav();
+    this._bindOptionEvents();
+  }
+
+  _renderQuestionPage(q, qi) {
+    const selectorType = q.multiSelect ? 'auq-check' : 'auq-radio';
+    const hint = q.multiSelect ? 'Select one or more options' : 'Select one option';
+
+    let html = `
+      <div class="auq-q-badge">${this._esc(q.header)} · Q${qi + 1}/${this.questions.length}</div>
+      <div class="auq-q-text">${this._esc(q.question)}</div>
+      <div class="auq-q-hint">${hint}</div>
+      <div class="auq-options" data-qi="${qi}" data-multi="${q.multiSelect}">
+    `;
+
+    q.options.forEach((opt, oi) => {
+      const recClass = opt.recommended ? ' recommended' : '';
+      html += `
+        <div class="auq-option${recClass}" data-qi="${qi}" data-oi="${oi}">
+          <div class="${selectorType}"></div>
+          <div class="auq-opt-content">
+            <div class="auq-opt-label">
+              ${this._esc(opt.label)}
+              ${opt.recommended ? '<span class="auq-recommended-tag">Recommended</span>' : ''}
+            </div>
+            <div class="auq-opt-desc">${this._esc(opt.description)}</div>
+          </div>
+        </div>
+      `;
+    });
+
+    // "Other" option
+    html += `
+        <div class="auq-option auq-other-option" data-qi="${qi}" data-oi="other">
+          <div class="${selectorType}"></div>
+          <div class="auq-opt-content">
+            <div class="auq-opt-label">Other</div>
+            <input type="text" class="auq-other-input" data-qi="${qi}"
+                   placeholder="Type your answer…"
+                   maxlength="200" />
+          </div>
+        </div>
+      </div>
+    `;
+
+    return html;
+  }
+
+  _renderSummaryPage() {
+    const page = this.container.querySelector('#summaryPage');
+    let html = `
+      <div class="auq-q-badge" style="background: rgba(52,211,153,0.08); color: var(--success);">
+        Review · Summary
+      </div>
+      <div class="auq-q-text">Review your answers</div>
+      <div class="auq-q-hint">Click "Edit" to go back and change an answer</div>
+      <div class="auq-summary-list">
+    `;
+
+    this.questions.forEach((q, qi) => {
+      const answer = this.answers[qi] ?? '—';
+      html += `
+        <div class="auq-summary-item">
+          <div class="auq-summary-header-text">${this._esc(q.header)}</div>
+          <div class="auq-summary-question">${this._esc(q.question)}</div>
+          <div class="auq-summary-answer">${this._esc(answer)}</div>
+          <a class="auq-summary-edit" data-goto="${qi}">Edit ↗</a>
+        </div>
+      `;
+    });
+
+    html += '</div>';
+    page.innerHTML = html;
+
+    // Bind edit links
+    page.querySelectorAll('.auq-summary-edit').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        this._goToPage(parseInt(link.dataset.goto), 'back');
+      });
+    });
+  }
+
+  _renderDots() {
+    const dotsEl = this.container.querySelector('#stepDots');
+    dotsEl.innerHTML = '';
+    for (let i = 0; i < this.totalPages; i++) {
+      const dot = document.createElement('div');
+      const isSummary = i === this.totalPages - 1;
+      dot.className = 'auq-dot' + (isSummary ? ' summary-dot' : '');
+      if (i === this.currentPage) dot.classList.add('active');
+      else if (i < this.currentPage || (this.answers[i] != null && i < this.questions.length)) {
+        dot.classList.add('completed');
+      }
+      dot.addEventListener('click', () => {
+        if (i < this.currentPage) this._goToPage(i, 'back');
+        else if (i === this.currentPage + 1 && this._currentAnswerValid()) this._goToPage(i, 'forward');
+      });
+      dotsEl.appendChild(dot);
+    }
+  }
+
+  _renderNav() {
+    const nav = this.container.querySelector('#navButtons');
+    const isFirst = this.currentPage === 0;
+    const isSummary = this.currentPage === this.totalPages - 1;
+    const isLastQuestion = this.currentPage === this.totalPages - 2;
+    const canProceed = this._currentAnswerValid();
+
+    let html = '';
+
+    if (isSummary) {
+      html += `<button class="auq-btn auq-btn-abort" id="btnAbort">Abort</button>`;
+      html += `<button class="auq-btn auq-btn-submit" id="btnSubmit">Submit Answers</button>`;
+    } else {
+      if (!isFirst) {
+        html += `<button class="auq-btn" id="btnBack">Back</button>`;
+      }
+      html += `<button class="auq-btn auq-btn-primary" id="btnNext" ${canProceed ? '' : 'disabled'}>
+        ${isLastQuestion ? 'Review' : 'Next'}
+      </button>`;
+    }
+
+    nav.innerHTML = html;
+
+    // Bind
+    nav.querySelector('#btnBack')?.addEventListener('click', () => this._goToPage(this.currentPage - 1, 'back'));
+    nav.querySelector('#btnNext')?.addEventListener('click', () => {
+      if (this._currentAnswerValid()) this._goToPage(this.currentPage + 1, 'forward');
+    });
+    nav.querySelector('#btnSubmit')?.addEventListener('click', () => this._submit());
+    nav.querySelector('#btnAbort')?.addEventListener('click', () => this._abort());
+  }
+
+  _bindOptionEvents() {
+    this.container.querySelectorAll('.auq-option').forEach(optEl => {
+      optEl.addEventListener('click', (e) => {
+        // Don't trigger on input click
+        if (e.target.tagName === 'INPUT') return;
+        const qi = parseInt(optEl.dataset.qi);
+        const oi = optEl.dataset.oi;
+        this._selectOption(qi, oi);
+      });
+    });
+
+    this.container.querySelectorAll('.auq-other-input').forEach(input => {
+      input.addEventListener('input', () => {
+        const qi = parseInt(input.dataset.qi);
+        if (input.value.trim()) {
+          this.answers[qi] = input.value.trim();
+        } else {
+          this.answers[qi] = null;
+        }
+        this._renderNav();
+      });
+      input.addEventListener('focus', () => {
+        const qi = parseInt(input.dataset.qi);
+        this._selectOption(qi, 'other');
+      });
+    });
+  }
+
+  _selectOption(qi, oi) {
+    const q = this.questions[qi];
+    const optionsContainer = this.container.querySelector(`.auq-options[data-qi="${qi}"]`);
+    const allOpts = optionsContainer.querySelectorAll('.auq-option');
+    const otherInput = optionsContainer.querySelector('.auq-other-input');
+
+    if (q.multiSelect && oi !== 'other') {
+      // Toggle this option
+      const optEl = optionsContainer.querySelector(`.auq-option[data-oi="${oi}"]`);
+      optEl.classList.toggle('selected');
+
+      // Deselect "other" if a regular option is picked
+      const otherEl = optionsContainer.querySelector('.auq-option[data-oi="other"]');
+      otherEl.classList.remove('selected');
+      otherInput.classList.remove('visible');
+      otherInput.value = '';
+
+      // Build answer
+      const selected = [];
+      allOpts.forEach(el => {
+        if (el.classList.contains('selected') && el.dataset.oi !== 'other') {
+          const idx = parseInt(el.dataset.oi);
+          selected.push(q.options[idx].label);
+        }
+      });
+      this.answers[qi] = selected.length > 0 ? selected.join(', ') : null;
+
+    } else if (oi === 'other') {
+      // Select "other", deselect rest
+      allOpts.forEach(el => el.classList.remove('selected'));
+      const otherEl = optionsContainer.querySelector('.auq-option[data-oi="other"]');
+      otherEl.classList.add('selected');
+      otherInput.classList.add('visible');
+      otherInput.focus();
+      this.answers[qi] = otherInput.value.trim() || null;
+
+    } else {
+      // Single select
+      allOpts.forEach(el => el.classList.remove('selected'));
+      const optEl = optionsContainer.querySelector(`.auq-option[data-oi="${oi}"]`);
+      optEl.classList.add('selected');
+      otherInput.classList.remove('visible');
+      otherInput.value = '';
+      this.answers[qi] = q.options[parseInt(oi)].label;
+    }
+
+    this._renderNav();
+  }
+
+  _currentAnswerValid() {
+    if (this.currentPage >= this.questions.length) return true; // summary page
+    return this.answers[this.currentPage] != null && this.answers[this.currentPage] !== '';
+  }
+
+  _goToPage(index, direction) {
+    if (index < 0 || index >= this.totalPages) return;
+    const oldPage = this.container.querySelector(`.auq-page.active`);
+    if (oldPage) {
+      oldPage.classList.remove('active', 'reverse');
+    }
+
+    this.currentPage = index;
+
+    // If going to summary, rebuild it
+    if (index === this.totalPages - 1) {
+      this._renderSummaryPage();
+    }
+
+    const newPage = this.container.querySelectorAll('.auq-page')[index];
+    newPage.classList.remove('reverse');
+    if (direction === 'back') newPage.classList.add('reverse');
+    // Force re-trigger animation
+    newPage.style.animation = 'none';
+    newPage.offsetHeight; // reflow
+    newPage.style.animation = '';
+    newPage.classList.add('active');
+
+    this._renderDots();
+    this._renderNav();
+  }
+
+  /** Build the output object matching AskUserQuestionOutput */
+  _buildOutput() {
+    const answers = {};
+    this.questions.forEach((q, qi) => {
+      answers[q.question] = this.answers[qi] ?? '';
+    });
+    return {
+      questions: this.input.questions,
+      answers,
+    };
+  }
+
+  _submit() {
+    if (this.submitted || this.timedOut) return;
+    this.submitted = true;
+    this._stopTimer();
+    const output = this._buildOutput();
+    this.onSubmit(output);
+  }
+
+  _abort() {
+    if (this.submitted || this.timedOut) return;
+    this.submitted = true;
+    this._stopTimer();
+    this.onAbort();
+  }
+
+  /** Timer */
+  _startTimer() {
+    this.startTime = Date.now();
+    this.totalMs = this.timeoutSeconds * 1000;
+    this._timerFrame();
+  }
+
+  _timerFrame() {
+    if (this.submitted || this.timedOut) return;
+    const elapsed = Date.now() - this.startTime;
+    const remaining = Math.max(0, this.totalMs - elapsed);
+    const fraction = remaining / this.totalMs;
+    const seconds = Math.ceil(remaining / 1000);
+
+    // Update bar
+    const bar = this.container.querySelector('#timeoutBar');
+    bar.style.transform = `scaleX(${fraction})`;
+
+    // Update display
+    const display = this.container.querySelector('#timerDisplay');
+    display.textContent = `${seconds}s`;
+
+    // Color states
+    bar.classList.remove('warning', 'critical');
+    display.classList.remove('warning', 'critical');
+
+    if (seconds <= 5) {
+      bar.classList.add('critical');
+      display.classList.add('critical');
+    } else if (seconds <= 15) {
+      bar.classList.add('warning');
+      display.classList.add('warning');
+    }
+
+    if (remaining <= 0) {
+      this._onTimeout();
+      return;
+    }
+
+    this._rafId = requestAnimationFrame(() => this._timerFrame());
+  }
+
+  _stopTimer() {
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+  }
+
+  _onTimeout() {
+    this.timedOut = true;
+    this._stopTimer();
+    this.container.querySelector('#timeoutOverlay').classList.add('visible');
+    this.onTimeout();
+  }
+
+  /** Destroy the widget */
+  destroy() {
+    this._stopTimer();
+  }
+
+  _esc(str) {
+    const el = document.createElement('span');
+    el.textContent = str;
+    return el.innerHTML;
+  }
+}
+
+
+// ============================================================
+//  DEMO: Example data and initialization
+// ============================================================
+
+const EXAMPLES = {
+  basic: {
+    questions: [
+      {
+        question: "How should API errors be handled?",
+        header: "Errors",
+        options: [
+          { label: "Immediate failure", description: "Fail fast, simple to debug and understand" },
+          { label: "With retry (Recommended)", description: "Auto-retry up to 3 times with exponential backoff" },
+          { label: "Custom handler", description: "Implement a custom error handling strategy" }
+        ],
+        multiSelect: false,
+      }
+    ]
+  },
+  multi: {
+    questions: [
+      {
+        question: "Which authentication methods should the API support?",
+        header: "Auth",
+        options: [
+          { label: "JWT tokens (Recommended)", description: "Stateless, scalable, widely supported" },
+          { label: "OAuth 2.0", description: "Industry standard for third-party access" },
+          { label: "API keys", description: "Simple key-based authentication" },
+          { label: "Session cookies", description: "Traditional server-side sessions" }
+        ],
+        multiSelect: true,
+      }
+    ]
+  },
+  full: {
+    questions: [
+      {
+        question: "What database should be used for the user service?",
+        header: "Database",
+        options: [
+          { label: "PostgreSQL (Recommended)", description: "Robust relational DB with JSON support" },
+          { label: "MongoDB", description: "Document store, flexible schema" },
+          { label: "SQLite", description: "Embedded, zero-config, great for dev" }
+        ],
+        multiSelect: false,
+      },
+      {
+        question: "Which API style do you prefer for the endpoints?",
+        header: "API Style",
+        options: [
+          { label: "REST", description: "Resource-oriented, widely understood" },
+          { label: "GraphQL (Recommended)", description: "Flexible queries, single endpoint" },
+          { label: "gRPC", description: "High performance, binary protocol" }
+        ],
+        multiSelect: false,
+      },
+      {
+        question: "Which deployment targets should be supported?",
+        header: "Deploy",
+        options: [
+          { label: "Docker / K8s (Recommended)", description: "Containerized with orchestration" },
+          { label: "Serverless (Lambda/Functions)", description: "Event-driven, pay-per-use" },
+          { label: "VM / bare metal", description: "Traditional server deployment" }
+        ],
+        multiSelect: true,
+      }
+    ]
+  }
+};
+
+let currentWidget = null;
+
+function loadExample(key) {
+  const container = document.getElementById('widget');
+  const output = document.getElementById('demoOutput');
+  output.classList.remove('visible');
+
+  // Reset overlay
+  container.querySelector('#timeoutOverlay').classList.remove('visible');
+
+  if (currentWidget) currentWidget.destroy();
+
+  currentWidget = new AskUserQuestionWidget(container, {
+    input: EXAMPLES[key],
+    timeoutSeconds: 60,
+    onSubmit: (result) => {
+      output.textContent = 'SUBMITTED:\n' + JSON.stringify(result, null, 2);
+      output.classList.add('visible');
+      console.log('AskUserQuestion → Submit:', result);
+    },
+    onAbort: () => {
+      output.textContent = 'ABORTED by user.';
+      output.classList.add('visible');
+      console.log('AskUserQuestion → Abort');
+    },
+    onTimeout: () => {
+      output.textContent = 'TIMED OUT — auto-aborted.';
+      output.classList.add('visible');
+      console.log('AskUserQuestion → Timeout');
+    },
+  });
+}
+
+// Load the full example on start
+loadExample('full');
+</script>
+</body>
+</html>

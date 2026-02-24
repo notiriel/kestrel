@@ -1,6 +1,6 @@
 import type { WindowId } from '../domain/types.js';
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
-import type { QuestionState } from './notification-overlay-adapter.js';
+import type { QuestionState } from './notification-adapter-types.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
@@ -12,13 +12,13 @@ interface Easeable {
     ease(params: Record<string, unknown>): void;
 }
 
-// Colors — same as notification-overlay-adapter
-const SURFACE = '#1a1a1f';
-const BORDER = '#2a2a32';
-const TEXT = '#e4e4e8';
-const TEXT_DIM = '#7b7b86';
-const ACCENT = '#c97f4a';
-const GREEN = '#4a9e6e';
+// Kestrel brand palette — same as notification-overlay-adapter
+const SURFACE = '#0a0f0c';
+const BORDER = '#1c2b2c';
+const TEXT = '#e8ede9';
+const TEXT_DIM = '#9ca8a0';
+const ACCENT = '#62af85';
+const GREEN = '#7dd6a4';
 const RED = '#c95a5a';
 const BLUE = '#5a8ec9';
 
@@ -572,10 +572,10 @@ export class NotificationFocusMode {
                     buttonRow.add_child(this._makeActionButton(
                         '[1] Send',
                         allAnswered ? GREEN : TEXT_DIM,
-                        allAnswered ? 'rgba(74,158,110,0.12)' : 'transparent',
+                        allAnswered ? 'rgba(125,214,164,0.12)' : 'transparent',
                     ));
                     buttonRow.add_child(this._makeActionButton('[2] Dismiss', TEXT_DIM, 'transparent'));
-                    buttonRow.add_child(this._makeActionButton('[3] Visit', ACCENT, 'rgba(201,127,74,0.12)'));
+                    buttonRow.add_child(this._makeActionButton('[3] Visit', ACCENT, 'rgba(98,175,133,0.12)'));
                     card.add_child(buttonRow);
                 } else {
                     // Question page with numbered options
@@ -596,7 +596,7 @@ export class NotificationFocusMode {
                         card.add_child(this._makeActionButton(
                             `[${i + 1}] ${opt.label}`,
                             isSelected ? TEXT : TEXT_DIM,
-                            isSelected ? 'rgba(201,127,74,0.12)' : 'transparent',
+                            isSelected ? 'rgba(98,175,133,0.12)' : 'transparent',
                         ));
                     }
                 }
@@ -617,7 +617,7 @@ export class NotificationFocusMode {
                 style: 'spacing: 8px; margin-top: 14px;',
                 x_expand: true,
             });
-            buttonRow.add_child(this._makeActionButton('[1] Allow', GREEN, 'rgba(74,158,110,0.12)'));
+            buttonRow.add_child(this._makeActionButton('[1] Allow', GREEN, 'rgba(125,214,164,0.12)'));
             buttonRow.add_child(this._makeActionButton('[2] Always', BLUE, 'rgba(90,142,201,0.12)'));
             buttonRow.add_child(this._makeActionButton('[3] Deny', RED, 'rgba(201,90,90,0.12)'));
             card.add_child(buttonRow);
@@ -626,7 +626,7 @@ export class NotificationFocusMode {
                 style: 'spacing: 8px; margin-top: 14px;',
                 x_expand: true,
             });
-            buttonRow.add_child(this._makeActionButton('[1] Visit', ACCENT, 'rgba(201,127,74,0.12)'));
+            buttonRow.add_child(this._makeActionButton('[1] Visit', ACCENT, 'rgba(98,175,133,0.12)'));
             buttonRow.add_child(this._makeActionButton('[2] Dismiss', TEXT_DIM, 'transparent'));
             card.add_child(buttonRow);
         }

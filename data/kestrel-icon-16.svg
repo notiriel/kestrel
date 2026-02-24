@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Kestrel head - hawk profile facing left, beak sharp, crest from top-right -->
+  <path d="
+    M 13 1.5
+    C 11.5 1.5, 10 2.2, 9 3.2
+    C 8 4, 7 4.5, 5.5 5
+    L 3 5.8
+    L 1 6.5
+    L 3.5 6.6
+    C 4.5 7, 5.2 7.5, 5.8 8.2
+    C 6.5 9.2, 7 10.5, 7.2 12
+    L 7.5 14
+    C 8 12.5, 8.3 11, 8.5 10
+    C 8.7 9, 9.2 8, 10.2 7.2
+    C 11.2 6.3, 12.5 5.8, 13.8 5.2
+    C 14.8 4.7, 15 3.5, 14.5 2.5
+    C 14 1.8, 13.5 1.5, 13 1.5
+    Z
+  " fill="none" stroke="#4ade80" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- > chevron prompt -->
+  <path d="M 9.2 3.2 L 10.8 4.2 L 9.2 5.2" fill="none" stroke="#4ade80" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- _ cursor -->
+  <line x1="11.3" y1="5.2" x2="13" y2="5.2" stroke="#4ade80" stroke-width="0.8" stroke-linecap="round"/>
+</svg>

@@ -8,7 +8,6 @@ import type { KeybindingPort } from '../../src/ports/keybinding-port.js';
 import type { WindowEventPort } from '../../src/ports/window-event-port.js';
 import type { ConflictDetectorPort } from '../../src/ports/conflict-detector-port.js';
 import type { StatePersistencePort } from '../../src/ports/state-persistence-port.js';
-import type { ControllerPorts } from '../../src/ports/controller-ports.js';
 import type { MonitorInfo } from '../../src/domain/types.js';
 
 type Mocked<T> = T & { [K in keyof T]: ReturnType<typeof vi.fn> };
@@ -61,7 +60,10 @@ export function createMockFocusPort(): Mocked<FocusPort> {
         track: vi.fn(),
         untrack: vi.fn(),
         focus: vi.fn(),
+        focusInternal: vi.fn(),
         getMetaWindow: vi.fn(),
+        openNewWindow: vi.fn(),
+        closeWindow: vi.fn(),
         connectFocusChanged: vi.fn(),
         destroy: vi.fn(),
     };
@@ -107,22 +109,9 @@ export function createMockConflictDetectorPort(): Mocked<ConflictDetectorPort> {
 
 export function createMockStatePersistencePort(): Mocked<StatePersistencePort> {
     return {
-        readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' }),
+        readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' }),
         save: vi.fn(),
         tryRestore: vi.fn().mockReturnValue(null),
     };
 }
 
-export function createMockControllerPorts(): { [K in keyof ControllerPorts]: Mocked<ControllerPorts[K]> } {
-    return {
-        conflictDetector: createMockConflictDetectorPort(),
-        monitor: createMockMonitorPort(),
-        clone: createMockClonePort(),
-        window: createMockWindowPort(),
-        focus: createMockFocusPort(),
-        shell: createMockShellPort(),
-        keybinding: createMockKeybindingPort(),
-        windowEvent: createMockWindowEventPort(),
-        statePersistence: createMockStatePersistencePort(),
-    };
-}

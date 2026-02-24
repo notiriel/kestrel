@@ -52,9 +52,9 @@ export class CloneAdapter implements ClonePort {
     private _overviewActive: boolean = false;
     private _overviewBg: St.Widget | null = null;
     private _focusBorderWidth: number = 3;
-    private _focusBorderColor: string = 'rgba(255,255,255,0.8)';
+    private _focusBorderColor: string = 'rgba(125,214,164,0.8)';
     private _focusBorderRadius: number = 8;
-    private _focusBgColor: string = 'rgba(255,255,255,0.05)';
+    private _focusBgColor: string = 'rgba(125,214,164,0.05)';
 
     init(workAreaY: number, monitorHeight: number, config?: KestrelConfig): void {
         this._workAreaY = workAreaY;

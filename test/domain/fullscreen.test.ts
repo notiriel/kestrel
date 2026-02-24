@@ -7,7 +7,7 @@ import { createTiledWindow } from '../../src/domain/window.js';
 import { computeLayout } from '../../src/domain/layout.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(255,255,255,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(255,255,255,0.05)' };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,

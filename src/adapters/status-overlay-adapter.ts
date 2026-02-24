@@ -5,7 +5,8 @@ import St from 'gi://St';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
 
-export type ClaudeStatus = 'working' | 'needs-input' | 'done';
+export type { ClaudeStatus } from '../domain/notification-types.js';
+import type { ClaudeStatus } from '../domain/notification-types.js';
 
 const STATUS_COLORS: Record<ClaudeStatus, string> = {
     'working': '#4CAF50',

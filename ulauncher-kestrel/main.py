@@ -23,6 +23,10 @@ STATUS_ICONS = {
     "done": "\U0001f7e2",        # 🟢
 }
 
+DBUS_NAME = 'org.gnome.Shell'
+DBUS_PATH = '/io/kestrel/Extension'
+DBUS_IFACE = 'io.kestrel.Extension'
+
 _bus = None
 
 
@@ -34,28 +38,32 @@ def get_bus():
     return _bus
 
 
-def gnome_eval(expr: str) -> str:
-    """Run a JS expression via GNOME Shell DBus Eval (no subprocess)."""
+def kestrel_call(method: str, *args) -> str:
+    """Call a method on the Kestrel DBus interface."""
     try:
         bus = get_bus()
+        # Build variant args
+        if args:
+            sig = '(' + 's' * len(args) + ')'
+            params = GLib.Variant(sig, args)
+        else:
+            params = None
         result = bus.call_sync(
-            'org.gnome.Shell',
-            '/org/gnome/Shell',
-            'org.gnome.Shell',
-            'Eval',
-            GLib.Variant('(s)', (expr,)),
-            GLib.VariantType('(bs)'),
+            DBUS_NAME,
+            DBUS_PATH,
+            DBUS_IFACE,
+            method,
+            params,
+            GLib.VariantType('(s)'),
             Gio.DBusCallFlags.NONE,
-            2000,  # 2 second timeout in ms
+            2000,
             None,
         )
-        success = result.get_child_value(0).get_boolean()
-        if success:
-            return result.get_child_value(1).get_string()
-        return ""
+        return result.get_child_value(0).get_string()
     except Exception as e:
-        logger.warning("gnome_eval failed: %s", e)
-        _bus = None  # Reset connection on error
+        logger.warning("kestrel_call(%s) failed: %s", method, e)
+        global _bus
+        _bus = None
         return ""
 
 
@@ -80,23 +88,23 @@ class KeywordQueryEventListener(EventListener):
                         on_enter=DoNothingAction(),
                     )
                 ])
-            escaped = name.replace("\\", "\\\\").replace("'", "\\'")
+            escaped = name.replace("'", "'\\''")
             return RenderResultListAction([
                 ExtensionResultItem(
                     icon="images/icon.svg",
                     name=f'Rename workspace to "{name}"',
                     description="Rename the current Kestrel workspace",
                     on_enter=RunScriptAction(
-                        f"gdbus call --session --dest org.gnome.Shell "
-                        f"--object-path /org/gnome/Shell "
-                        f"--method org.gnome.Shell.Eval "
-                        f"\"global._kestrel.renameCurrentWorkspace('{escaped}')\"",
+                        f"gdbus call --session --dest {DBUS_NAME} "
+                        f"--object-path {DBUS_PATH} "
+                        f"--method {DBUS_IFACE}.RenameCurrentWorkspace "
+                        f"'{escaped}'",
                     ),
                 )
             ])
 
         # Mode 2: ws <query> — list and filter workspaces
-        workspaces_json = gnome_eval("global._kestrel.listWorkspaces()")
+        workspaces_json = kestrel_call("ListWorkspaces")
         if not workspaces_json:
             return RenderResultListAction([
                 ExtensionResultItem(
@@ -108,11 +116,7 @@ class KeywordQueryEventListener(EventListener):
             ])
 
         try:
-            # GNOME Shell Eval applies JSON.stringify on the return value,
-            # and listWorkspaces() also JSON.stringify's — so we get a
-            # double-encoded JSON string. Unwrap both layers.
-            parsed = json.loads(workspaces_json)
-            workspaces = json.loads(parsed) if isinstance(parsed, str) else parsed
+            workspaces = json.loads(workspaces_json)
         except (json.JSONDecodeError, TypeError):
             return RenderResultListAction([
                 ExtensionResultItem(
@@ -138,16 +142,16 @@ class KeywordQueryEventListener(EventListener):
             status_icon = STATUS_ICONS.get(status, "") if status else ""
             win_count = ws.get("windowCount", 0)
 
-            escaped_name = name.replace("\\", "\\\\").replace("'", "\\'")
+            escaped_name = name.replace("'", "'\\''")
             items.append(ExtensionResultItem(
                 icon="images/icon.svg",
                 name=f"{name}{current} {status_icon}",
                 description=f"{win_count} window{'s' if win_count != 1 else ''}",
                 on_enter=RunScriptAction(
-                    f"gdbus call --session --dest org.gnome.Shell "
-                    f"--object-path /org/gnome/Shell "
-                    f"--method org.gnome.Shell.Eval "
-                    f"\"global._kestrel.switchToWorkspaceByName('{escaped_name}')\"",
+                    f"gdbus call --session --dest {DBUS_NAME} "
+                    f"--object-path {DBUS_PATH} "
+                    f"--method {DBUS_IFACE}.SwitchToWorkspaceByName "
+                    f"'{escaped_name}'",
                 ),
             ))
 

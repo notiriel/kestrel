@@ -22,3 +22,5 @@ export interface OverlayNotification {
     readonly questions?: readonly QuestionDefinition[];
     readonly timestamp: number;
 }
+
+export type ClaudeStatus = 'working' | 'needs-input' | 'done';

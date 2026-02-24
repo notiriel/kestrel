@@ -72,13 +72,33 @@
       <summary>Toggle notification focus mode</summary>
       <description>Enter notification focus mode for keyboard-driven permission handling</description>
     </key>
+    <key name="toggle-help" type="as">
+      <default>['&lt;Super&gt;apostrophe']</default>
+      <summary>Toggle help overlay</summary>
+      <description>Show or hide the keyboard shortcuts help sheet</description>
+    </key>
+    <key name="close-window" type="as">
+      <default>['&lt;Super&gt;BackSpace']</default>
+      <summary>Close window</summary>
+      <description>Close the currently focused window</description>
+    </key>
+    <key name="launch-workspace-switcher" type="as">
+      <default>['&lt;Super&gt;less']</default>
+      <summary>Launch workspace switcher</summary>
+      <description>Open ULauncher with workspace switcher query</description>
+    </key>
+    <key name="launch-workspace-rename" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;less']</default>
+      <summary>Launch workspace rename</summary>
+      <description>Open ULauncher with workspace rename query</description>
+    </key>
     <key name="focus-border-width" type="i">
       <default>3</default>
       <summary>Focus border width</summary>
       <description>Width of the focus indicator border in pixels</description>
     </key>
     <key name="focus-border-color" type="s">
-      <default>'rgba(255,255,255,0.8)'</default>
+      <default>'rgba(125,214,164,0.8)'</default>
       <summary>Focus border color</summary>
       <description>Color of the focus indicator border (CSS color string)</description>
     </key>
@@ -88,7 +108,7 @@
       <description>Border radius of the focus indicator in pixels</description>
     </key>
     <key name="focus-background-color" type="s">
-      <default>'rgba(255,255,255,0.05)'</default>
+      <default>'rgba(125,214,164,0.05)'</default>
       <summary>Focus background color</summary>
       <description>Background color of the focus indicator (CSS color string)</description>
     </key>

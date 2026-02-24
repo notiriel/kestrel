@@ -19,6 +19,17 @@ const INTERFACE_XML = `
       <arg name="id"       direction="in"  type="s"/>
       <arg name="response" direction="out" type="s"/>
     </method>
+    <method name="ListWorkspaces">
+      <arg name="response" direction="out" type="s"/>
+    </method>
+    <method name="SwitchToWorkspaceByName">
+      <arg name="name"     direction="in"  type="s"/>
+      <arg name="response" direction="out" type="s"/>
+    </method>
+    <method name="RenameCurrentWorkspace">
+      <arg name="name"     direction="in"  type="s"/>
+      <arg name="response" direction="out" type="s"/>
+    </method>
   </interface>
 </node>`;
 
@@ -29,6 +40,9 @@ export interface KestrelDBusCallbacks {
     handlePermissionRequest(payload: string): string;
     setWindowStatus(sessionId: string, status: string): void;
     getNotificationResponse(id: string): string;
+    listWorkspaces(): string;
+    switchToWorkspaceByName(name: string): string;
+    renameCurrentWorkspace(name: string): string;
 }
 
 export class KestrelDBusService {
@@ -60,6 +74,27 @@ export class KestrelDBusService {
             GetNotificationResponse(id: string): string {
                 try {
                     return callbacks.getNotificationResponse(id);
+                } catch (e) {
+                    return JSON.stringify({ error: String(e) });
+                }
+            },
+            ListWorkspaces(): string {
+                try {
+                    return callbacks.listWorkspaces();
+                } catch (e) {
+                    return JSON.stringify({ error: String(e) });
+                }
+            },
+            SwitchToWorkspaceByName(name: string): string {
+                try {
+                    return callbacks.switchToWorkspaceByName(name);
+                } catch (e) {
+                    return JSON.stringify({ error: String(e) });
+                }
+            },
+            RenameCurrentWorkspace(name: string): string {
+                try {
+                    return callbacks.renameCurrentWorkspace(name);
                 } catch (e) {
                     return JSON.stringify({ error: String(e) });
                 }

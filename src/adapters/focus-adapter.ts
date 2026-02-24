@@ -7,6 +7,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 export class FocusAdapter implements FocusPort {
     private _windows: Map<WindowId, Meta.Window> = new Map();
     private _focusChangedId: number | null = null;
+    private _suppressCallback: boolean = false;
 
     track(windowId: WindowId, metaWindow: Meta.Window): void {
         this._windows.set(windowId, metaWindow);
@@ -32,6 +33,19 @@ export class FocusAdapter implements FocusPort {
         }
     }
 
+    focusInternal(windowId: WindowId | null): void {
+        if (!windowId) return;
+        this._suppressCallback = true;
+        this.focus(windowId);
+        this._suppressCallback = false;
+    }
+
+    closeWindow(windowId: WindowId): void {
+        const metaWindow = this._windows.get(windowId);
+        if (!metaWindow) return;
+        metaWindow.delete(global.get_current_time());
+    }
+
     openNewWindow(windowId: WindowId): void {
         const metaWindow = this._windows.get(windowId);
         if (!metaWindow) return;
@@ -47,6 +61,7 @@ export class FocusAdapter implements FocusPort {
     connectFocusChanged(callback: (windowId: WindowId) => void): void {
         this._focusChangedId = global.display.connect('notify::focus-window', () => {
             try {
+                if (this._suppressCallback) return;
                 const focusedWindow = global.display.get_focus_window();
                 if (!focusedWindow) return;
                 // Use stable sequence for lookup — avoids Proxy identity mismatch

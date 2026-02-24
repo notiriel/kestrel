@@ -100,6 +100,10 @@ export class KeybindingAdapter implements KeybindingPort {
             ['kestrel-toggle-overview', callbacks.onToggleOverview],
             ['new-window', callbacks.onNewWindow],
             ['toggle-notifications', callbacks.onToggleNotifications],
+            ['toggle-help', callbacks.onToggleHelp],
+            ['close-window', callbacks.onCloseWindow],
+            ['launch-workspace-switcher', callbacks.onLaunchWorkspaceSwitcher],
+            ['launch-workspace-rename', callbacks.onLaunchWorkspaceRename],
         ];
 
         for (const [name, handler] of bindings) {
