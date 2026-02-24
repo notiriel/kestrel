@@ -465,6 +465,9 @@ export class CloneAdapter implements ClonePort {
     enterOverview(transform: OverviewTransform, layout: LayoutState, numWorkspaces: number): void {
         if (!this._layer || !this._workspaceStrip) return;
         this._overviewActive = true;
+        for (const entry of this._clones.values()) {
+            if (!entry.sourceDestroyed) entry.sourceActor.visible = false;
+        }
 
         if (!this._overviewBg) {
             this._overviewBg = new St.Widget({
@@ -504,7 +507,7 @@ export class CloneAdapter implements ClonePort {
         this._updateOverviewFocus(layout, layout.workspaceIndex, transform);
     }
 
-    exitOverview(layout: LayoutState): void {
+    exitOverview(layout: LayoutState, animate: boolean = true): void {
         if (!this._layer || !this._workspaceStrip) return;
         this._overviewActive = false;
 
@@ -512,28 +515,48 @@ export class CloneAdapter implements ClonePort {
             this._overviewBg.visible = false;
         }
 
+        const duration = animate ? ANIMATION_DURATION : 0;
+        const easeMode = Clutter.AnimationMode.EASE_OUT_QUAD;
         const targetY = -layout.workspaceIndex * this._monitorHeight;
-        (this._workspaceStrip as unknown as Easeable).ease({
-            scale_x: 1,
-            scale_y: 1,
-            x: 0,
-            y: targetY,
-            duration: ANIMATION_DURATION,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-        });
+
+        const showWindowActors = (): void => {
+            for (const entry of this._clones.values()) {
+                if (!entry.sourceDestroyed) entry.sourceActor.visible = true;
+            }
+        };
+
+        if (duration > 0) {
+            (this._workspaceStrip as unknown as Easeable).ease({
+                scale_x: 1,
+                scale_y: 1,
+                x: 0,
+                y: targetY,
+                duration,
+                mode: easeMode,
+                onComplete: showWindowActors,
+            });
+        } else {
+            showWindowActors();
+            this._workspaceStrip.set_scale(1, 1);
+            this._workspaceStrip.set_position(0, targetY);
+        }
 
         this._layer.remove_clip();
 
         for (const wc of this._workspaceContainers.values()) {
-            (wc.scrollContainer as unknown as Easeable).ease({
-                x: -layout.scrollX,
-                duration: ANIMATION_DURATION,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
+            if (duration > 0) {
+                (wc.scrollContainer as unknown as Easeable).ease({
+                    x: -layout.scrollX,
+                    duration,
+                    mode: easeMode,
+                });
+            } else {
+                wc.scrollContainer.set_position(-layout.scrollX, 0);
+            }
             wc.nameLabel.visible = false;
         }
 
-        this._updateFocusIndicator(layout, ANIMATION_DURATION, Clutter.AnimationMode.EASE_OUT_QUAD);
+        this._updateFocusIndicator(layout, duration, easeMode);
     }
 
     updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void {
@@ -614,6 +637,10 @@ export class CloneAdapter implements ClonePort {
         if (this._overviewBg) {
             this._overviewBg.destroy();
             this._overviewBg = null;
+        }
+
+        for (const entry of this._clones.values()) {
+            if (!entry.sourceDestroyed) entry.sourceActor.visible = true;
         }
 
         if (this._layer) {

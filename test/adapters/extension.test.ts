@@ -172,6 +172,13 @@ vi.mock('../../src/adapters/launcher-adapter.js', () => ({
         destroy: vi.fn(),
     })),
 }));
+vi.mock('../../src/adapters/mouse-input-adapter.js', () => ({
+    MouseInputAdapter: vi.fn().mockImplementation(() => {
+        const inst = mockMethods('activate', 'deactivate', 'destroy');
+        mockInstances.mouseInput = inst;
+        return inst;
+    }),
+}));
 vi.mock('../../src/adapters/safe-window.js', () => ({
     safeWindow: (w: unknown) => w,
     rawWindow: (w: unknown) => w,

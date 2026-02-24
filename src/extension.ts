@@ -33,6 +33,7 @@ import { WorldHolder } from './adapters/world-holder.js';
 import { NotificationCoordinator } from './adapters/notification-coordinator.js';
 import { HelpOverlayAdapter } from './adapters/help-overlay-adapter.js';
 import { LauncherAdapter } from './adapters/launcher-adapter.js';
+import { MouseInputAdapter } from './adapters/mouse-input-adapter.js';
 import { safeWindow } from './adapters/safe-window.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
@@ -57,6 +58,7 @@ export default class KestrelExtension extends Extension {
     private _notificationCoordinator: NotificationCoordinator | null = null;
     private _helpOverlay: HelpOverlayAdapter | null = null;
     private _launcher: LauncherAdapter | null = null;
+    private _mouseInputAdapter: MouseInputAdapter | null = null;
     private _debugMode: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
     private _settingsChangedId: number = 0;
@@ -169,6 +171,12 @@ export default class KestrelExtension extends Extension {
                 notifyOverviewExit: () => {
                     this._notificationCoordinator?.exitOverview();
                 },
+                onOverviewEnter: () => {
+                    this._mouseInputAdapter?.deactivate();
+                },
+                onOverviewExit: () => {
+                    this._mouseInputAdapter?.activate();
+                },
             });
 
             this._settlementRetry = new SettlementRetry({
@@ -187,6 +195,19 @@ export default class KestrelExtension extends Extension {
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
                 applyLayout: (layout, animate) => this._applyLayout(layout, animate),
+            });
+
+            this._mouseInputAdapter = new MouseInputAdapter({
+                getWorld: () => this._worldHolder.world,
+                isOverviewActive: () => this._overviewHandler?.isActive ?? false,
+                onScrollHorizontal: (direction) => {
+                    if (direction === 'left') this._navigationHandler!.handleSimpleCommand(focusLeft, 'scrollLeft');
+                    else this._navigationHandler!.handleSimpleCommand(focusRight, 'scrollRight');
+                },
+                onScrollVertical: (direction) => {
+                    if (direction === 'up') this._navigationHandler!.handleVerticalFocus(focusUp, 'scrollUp');
+                    else this._navigationHandler!.handleVerticalFocus(focusDown, 'scrollDown');
+                },
             });
 
             this._windowLifecycleHandler = new WindowLifecycleHandler({
@@ -243,6 +264,9 @@ export default class KestrelExtension extends Extension {
                 onLaunchWorkspaceSwitcher: () => this._launcher?.launch('ws '),
                 onLaunchWorkspaceRename: () => this._launcher?.launch('ws rename '),
             });
+
+            // 7b. Activate mouse scroll handler
+            this._mouseInputAdapter.activate();
 
             // 7. Connect external focus changes (click-to-focus)
             this._focusAdapter.connectFocusChanged((windowId: WindowId) => {
@@ -350,6 +374,9 @@ export default class KestrelExtension extends Extension {
 
             this._overviewHandler?.destroy();
             this._overviewHandler = null;
+
+            this._mouseInputAdapter?.destroy();
+            this._mouseInputAdapter = null;
 
             this._navigationHandler = null;
             this._windowLifecycleHandler = null;

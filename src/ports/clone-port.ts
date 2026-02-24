@@ -39,7 +39,7 @@ export interface CloneRenderPort {
 /** Overview mode rendering: enter, exit, focus updates. */
 export interface OverviewRenderPort {
     enterOverview(transform: OverviewTransform, layout: LayoutState, numWorkspaces: number): void;
-    exitOverview(layout: LayoutState): void;
+    exitOverview(layout: LayoutState, animate?: boolean): void;
     updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void;
 }
 
