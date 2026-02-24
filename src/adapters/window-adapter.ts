@@ -117,15 +117,9 @@ export class WindowAdapter implements WindowPort {
             }
             try {
                 // Subtract scrollX so real windows match their visual clone positions
-                let screenX = wl.x - layout.scrollX;
+                const screenX = wl.x - layout.scrollX;
                 // Layout Y is workArea-relative; add workAreaY to convert to stage coords
                 const screenY = wl.y + this._workAreaY;
-
-                // Clamp to monitor bounds — Mutter rejects positions that push
-                // windows beyond the monitor edge on Wayland.
-                if (this._monitorTotalWidth > 0) {
-                    screenX = Math.max(this._monitorMinX, Math.min(screenX, this._monitorMinX + this._monitorTotalWidth - wl.width));
-                }
 
                 // Store target for position-changed and size-changed handlers
                 tracked.targetX = screenX;
@@ -147,6 +141,9 @@ export class WindowAdapter implements WindowPort {
 
                 this._adjusting = true;
                 try {
+                    // Pass user_op=true so Mutter's constraint solver skips
+                    // constrain_fully_onscreen and constrain_to_single_monitor,
+                    // allowing windows to be positioned offscreen for scrolling.
                     if (needsResize) {
                         // When nudging, send a size that differs by 1px first to
                         // force Mutter to emit a fresh Wayland configure event.
@@ -155,13 +152,13 @@ export class WindowAdapter implements WindowPort {
                         // requests, so subsequent retries with the same size are
                         // silently dropped. The 1px nudge guarantees a new configure.
                         if (nudgeUnsettled) {
-                            tracked.metaWindow.move_resize_frame(false,
+                            tracked.metaWindow.move_resize_frame(true,
                                 screenX, screenY, wl.width - 1, wl.height - 1);
                         }
-                        tracked.metaWindow.move_resize_frame(false,
+                        tracked.metaWindow.move_resize_frame(true,
                             screenX, screenY, wl.width, wl.height);
                     } else {
-                        tracked.metaWindow.move_frame(false, screenX, screenY);
+                        tracked.metaWindow.move_frame(true, screenX, screenY);
                     }
 
                     // Compensate if the window is already oversized from a prior
@@ -208,7 +205,7 @@ export class WindowAdapter implements WindowPort {
         this._adjusting = true;
         try {
             // Re-issue resize request so Mutter remembers our target.
-            tracked.metaWindow.move_resize_frame(false,
+            tracked.metaWindow.move_resize_frame(true,
                 tracked.targetX, tracked.targetY,
                 tracked.targetWidth, tracked.targetHeight);
 
@@ -233,7 +230,7 @@ export class WindowAdapter implements WindowPort {
         if (frame.x !== tracked.actualX || frame.y !== tracked.actualY) {
             this._adjusting = true;
             try {
-                tracked.metaWindow.move_frame(false, tracked.actualX, tracked.actualY);
+                tracked.metaWindow.move_frame(true, tracked.actualX, tracked.actualY);
             } finally {
                 this._adjusting = false;
             }
@@ -263,7 +260,7 @@ export class WindowAdapter implements WindowPort {
         tracked.actualX = tracked.targetX - compensateX;
         tracked.actualY = tracked.targetY - compensateY;
 
-        tracked.metaWindow.move_frame(false, tracked.actualX, tracked.actualY);
+        tracked.metaWindow.move_frame(true, tracked.actualX, tracked.actualY);
     }
 
     /**
