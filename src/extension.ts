@@ -460,6 +460,7 @@ export default class KestrelExtension extends Extension {
         try {
             if (!this._worldHolder.world) return '{"error":"no world"}';
             this._setWorld(renameCurrentWorkspace(this._worldHolder.world, name || null));
+            this._cloneAdapter?.syncWorkspaces(this._worldHolder.world!.workspaces);
             return '{"ok":true}';
         } catch (e) {
             return `{"error":"${String(e)}"}`;

@@ -33,6 +33,8 @@ interface WorkspaceContainer {
 
 const ANIMATION_DURATION = 250;
 const OVERVIEW_BG_COLOR = 'rgba(0,0,0,0.7)';
+/** Horizontal space reserved for workspace name label in overview mode */
+const OVERVIEW_LABEL_WIDTH = 56;
 
 export type { OverviewTransform };
 
@@ -148,12 +150,12 @@ export class CloneAdapter implements ClonePort {
         const nameLabel = new St.Label({
             text: '',
             style_class: 'kestrel-ws-label',
-            y_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.CENTER,
             visible: false,
         });
         nameLabel.rotation_angle_z = -90;
-        // Position label at left edge; rotated -90 means text reads bottom-to-top
-        nameLabel.set_position(4, 120);
+        // Positioned to the left of window content; set_position updated on overview enter
+        nameLabel.set_position(4, this._monitorHeight / 2);
         container.add_child(nameLabel);
 
         const wc: WorkspaceContainer = { container, scrollContainer, nameLabel };
@@ -492,7 +494,7 @@ export class CloneAdapter implements ClonePort {
 
         for (const wc of this._workspaceContainers.values()) {
             (wc.scrollContainer as unknown as Easeable).ease({
-                x: 0,
+                x: OVERVIEW_LABEL_WIDTH,
                 duration: ANIMATION_DURATION,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
@@ -557,7 +559,7 @@ export class CloneAdapter implements ClonePort {
         this._focusIndicator.visible = true;
 
         const { scale, offsetX, offsetY } = transform;
-        const x = focusedLayout.x * scale + offsetX - this._focusBorderWidth;
+        const x = (focusedLayout.x + OVERVIEW_LABEL_WIDTH) * scale + offsetX - this._focusBorderWidth;
         const y = (wsIndex * this._monitorHeight + focusedLayout.y) * scale + offsetY - this._focusBorderWidth;
         const width = focusedLayout.width * scale + this._focusBorderWidth * 2;
         const height = focusedLayout.height * scale + this._focusBorderWidth * 2;

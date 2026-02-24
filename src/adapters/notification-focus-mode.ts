@@ -1,6 +1,7 @@
 import type { WindowId } from '../domain/types.js';
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
 import type { QuestionState } from './notification-adapter-types.js';
+import { QuestionCard } from './question-card.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
@@ -22,7 +23,7 @@ const GREEN = '#7dd6a4';
 const RED = '#c95a5a';
 const BLUE = '#5a8ec9';
 
-const CARD_WIDTH = 480;
+const CARD_WIDTH = 600;
 const ANIM_DURATION = 250;
 const SLIDE_OFFSET = 60;
 const CLONE_SCALE = 0.8;
@@ -39,11 +40,13 @@ export interface FocusModeDeps {
     unregisterEntriesChanged(): void;
     // Question support
     getQuestionState(id: string): QuestionState | null;
+    getQuestionCard(id: string): QuestionCard | null;
     questionNavigate(id: string, delta: number): void;
     questionSelectOption(id: string, questionIndex: number, optionIndex: number): void;
     questionSend(id: string): void;
     questionDismiss(id: string): void;
     questionVisit(id: string): void;
+    extensionPath: string;
 }
 
 export class NotificationFocusMode {
@@ -68,6 +71,8 @@ export class NotificationFocusMode {
     private _buttonPressId: number = 0;
     private _sourceDestroyId: number = 0;
     private _currentSourceActor: Meta.WindowActor | null = null;
+    private _focusModeQuestionCard: QuestionCard | null = null;
+    private _autoAdvanceSyncId: number | null = null;
 
     constructor(deps: FocusModeDeps) {
         this._deps = deps;
@@ -208,6 +213,10 @@ export class NotificationFocusMode {
         if (!this._active) return;
         this._active = false;
 
+        // Destroy focus-mode question card if any
+        this._destroyFocusModeQuestionCard();
+        this._cancelAutoAdvanceSync();
+
         this._deps.unregisterEntriesChanged();
 
         // Disconnect input
@@ -289,6 +298,9 @@ export class NotificationFocusMode {
 
         const monitor = this._deps.getMonitor();
         const halfW = Math.floor(monitor.width / 2);
+
+        // Destroy focus-mode question card before switching entries
+        this._destroyFocusModeQuestionCard();
 
         // Remove old card with animation
         if (this._currentCard) {
@@ -523,111 +535,39 @@ export class NotificationFocusMode {
 
         // Action hints
         if (notif.type === 'question') {
-            // Build question-specific focus card content
-            const entryId = notif.id;
-            const qs = this._deps.getQuestionState(entryId);
-            if (qs) {
-                const isSubmitPage = qs.currentPage >= qs.questions.length;
+            // Create a fresh QuestionCard in focus mode — the overlay card stays untouched
+            const overlayCard = this._deps.getQuestionCard(notif.id);
+            if (overlayCard) {
+                this._destroyFocusModeQuestionCard();
 
-                // Nav bar
-                const navRow = new St.BoxLayout({
-                    style: 'spacing: 4px; margin-top: 10px; margin-bottom: 8px;',
-                    x_expand: true,
-                    x_align: Clutter.ActorAlign.CENTER,
-                });
-                const totalPages = qs.questions.length + 1;
-                for (let i = 0; i < totalPages; i++) {
-                    const isCurrent = i === qs.currentPage;
-                    const isAnswered = i < qs.questions.length && (qs.answers.get(i) ?? []).length > 0;
-                    let dotText: string;
-                    let dotColor: string;
-                    if (isCurrent) { dotText = '\u25CF'; dotColor = ACCENT; }
-                    else if (isAnswered) { dotText = '\u2713'; dotColor = GREEN; }
-                    else { dotText = '\u25CB'; dotColor = TEXT_DIM; }
-                    navRow.add_child(new St.Label({
-                        text: dotText,
-                        style: `font-size: 10px; color: ${dotColor}; padding: 2px 3px;`,
-                    }));
-                }
-                card.add_child(navRow);
+                const focusCard = new QuestionCard(notif, {
+                    extensionPath: this._deps.extensionPath,
+                    onRespond: (nid, action) => this._deps.respondToEntry(nid, action),
+                    onVisitSession: (sid) => this._deps.visitSession(sid),
+                }, true);
 
-                if (isSubmitPage) {
-                    // Summary
-                    for (let i = 0; i < qs.questions.length; i++) {
-                        const qDef = qs.questions[i];
-                        const selected = qs.answers.get(i) ?? [];
-                        const answerText = selected.length > 0 ? selected.join(', ') : '(no answer)';
-                        card.add_child(new St.Label({
-                            text: `${qDef.header}: ${answerText}`,
-                            style: `font-size: 11px; color: ${selected.length > 0 ? TEXT_DIM : RED}; margin-left: 4px;`,
-                            x_expand: true,
-                        }));
-                    }
+                // Sync answers/page state from the overlay card
+                focusCard.syncState(overlayCard);
+                this._focusModeQuestionCard = focusCard;
 
-                    const allAnswered = qs.questions.every((_: QuestionDefinition, i: number) => (qs.answers.get(i) ?? []).length > 0);
-                    const buttonRow = new St.BoxLayout({
-                        style: 'spacing: 8px; margin-top: 14px;',
-                        x_expand: true,
-                    });
-                    buttonRow.add_child(this._makeActionButton(
-                        '[1] Send',
-                        allAnswered ? GREEN : TEXT_DIM,
-                        allAnswered ? 'rgba(125,214,164,0.12)' : 'transparent',
-                    ));
-                    buttonRow.add_child(this._makeActionButton('[2] Dismiss', TEXT_DIM, 'transparent'));
-                    buttonRow.add_child(this._makeActionButton('[3] Visit', ACCENT, 'rgba(98,175,133,0.12)'));
-                    card.add_child(buttonRow);
-                } else {
-                    // Question page with numbered options
-                    const qDef = qs.questions[qs.currentPage];
-                    const selected = qs.answers.get(qs.currentPage) ?? [];
-
-                    const qLabel = new St.Label({
-                        text: qDef.question,
-                        style: `font-size: 13px; font-weight: bold; color: ${TEXT}; margin-bottom: 8px;`,
-                        x_expand: true,
-                    });
-                    qLabel.clutter_text.line_wrap = true;
-                    card.add_child(qLabel);
-
-                    for (let i = 0; i < qDef.options.length; i++) {
-                        const opt = qDef.options[i];
-                        const isSelected = selected.includes(opt.label);
-                        card.add_child(this._makeActionButton(
-                            `[${i + 1}] ${opt.label}`,
-                            isSelected ? TEXT : TEXT_DIM,
-                            isSelected ? 'rgba(98,175,133,0.12)' : 'transparent',
-                        ));
-                    }
-                }
-
-                // Hint
-                const hintText = isSubmitPage
-                    ? '1-3 act    \u2190 \u2192 page    Esc close'
-                    : '1-4 select    \u2190 \u2192 page    Esc close';
-                card.add_child(new St.Label({
-                    text: hintText,
-                    style: `font-family: monospace; font-size: 10px; color: ${TEXT_DIM}; margin-top: 10px; text-align: center;`,
-                    x_expand: true,
-                    x_align: Clutter.ActorAlign.CENTER,
-                }));
+                return focusCard.actor as St.BoxLayout;
             }
         } else if (notif.type === 'permission') {
             const buttonRow = new St.BoxLayout({
                 style: 'spacing: 8px; margin-top: 14px;',
                 x_expand: true,
             });
-            buttonRow.add_child(this._makeActionButton('[1] Allow', GREEN, 'rgba(125,214,164,0.12)'));
-            buttonRow.add_child(this._makeActionButton('[2] Always', BLUE, 'rgba(90,142,201,0.12)'));
-            buttonRow.add_child(this._makeActionButton('[3] Deny', RED, 'rgba(201,90,90,0.12)'));
+            buttonRow.add_child(this._makeActionButton('(1) Allow', GREEN, 'rgba(125,214,164,0.12)'));
+            buttonRow.add_child(this._makeActionButton('(2) Always', BLUE, 'rgba(90,142,201,0.12)'));
+            buttonRow.add_child(this._makeActionButton('(3) Deny', RED, 'rgba(201,90,90,0.12)'));
             card.add_child(buttonRow);
         } else {
             const buttonRow = new St.BoxLayout({
                 style: 'spacing: 8px; margin-top: 14px;',
                 x_expand: true,
             });
-            buttonRow.add_child(this._makeActionButton('[1] Visit', ACCENT, 'rgba(98,175,133,0.12)'));
-            buttonRow.add_child(this._makeActionButton('[2] Dismiss', TEXT_DIM, 'transparent'));
+            buttonRow.add_child(this._makeActionButton('(1) Visit', ACCENT, 'rgba(98,175,133,0.12)'));
+            buttonRow.add_child(this._makeActionButton('(2) Dismiss', TEXT_DIM, 'transparent'));
             card.add_child(buttonRow);
         }
 
@@ -721,6 +661,11 @@ export class NotificationFocusMode {
                 } else {
                     this._deps.questionSelectOption(entryId, qs.currentPage, 0);
                     this._refreshQuestionCard(entryId);
+                    // For single-select, schedule delayed sync to pick up auto-advance
+                    const qDef = qs.questions[qs.currentPage];
+                    if (qDef && !qDef.multiSelect) {
+                        this._scheduleAutoAdvanceSync(entryId);
+                    }
                 }
                 return Clutter.EVENT_STOP;
             case Clutter.KEY_2:
@@ -729,9 +674,9 @@ export class NotificationFocusMode {
                     // Dismiss
                     this._deps.questionDismiss(entryId);
                     this._removeCurrentEntry();
-                } else if (qs.questions[qs.currentPage]?.options.length > 1) {
-                    this._deps.questionSelectOption(entryId, qs.currentPage, 1);
-                    this._refreshQuestionCard(entryId);
+                } else {
+                    // optionIndex 1: second regular option (if exists)
+                    this._selectQuestionOptionByNumber(entryId, qs, 1);
                 }
                 return Clutter.EVENT_STOP;
             case Clutter.KEY_3:
@@ -740,16 +685,20 @@ export class NotificationFocusMode {
                     // Visit
                     this._deps.questionVisit(entryId);
                     this._removeCurrentEntry();
-                } else if (qs.questions[qs.currentPage]?.options.length > 2) {
-                    this._deps.questionSelectOption(entryId, qs.currentPage, 2);
-                    this._refreshQuestionCard(entryId);
+                } else {
+                    this._selectQuestionOptionByNumber(entryId, qs, 2);
                 }
                 return Clutter.EVENT_STOP;
             case Clutter.KEY_4:
             case Clutter.KEY_KP_4:
-                if (!isSubmitPage && qs.questions[qs.currentPage]?.options.length > 3) {
-                    this._deps.questionSelectOption(entryId, qs.currentPage, 3);
-                    this._refreshQuestionCard(entryId);
+                if (!isSubmitPage) {
+                    this._selectQuestionOptionByNumber(entryId, qs, 3);
+                }
+                return Clutter.EVENT_STOP;
+            case Clutter.KEY_5:
+            case Clutter.KEY_KP_5:
+                if (!isSubmitPage) {
+                    this._selectQuestionOptionByNumber(entryId, qs, 4);
                 }
                 return Clutter.EVENT_STOP;
             case Clutter.KEY_Escape:
@@ -760,9 +709,61 @@ export class NotificationFocusMode {
         }
     }
 
+    private _selectQuestionOptionByNumber(entryId: string, qs: QuestionState, optionIndex: number): void {
+        const qDef = qs.questions[qs.currentPage];
+        if (!qDef) return;
+        // optionIndex 0..options.length-1 = regular options, options.length = "Other"
+        const maxIndex = qDef.options.length; // "Other" is at this index
+        if (optionIndex <= maxIndex) {
+            this._deps.questionSelectOption(entryId, qs.currentPage, optionIndex);
+            this._refreshQuestionCard(entryId);
+            // For single-select (not "Other"), the overlay card schedules auto-advance
+            // after 300ms. Schedule a delayed sync so the focus card picks up the page change.
+            if (!qDef.multiSelect && optionIndex < qDef.options.length) {
+                this._scheduleAutoAdvanceSync(entryId);
+            }
+        }
+    }
+
+    /** Schedule a delayed refresh so the focus card picks up the overlay card's auto-advance. */
+    private _scheduleAutoAdvanceSync(entryId: string): void {
+        if (this._autoAdvanceSyncId !== null) {
+            GLib.source_remove(this._autoAdvanceSyncId);
+        }
+        // 350ms — slightly after the overlay card's 300ms auto-advance delay
+        this._autoAdvanceSyncId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 350, () => {
+            this._autoAdvanceSyncId = null;
+            try {
+                if (this._active) {
+                    this._refreshQuestionCard(entryId);
+                }
+            } catch (e) {
+                console.error('[Kestrel] Error in auto-advance sync:', e);
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    private _cancelAutoAdvanceSync(): void {
+        if (this._autoAdvanceSyncId !== null) {
+            GLib.source_remove(this._autoAdvanceSyncId);
+            this._autoAdvanceSyncId = null;
+        }
+    }
+
+    private _destroyFocusModeQuestionCard(): void {
+        if (!this._focusModeQuestionCard) return;
+        this._focusModeQuestionCard.destroy();
+        // Don't destroy actor here — _showEntry's old card animation handles it
+        this._focusModeQuestionCard = null;
+    }
+
     private _removeCurrentEntry(): void {
         const entryId = this._entryIds[this._currentIndex];
         if (!entryId) return;
+
+        this._destroyFocusModeQuestionCard();
+
         const idx = this._entryIds.indexOf(entryId);
         if (idx !== -1) this._entryIds.splice(idx, 1);
         if (this._entryIds.length === 0) {
@@ -774,29 +775,20 @@ export class NotificationFocusMode {
     }
 
     private _refreshQuestionCard(entryId: string): void {
-        // Rebuild the focus card in-place for the current question page
-        const entries = this._deps.getPendingEntries();
-        const entryData = entries.find(e => e.id === entryId);
-        if (!entryData || !this._cardContainer) return;
-
-        // Remove old card
-        if (this._currentCard) {
-            try { this._currentCard.destroy(); } catch { /* gone */ }
+        // Sync state from the overlay card (which was just mutated) to the focus card
+        const overlayCard = this._deps.getQuestionCard(entryId);
+        if (this._focusModeQuestionCard && overlayCard) {
+            this._focusModeQuestionCard.syncState(overlayCard);
         }
 
+        // Reposition since height may have changed
+        if (!this._currentCard || !this._cardContainer) return;
         const monitor = this._deps.getMonitor();
         const halfW = Math.floor(monitor.width / 2);
-
-        const card = this._buildFocusCard(entryData.notification);
-        this._currentCard = card;
-        this._cardContainer.add_child(card);
-
         const cardX = Math.round((halfW - CARD_WIDTH) / 2);
-        const [, cardNatH] = card.get_preferred_height(CARD_WIDTH);
+        const [, cardNatH] = this._currentCard.get_preferred_height(CARD_WIDTH);
         const cardY = Math.round((monitor.height - cardNatH) / 2);
-        card.set_position(cardX, cardY);
-        card.opacity = 255;
-
+        this._currentCard.set_position(cardX, cardY);
         if (this._counterLabel) {
             this._counterLabel.set_position(cardX, cardY + cardNatH + 16);
             this._counterLabel.width = CARD_WIDTH;
@@ -920,6 +912,7 @@ export class NotificationFocusMode {
         if (this._active) {
             // Synchronous cleanup for extension disable
             this._active = false;
+            this._cancelAutoAdvanceSync();
             this._deps.unregisterEntriesChanged();
 
             if (this._keyPressId) {

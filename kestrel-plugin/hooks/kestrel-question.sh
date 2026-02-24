@@ -4,6 +4,9 @@
 # collects answers, and returns them as updatedInput to Claude Code.
 #
 # Uses PreToolUse (not PermissionRequest) so it blocks even in bypassPermissions mode.
+#
+# The extension returns answers already keyed by question text (not index),
+# so this script passes them through directly.
 
 set -euo pipefail
 
@@ -53,6 +56,7 @@ fi
 
 # Poll for user decision (up to 10 minutes)
 RESPONSE=""
+ANSWERS_RAW=""
 for i in $(seq 1 1200); do
     POLL=$(gdbus call --session --dest org.gnome.Shell \
         --object-path /io/kestrel/Extension \
@@ -79,32 +83,13 @@ log "response: $RESPONSE"
 log "answers_raw: ${ANSWERS_RAW:-none}"
 
 if [ "$RESPONSE" = "allow" ] && [ -n "${ANSWERS_RAW:-}" ]; then
-    # We have answers — map question indices back to question text for updatedInput
-    # The answers come as {"0":["Red"],"1":["Yes","No"]}
-    # We need to map them to {"question text": "Red", "other question": "Yes;No"}
-
-    # Extract questions array from original input
-    QUESTIONS=$(echo "$INPUT" | jq -c '.tool_input.questions // []')
-
-    # Build the answers object keyed by question text
-    MAPPED_ANSWERS=$(echo "$ANSWERS_RAW" | jq -c --argjson questions "$QUESTIONS" '
-        to_entries | reduce .[] as $entry (
-            {};
-            . + {
-                ($questions[$entry.key | tonumber].question // ("question_" + $entry.key)):
-                    (if ($entry.value | length) == 1
-                     then $entry.value[0]
-                     else ($entry.value | join(";"))
-                     end)
-            }
-        )
-    ')
-
-    log "mapped_answers: $MAPPED_ANSWERS"
+    # Answers are already keyed by question text from the extension
+    # e.g. {"How should errors be handled?": "With retry", "Which DB?": "PostgreSQL"}
+    log "answers: $ANSWERS_RAW"
 
     # Return allow with updatedInput containing the answers
     # PreToolUse format: permissionDecision + updatedInput
-    jq -n --argjson answers "$MAPPED_ANSWERS" '{
+    jq -n --argjson answers "$ANSWERS_RAW" '{
         hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: "allow",

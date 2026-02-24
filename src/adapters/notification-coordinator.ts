@@ -48,6 +48,7 @@ export class NotificationCoordinator {
             onVisitSession: (sessionId) => {
                 this._deps.visitSession(sessionId);
             },
+            extensionPath: this._deps.extensionPath,
         });
 
         // Export DBus service for hook scripts
@@ -84,11 +85,13 @@ export class NotificationCoordinator {
             },
             // Question support
             getQuestionState: (id) => this._notificationOverlay?.getQuestionState(id) ?? null,
+            getQuestionCard: (id) => this._notificationOverlay?.getQuestionCard(id) ?? null,
             questionNavigate: (id, delta) => this._notificationOverlay?.questionNavigate(id, delta),
             questionSelectOption: (id, qi, oi) => this._notificationOverlay?.questionSelectOption(id, qi, oi),
             questionSend: (id) => this._notificationOverlay?.questionSend(id),
             questionDismiss: (id) => this._notificationOverlay?.questionDismiss(id),
             questionVisit: (id) => this._notificationOverlay?.questionVisit(id),
+            extensionPath: this._deps.extensionPath,
         });
     }
 

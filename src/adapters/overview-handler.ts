@@ -141,7 +141,8 @@ export class OverviewHandler {
             const { scale, offsetX, offsetY } = this._overviewTransform;
             const monitor = world.monitor;
 
-            const reverseX = (x - offsetX) / scale;
+            const OVERVIEW_LABEL_WIDTH = 56;
+            const reverseX = (x - offsetX) / scale - OVERVIEW_LABEL_WIDTH;
             const reverseY = (y - offsetY) / scale;
 
             const wsIndex = Math.floor(reverseY / monitor.totalHeight);
@@ -199,11 +200,13 @@ export class OverviewHandler {
             if (width > maxWsWidth) maxWsWidth = width;
         }
 
-        const scaleX = monitor.totalWidth / maxWsWidth;
+        const OVERVIEW_LABEL_WIDTH = 56;
+        const totalWidth = maxWsWidth + OVERVIEW_LABEL_WIDTH;
+        const scaleX = monitor.totalWidth / totalWidth;
         const scaleY = monitor.totalHeight / stripHeight;
         const scale = Math.min(scaleX, scaleY, 1);
 
-        const scaledWidth = maxWsWidth * scale;
+        const scaledWidth = totalWidth * scale;
         const scaledHeight = stripHeight * scale;
         const offsetX = Math.round((monitor.totalWidth - scaledWidth) / 2);
         const offsetY = Math.round((monitor.totalHeight - scaledHeight) / 2);
