@@ -653,27 +653,30 @@ export class CloneAdapter implements ClonePort {
             return;
         }
 
-        // Build set of visible real indices
+        // Build set of visible real indices for hiding non-matches
         const visibleSet = new Set(visibleIndices);
 
-        // Position visible workspaces at collapsed Y positions
-        let visualPos = 0;
+        // Hide non-matching workspaces
         for (let i = 0; i < this._workspaceOrder.length; i++) {
-            const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+            if (!visibleSet.has(i)) {
+                const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+                if (wc) wc.container.visible = false;
+            }
+        }
+
+        // Position visible workspaces in score-sorted order (visibleIndices)
+        for (let visualPos = 0; visualPos < visibleIndices.length; visualPos++) {
+            const wsIndex = visibleIndices[visualPos]!;
+            const wc = this._workspaceContainers.get(this._workspaceOrder[wsIndex]!);
             if (!wc) continue;
 
-            if (visibleSet.has(i)) {
-                wc.container.visible = true;
-                this._filteredPositionMap.set(i, visualPos);
-                (wc.container as unknown as Easeable).ease({
-                    y: visualPos * this._monitorHeight,
-                    duration: ANIMATION_DURATION,
-                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                });
-                visualPos++;
-            } else {
-                wc.container.visible = false;
-            }
+            wc.container.visible = true;
+            this._filteredPositionMap.set(wsIndex, visualPos);
+            (wc.container as unknown as Easeable).ease({
+                y: visualPos * this._monitorHeight,
+                duration: ANIMATION_DURATION,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
         }
 
         // Animate strip to new transform
