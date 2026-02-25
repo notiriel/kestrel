@@ -15,8 +15,11 @@ build:
 test:
 	npx vitest run
 
+lint:
+	npx knip
+
 # ── Install everything ──────────────────────────────────────────────
-install: build
+install: build test lint
 	# GNOME extension
 	rm -rf $(INSTALL_DIR)
 	mkdir -p $(INSTALL_DIR)/schemas
@@ -140,4 +143,4 @@ dev: install enable
 	@echo "Restart GNOME Shell to load changes"
 	@echo "  Wayland: log out and back in"
 
-.PHONY: build test install enable disable status dev
+.PHONY: build test lint install enable disable status dev

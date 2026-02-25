@@ -56,15 +56,6 @@ export function swapNeighbor(ws: Workspace, windowId: WindowId, delta: -1 | 1): 
     return { ...ws, windows };
 }
 
-/** Swap a window with the one after it; return unchanged ws if at end. */
-export function swapWithNext(ws: Workspace, windowId: WindowId): Workspace {
-    return swapNeighbor(ws, windowId, 1);
-}
-
-/** Swap a window with the one before it; return unchanged ws if at start. */
-export function swapWithPrev(ws: Workspace, windowId: WindowId): Workspace {
-    return swapNeighbor(ws, windowId, -1);
-}
 
 /** Insert a window at the given index. */
 export function insertWindowAt(ws: Workspace, window: TiledWindow, index: number): Workspace {

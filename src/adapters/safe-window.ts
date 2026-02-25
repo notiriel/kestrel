@@ -40,7 +40,3 @@ export function safeWindow(metaWindow: Meta.Window): Meta.Window {
     });
 }
 
-/** Unwrap a safe-proxied window to the raw Meta.Window for identity comparisons. */
-export function rawWindow(metaWindow: Meta.Window): Meta.Window {
-    return (metaWindow as any)[RAW] ?? metaWindow;
-}

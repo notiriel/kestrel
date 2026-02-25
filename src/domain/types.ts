@@ -45,8 +45,6 @@ export interface WorldUpdate {
     readonly layout: LayoutState;
 }
 
-/** Delta for horizontal window neighbor lookup: -1 (left/prev) or +1 (right/next) */
-export type HorizontalDelta = -1 | 1;
 
 // Forward declaration to avoid circular import — imported as type only
 import type { World } from './world.js';

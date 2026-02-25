@@ -6,9 +6,7 @@ import GLib from 'gi://GLib';
 
 const FIRST_FRAME_TIMEOUT_MS = 2000;
 
-export type { WindowEventCallbacks };
 
-export { shouldTile };
 
 // WM classes that should never be tiled (e.g. DING desktop icons)
 const WM_CLASS_BLOCKLIST = ['gjs'];

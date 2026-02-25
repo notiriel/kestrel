@@ -38,7 +38,7 @@ function nextWorkspaceId(): WorkspaceId {
 }
 
 /** Reset workspace ID counter. Called by createWorld() to ensure fresh IDs each enable cycle. */
-export function resetWorkspaceCounter(): void {
+function resetWorkspaceCounter(): void {
     workspaceCounter = 0;
 }
 
@@ -69,7 +69,7 @@ export function updateMonitor(world: World, monitor: MonitorInfo): WorldUpdate {
 }
 
 /** Find a window across all workspaces. Returns workspace index and window, or null. */
-export function findWindowInWorld(world: World, windowId: WindowId): { wsIndex: number; window: TiledWindow } | null {
+function findWindowInWorld(world: World, windowId: WindowId): { wsIndex: number; window: TiledWindow } | null {
     for (let i = 0; i < world.workspaces.length; i++) {
         const win = world.workspaces[i]!.windows.find(w => w.id === windowId);
         if (win) return { wsIndex: i, window: win };
