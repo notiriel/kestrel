@@ -14,6 +14,9 @@ export interface OverviewInputCallbacks {
     onDragStart?: (x: number, y: number) => void;
     onDragMove?: (x: number, y: number) => void;
     onDragEnd?: (x: number, y: number) => void;
+    onTextInput?: (text: string) => void;
+    onBackspace?: () => void;
+    onRename?: () => void;
 }
 
 const DRAG_THRESHOLD = 16;
@@ -36,6 +39,13 @@ export class OverviewInputAdapter {
     private _dragging: boolean = false;
     private _startX: number = 0;
     private _startY: number = 0;
+
+    /** When true, only Escape is handled; all other keys propagate (for St.Entry rename). */
+    private _keyPassthrough: boolean = false;
+
+    setKeyPassthrough(active: boolean): void {
+        this._keyPassthrough = active;
+    }
 
     activate(callbacks: OverviewInputCallbacks): void {
         if (this._grab) return;
@@ -227,6 +237,16 @@ export class OverviewInputAdapter {
         callbacks: OverviewInputCallbacks,
     ): typeof Clutter.EVENT_STOP | typeof Clutter.EVENT_PROPAGATE {
         const symbol = event.get_key_symbol();
+        const state = event.get_state();
+
+        // In passthrough mode (rename active), only intercept Escape
+        if (this._keyPassthrough) {
+            if (symbol === Clutter.KEY_Escape) {
+                callbacks.onCancel();
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        }
 
         switch (symbol) {
             case Clutter.KEY_Left:
@@ -255,8 +275,32 @@ export class OverviewInputAdapter {
                 }
                 callbacks.onCancel();
                 return Clutter.EVENT_STOP;
+            case Clutter.KEY_BackSpace:
+                callbacks.onBackspace?.();
+                return Clutter.EVENT_STOP;
+            case Clutter.KEY_r:
+            case Clutter.KEY_R:
+                if (state & Clutter.ModifierType.MOD4_MASK) {
+                    callbacks.onRename?.();
+                    return Clutter.EVENT_STOP;
+                }
+                break;
             default:
-                return Clutter.EVENT_PROPAGATE;
+                break;
         }
+
+        // Check for printable character input (no Ctrl/Alt/Super modifiers)
+        const blockedMods = Clutter.ModifierType.CONTROL_MASK |
+            Clutter.ModifierType.MOD1_MASK |
+            Clutter.ModifierType.MOD4_MASK;
+        if (!(state & blockedMods)) {
+            const ch = event.get_key_unicode();
+            if (ch && ch.length > 0 && ch !== '\0' && ch.charCodeAt(0) >= 32) {
+                callbacks.onTextInput?.(ch);
+                return Clutter.EVENT_STOP;
+            }
+        }
+
+        return Clutter.EVENT_PROPAGATE;
     }
 }

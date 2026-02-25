@@ -82,17 +82,7 @@
       <summary>Close window</summary>
       <description>Close the currently focused window</description>
     </key>
-    <key name="launch-workspace-switcher" type="as">
-      <default>['&lt;Super&gt;less']</default>
-      <summary>Launch workspace switcher</summary>
-      <description>Open ULauncher with workspace switcher query</description>
-    </key>
-    <key name="launch-workspace-rename" type="as">
-      <default>['&lt;Super&gt;&lt;Shift&gt;less']</default>
-      <summary>Launch workspace rename</summary>
-      <description>Open ULauncher with workspace rename query</description>
-    </key>
-    <key name="focus-border-width" type="i">
+<key name="focus-border-width" type="i">
       <default>3</default>
       <summary>Focus border width</summary>
       <description>Width of the focus indicator border in pixels</description>

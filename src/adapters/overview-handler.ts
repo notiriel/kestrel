@@ -1,11 +1,11 @@
 import type { WindowId, LayoutState, WorldUpdate } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { setFocus } from '../domain/world.js';
+import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace } from '../domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
 import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
 import { computeLayoutForWorkspace } from '../domain/layout.js';
-import type { OverviewRenderPort, CloneRenderPort, OverviewTransform } from '../ports/clone-port.js';
+import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { OverviewInputAdapter } from './overview-input-adapter.js';
 
@@ -13,7 +13,7 @@ export interface OverviewDeps {
     getWorld(): World | null;
     setWorld(world: World): void;
     focusWindow(windowId: WindowId | null): void;
-    getCloneAdapter(): (OverviewRenderPort & CloneRenderPort) | null;
+    getCloneAdapter(): (OverviewRenderPort & CloneRenderPort & Partial<OverviewFilterPort> & Pick<CloneLifecyclePort, 'syncWorkspaces'>) | null;
     getWindowAdapter(): WindowPort | null;
     createOverviewInputAdapter(): OverviewInputAdapter;
     notifyOverviewEnter?(transform: OverviewTransform): void;
@@ -31,6 +31,11 @@ export class OverviewHandler {
     // Drag state
     private _dragSubject: WindowId | null = null;
     private _preDragWorld: World | null = null;
+
+    // Filter state
+    private _filterText: string = '';
+    private _filteredIndices: number[] = []; // workspace indices sorted by score
+    private _renameActive: boolean = false;
 
     constructor(deps: OverviewDeps) {
         this._deps = deps;
@@ -77,6 +82,11 @@ export class OverviewHandler {
         this._deps.notifyOverviewEnter?.(this._overviewTransform);
         this._deps.onOverviewEnter?.();
 
+        // Clear filter/rename state
+        this._filterText = '';
+        this._filteredIndices = [];
+        this._renameActive = false;
+
         this._overviewInputAdapter = this._deps.createOverviewInputAdapter();
         this._overviewInputAdapter.activate({
             onNavigate: (dir) => this._handleNavigate(dir),
@@ -86,6 +96,9 @@ export class OverviewHandler {
             onDragStart: (x, y) => this._handleDragStart(x, y),
             onDragMove: (x, y) => this._handleDragMove(x, y),
             onDragEnd: (x, y) => this._handleDragEnd(x, y),
+            onTextInput: (text) => this._handleTextInput(text),
+            onBackspace: () => this._handleBackspace(),
+            onRename: () => this._handleRename(),
         });
 
     }
@@ -94,6 +107,38 @@ export class OverviewHandler {
         try {
             const world = this._deps.getWorld();
             if (!world || !this._overviewTransform) return;
+
+            if (this._filteredIndices.length > 0 && (direction === 'up' || direction === 'down')) {
+                // Constrain vertical navigation to filtered workspaces
+                const currentWsIndex = world.viewport.workspaceIndex;
+                const currentFilteredPos = this._filteredIndices.indexOf(currentWsIndex);
+                let targetFilteredPos: number;
+
+                if (direction === 'up') {
+                    targetFilteredPos = currentFilteredPos <= 0
+                        ? this._filteredIndices.length - 1
+                        : currentFilteredPos - 1;
+                } else {
+                    targetFilteredPos = currentFilteredPos >= this._filteredIndices.length - 1
+                        ? 0
+                        : currentFilteredPos + 1;
+                }
+
+                const targetWsIndex = this._filteredIndices[targetFilteredPos]!;
+                if (targetWsIndex !== currentWsIndex) {
+                    const update = switchToWorkspace(world, targetWsIndex);
+                    const overviewWorld = { ...update.world, overviewActive: true };
+                    this._deps.setWorld(overviewWorld);
+
+                    const layout = computeLayoutForWorkspace(overviewWorld, targetWsIndex);
+                    this._deps.getCloneAdapter()?.updateOverviewFocus(
+                        layout,
+                        targetWsIndex,
+                        this._overviewTransform,
+                    );
+                }
+                return;
+            }
 
             const navFns: Record<string, (w: World) => WorldUpdate> = {
                 left: focusLeft, right: focusRight, up: focusUp, down: focusDown,
@@ -120,6 +165,9 @@ export class OverviewHandler {
             this._dragSubject = null;
             this._preDragWorld = null;
 
+            // Clear filter state before exit
+            this._clearFilter();
+
             const update = exitOverview(world);
             this._deps.setWorld(update.world);
 
@@ -133,6 +181,22 @@ export class OverviewHandler {
         try {
             const world = this._deps.getWorld();
             if (!world) return;
+
+            // If rename is active, cancel rename first
+            if (this._renameActive) {
+                this._renameActive = false;
+                this._overviewInputAdapter?.setKeyPassthrough(false);
+                this._deps.getCloneAdapter()?.cancelRename?.();
+                return;
+            }
+
+            // If filter is non-empty, clear filter first
+            if (this._filterText.length > 0) {
+                this._filterText = '';
+                this._filteredIndices = [];
+                this._applyFilter();
+                return;
+            }
 
             // If dragging, revert to pre-drag world and stay in overview
             if (this._dragSubject !== null && this._preDragWorld) {
@@ -280,12 +344,21 @@ export class OverviewHandler {
         const reverseX = (x - offsetX) / scale - OVERVIEW_LABEL_WIDTH;
         const reverseY = (y - offsetY) / scale;
 
-        const wsIndex = Math.floor(reverseY / monitor.totalHeight);
-        const nonEmptyCount = world.workspaces.filter(ws => ws.windows.length > 0).length;
-        if (wsIndex < 0 || wsIndex >= nonEmptyCount) return null;
+        const visualSlot = Math.floor(reverseY / monitor.totalHeight);
 
-        const localY = reverseY - wsIndex * monitor.totalHeight;
-        const wsLayout = computeLayoutForWorkspace(world, wsIndex);
+        // Map visual position back to real workspace index
+        let realWsIndex: number;
+        if (this._filteredIndices.length > 0) {
+            if (visualSlot < 0 || visualSlot >= this._filteredIndices.length) return null;
+            realWsIndex = this._filteredIndices[visualSlot]!;
+        } else {
+            const nonEmptyCount = world.workspaces.filter(ws => ws.windows.length > 0).length;
+            if (visualSlot < 0 || visualSlot >= nonEmptyCount) return null;
+            realWsIndex = visualSlot;
+        }
+
+        const localY = reverseY - visualSlot * monitor.totalHeight;
+        const wsLayout = computeLayoutForWorkspace(world, realWsIndex);
 
         for (const win of wsLayout.windows) {
             if (reverseX >= win.x && reverseX <= win.x + win.width &&
@@ -306,9 +379,143 @@ export class OverviewHandler {
         );
     }
 
+    private _handleTextInput(text: string): void {
+        try {
+            if (this._renameActive) return; // Rename entry handles its own input
+            this._filterText += text;
+            this._applyFilter();
+        } catch (e) {
+            console.error('[Kestrel] Error handling text input:', e);
+        }
+    }
+
+    private _handleBackspace(): void {
+        try {
+            if (this._renameActive) return;
+            if (this._filterText.length === 0) return;
+            this._filterText = this._filterText.slice(0, -1);
+            this._applyFilter();
+        } catch (e) {
+            console.error('[Kestrel] Error handling backspace:', e);
+        }
+    }
+
+    private _applyFilter(): void {
+        const world = this._deps.getWorld();
+        if (!world || !this._overviewTransform) return;
+
+        const cloneAdapter = this._deps.getCloneAdapter();
+
+        if (this._filterText.length === 0) {
+            // Clear filter — restore all workspaces
+            this._filteredIndices = [];
+            const numWorkspaces = world.workspaces.filter(ws => ws.windows.length > 0).length || 1;
+            const transform = this._computeTransform(world, numWorkspaces);
+            this._overviewTransform = transform;
+
+            cloneAdapter?.applyOverviewFilter?.(
+                null,
+                transform,
+                world.viewport.workspaceIndex,
+            );
+            cloneAdapter?.updateFilterIndicator?.('');
+
+            // Re-render overview
+            const layout = computeLayoutForWorkspace(world, world.viewport.workspaceIndex);
+            cloneAdapter?.updateOverviewFocus(layout, world.viewport.workspaceIndex, transform);
+            return;
+        }
+
+        const matches = filterWorkspaces(world, this._filterText);
+        this._filteredIndices = matches.map(m => m.wsIndex);
+
+        cloneAdapter?.updateFilterIndicator?.(this._filterText);
+
+        if (this._filteredIndices.length === 0) {
+            // Zero matches — hide all, indicator stays
+            cloneAdapter?.applyOverviewFilter?.(
+                [],
+                this._overviewTransform,
+                world.viewport.workspaceIndex,
+            );
+            return;
+        }
+
+        // Recompute transform for filtered count
+        const transform = this._computeTransform(world, this._filteredIndices.length);
+        this._overviewTransform = transform;
+
+        // If current workspace is filtered out, jump to first match
+        if (!this._filteredIndices.includes(world.viewport.workspaceIndex)) {
+            const targetWsIndex = this._filteredIndices[0]!;
+            const update = switchToWorkspace(world, targetWsIndex);
+            const overviewWorld = { ...update.world, overviewActive: true };
+            this._deps.setWorld(overviewWorld);
+        }
+
+        const currentWorld = this._deps.getWorld()!;
+        cloneAdapter?.applyOverviewFilter?.(
+            this._filteredIndices,
+            transform,
+            currentWorld.viewport.workspaceIndex,
+        );
+
+        const layout = computeLayoutForWorkspace(currentWorld, currentWorld.viewport.workspaceIndex);
+        cloneAdapter?.updateOverviewFocus(layout, currentWorld.viewport.workspaceIndex, transform);
+    }
+
+    private _handleRename(): void {
+        try {
+            const world = this._deps.getWorld();
+            if (!world || !this._overviewTransform) return;
+            if (this._renameActive) return;
+
+            this._renameActive = true;
+            this._overviewInputAdapter?.setKeyPassthrough(true);
+            const wsIndex = world.viewport.workspaceIndex;
+            const currentName = world.workspaces[wsIndex]?.name ?? '';
+
+            this._deps.getCloneAdapter()?.startRename?.(
+                wsIndex,
+                currentName,
+                this._overviewTransform,
+                (newName: string | null) => {
+                    this._renameActive = false;
+                    this._overviewInputAdapter?.setKeyPassthrough(false);
+                    if (newName !== null) {
+                        const w = this._deps.getWorld();
+                        if (w) {
+                            const renamed = renameCurrentWorkspace(w, newName || null);
+                            this._deps.setWorld(renamed);
+                            this._deps.getCloneAdapter()?.syncWorkspaces(renamed.workspaces);
+                        }
+                    }
+                },
+            );
+        } catch (e) {
+            console.error('[Kestrel] Error handling rename:', e);
+        }
+    }
+
+    private _clearFilter(): void {
+        if (this._filterText.length > 0 || this._filteredIndices.length > 0) {
+            this._filterText = '';
+            this._filteredIndices = [];
+            this._deps.getCloneAdapter()?.updateFilterIndicator?.('');
+        }
+        if (this._renameActive) {
+            this._renameActive = false;
+            this._overviewInputAdapter?.setKeyPassthrough(false);
+            this._deps.getCloneAdapter()?.cancelRename?.();
+        }
+    }
+
     private _exitVisual(layout: LayoutState, animate: boolean = true): void {
         this._overviewInputAdapter?.deactivate();
         this._overviewInputAdapter = null;
+
+        // Clear filter/rename visuals
+        this._clearFilter();
 
         this._deps.getCloneAdapter()?.exitOverview(layout, animate);
         this._deps.getCloneAdapter()?.applyLayout(layout, animate);
@@ -352,11 +559,15 @@ export class OverviewHandler {
     }
 
     destroy(): void {
+        this._clearFilter();
         this._overviewInputAdapter?.destroy();
         this._overviewInputAdapter = null;
         this._preOverviewState = null;
         this._overviewTransform = null;
         this._dragSubject = null;
         this._preDragWorld = null;
+        this._filterText = '';
+        this._filteredIndices = [];
+        this._renameActive = false;
     }
 }

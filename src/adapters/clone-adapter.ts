@@ -53,6 +53,12 @@ export class CloneAdapter implements ClonePort {
     private _lastLayout: LayoutState | null = null;
     private _overviewActive: boolean = false;
     private _overviewBg: St.Widget | null = null;
+    private _filterIndicator: St.BoxLayout | null = null;
+    private _filteredPositionMap: Map<number, number> = new Map(); // real wsIndex → visual position
+    private _renameEntry: St.Entry | null = null;
+    private _renameKeyPressId: number = 0;
+    private _renameCallback: ((name: string | null) => void) | null = null;
+    private _renameWsIndex: number = -1;
     private _focusBorderWidth: number = 3;
     private _focusBorderColor: string = 'rgba(125,214,164,0.8)';
     private _focusBorderRadius: number = 8;
@@ -511,6 +517,18 @@ export class CloneAdapter implements ClonePort {
         if (!this._layer || !this._workspaceStrip) return;
         this._overviewActive = false;
 
+        // Clean up filter/rename state
+        this._filteredPositionMap.clear();
+        if (this._filterIndicator) {
+            this._filterIndicator.visible = false;
+        }
+        this.cancelRename();
+
+        // Restore all container visibility
+        for (const wc of this._workspaceContainers.values()) {
+            wc.container.visible = true;
+        }
+
         if (this._overviewBg) {
             this._overviewBg.visible = false;
         }
@@ -582,8 +600,12 @@ export class CloneAdapter implements ClonePort {
         this._focusIndicator.visible = true;
 
         const { scale, offsetX, offsetY } = transform;
+        // Use filtered visual position if filter is active
+        const visualPos = this._filteredPositionMap.size > 0
+            ? (this._filteredPositionMap.get(wsIndex) ?? wsIndex)
+            : wsIndex;
         const x = (focusedLayout.x + OVERVIEW_LABEL_WIDTH) * scale + offsetX - this._focusBorderWidth;
-        const y = (wsIndex * this._monitorHeight + focusedLayout.y) * scale + offsetY - this._focusBorderWidth;
+        const y = (visualPos * this._monitorHeight + focusedLayout.y) * scale + offsetY - this._focusBorderWidth;
         const width = focusedLayout.width * scale + this._focusBorderWidth * 2;
         const height = focusedLayout.height * scale + this._focusBorderWidth * 2;
 
@@ -596,6 +618,213 @@ export class CloneAdapter implements ClonePort {
 
     getLayer(): Clutter.Actor | null {
         return this._layer;
+    }
+
+    applyOverviewFilter(
+        visibleIndices: number[] | null,
+        transform: OverviewTransform,
+        currentWsIndex: number,
+    ): void {
+        if (!this._workspaceStrip || !this._layer) return;
+
+        this._filteredPositionMap.clear();
+
+        if (visibleIndices === null) {
+            // Clear filter — show all non-empty workspaces at their original positions
+            for (let i = 0; i < this._workspaceOrder.length; i++) {
+                const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+                if (!wc) continue;
+                wc.container.visible = true;
+                (wc.container as unknown as Easeable).ease({
+                    y: i * this._monitorHeight,
+                    duration: ANIMATION_DURATION,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+            }
+            // Animate strip to new transform
+            (this._workspaceStrip as unknown as Easeable).ease({
+                scale_x: transform.scale,
+                scale_y: transform.scale,
+                x: transform.offsetX,
+                y: transform.offsetY,
+                duration: ANIMATION_DURATION,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+            return;
+        }
+
+        // Build set of visible real indices
+        const visibleSet = new Set(visibleIndices);
+
+        // Position visible workspaces at collapsed Y positions
+        let visualPos = 0;
+        for (let i = 0; i < this._workspaceOrder.length; i++) {
+            const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+            if (!wc) continue;
+
+            if (visibleSet.has(i)) {
+                wc.container.visible = true;
+                this._filteredPositionMap.set(i, visualPos);
+                (wc.container as unknown as Easeable).ease({
+                    y: visualPos * this._monitorHeight,
+                    duration: ANIMATION_DURATION,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+                visualPos++;
+            } else {
+                wc.container.visible = false;
+            }
+        }
+
+        // Animate strip to new transform
+        (this._workspaceStrip as unknown as Easeable).ease({
+            scale_x: transform.scale,
+            scale_y: transform.scale,
+            x: transform.offsetX,
+            y: transform.offsetY,
+            duration: ANIMATION_DURATION,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+    }
+
+    updateFilterIndicator(text: string): void {
+        if (!this._layer) return;
+
+        if (!text || text.length === 0) {
+            if (this._filterIndicator) {
+                this._filterIndicator.visible = false;
+            }
+            return;
+        }
+
+        if (!this._filterIndicator) {
+            this._filterIndicator = new St.BoxLayout({
+                name: 'kestrel-filter-indicator',
+                style: 'background-color: rgba(0,0,0,0.8); border-radius: 20px; padding: 8px 16px; color: white;',
+                x_align: Clutter.ActorAlign.CENTER,
+                y_align: Clutter.ActorAlign.START,
+            });
+
+            const icon = new St.Label({
+                text: '\u{1F50D} ',
+                style: 'font-size: 14px;',
+            });
+            this._filterIndicator.add_child(icon);
+
+            const label = new St.Label({
+                name: 'kestrel-filter-text',
+                text: '',
+                style: 'font-size: 14px;',
+            });
+            this._filterIndicator.add_child(label);
+
+            this._layer.add_child(this._filterIndicator);
+        }
+
+        this._filterIndicator.visible = true;
+        // Update the text label (second child)
+        const textLabel = this._filterIndicator.get_child_at_index(1) as St.Label;
+        if (textLabel) {
+            textLabel.text = text;
+        }
+
+        // Center horizontally at top of layer
+        this._filterIndicator.set_position(
+            Math.round((this._layer.width - this._filterIndicator.width) / 2),
+            12,
+        );
+    }
+
+    startRename(
+        wsIndex: number,
+        currentName: string,
+        transform: OverviewTransform,
+        callback: (name: string | null) => void,
+    ): void {
+        if (!this._layer) return;
+        this.cancelRename(); // Clean up any previous rename
+
+        this._renameCallback = callback;
+        this._renameWsIndex = wsIndex;
+
+        const wsId = this._workspaceOrder[wsIndex];
+        if (!wsId) return;
+        const wc = this._workspaceContainers.get(wsId);
+        if (!wc) return;
+
+        wc.nameLabel.visible = false;
+
+        this._renameEntry = new St.Entry({
+            name: 'kestrel-rename-entry',
+            text: currentName,
+            style: 'font-size: 14px; background-color: rgba(0,0,0,0.9); color: white; border: 2px solid rgba(125,214,164,0.8); border-radius: 6px; padding: 4px 8px; min-width: 200px;',
+        });
+
+        // Position over the name label area
+        const visualPos = this._filteredPositionMap.get(wsIndex) ?? wsIndex;
+        const containerY = visualPos * this._monitorHeight;
+        const entryX = transform.offsetX + 8;
+        const entryY = transform.offsetY + containerY * transform.scale + (this._monitorHeight * transform.scale) / 2 - 12;
+
+        this._renameEntry.set_position(entryX, entryY);
+        this._layer.add_child(this._renameEntry);
+
+        // Select all text
+        const clutterText = this._renameEntry.get_clutter_text();
+        (clutterText as any).set_selection(0, currentName.length);
+
+        // Connect key press for Enter/Escape; let all other keys propagate for text editing
+        this._renameKeyPressId = clutterText.connect('key-press-event',
+            (_actor: Clutter.Actor, event: Clutter.Event) => {
+                try {
+                    const symbol = event.get_key_symbol();
+                    if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_KP_Enter) {
+                        this._finishRename(this._renameEntry!.get_text(), wsIndex);
+                        return Clutter.EVENT_STOP;
+                    }
+                    if (symbol === Clutter.KEY_Escape) {
+                        this._finishRename(null, wsIndex);
+                        return Clutter.EVENT_STOP;
+                    }
+                    return Clutter.EVENT_PROPAGATE; // Let ClutterText handle text input
+                } catch (e) {
+                    console.error('[Kestrel] Error in rename key handler:', e);
+                    return Clutter.EVENT_PROPAGATE;
+                }
+            },
+        );
+
+        // Focus the entry
+        this._renameEntry.grab_key_focus();
+    }
+
+    cancelRename(): void {
+        if (!this._renameEntry) return;
+        this._finishRename(null, this._renameWsIndex);
+    }
+
+    private _finishRename(name: string | null, wsIndex: number): void {
+        if (this._renameEntry) {
+            if (this._renameKeyPressId) {
+                const clutterText = this._renameEntry.get_clutter_text();
+                clutterText.disconnect(this._renameKeyPressId);
+                this._renameKeyPressId = 0;
+            }
+            this._renameEntry.destroy();
+            this._renameEntry = null;
+        }
+
+        // Restore name label visibility
+        const wsId = this._workspaceOrder[wsIndex];
+        if (wsId) {
+            const wc = this._workspaceContainers.get(wsId);
+            if (wc) wc.nameLabel.visible = true;
+        }
+
+        const cb = this._renameCallback;
+        this._renameCallback = null;
+        this._renameWsIndex = -1;
+        cb?.(name);
     }
 
     getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; wsIndex: number }> {
@@ -638,6 +867,14 @@ export class CloneAdapter implements ClonePort {
             this._overviewBg.destroy();
             this._overviewBg = null;
         }
+
+        // Clean up filter/rename widgets
+        this.cancelRename();
+        if (this._filterIndicator) {
+            this._filterIndicator.destroy();
+            this._filterIndicator = null;
+        }
+        this._filteredPositionMap.clear();
 
         for (const entry of this._clones.values()) {
             if (!entry.sourceDestroyed) entry.sourceActor.visible = true;

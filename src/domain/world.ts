@@ -20,6 +20,7 @@ import {
 } from './workspace.js';
 import { createViewport, type Viewport } from './viewport.js';
 import { computeLayout } from './layout.js';
+import { fuzzyMatch } from './fuzzy-match.js';
 
 export interface World {
     readonly workspaces: readonly Workspace[];
@@ -348,6 +349,29 @@ export function widenWindow(world: World, windowId: WindowId): WorldUpdate {
 export function renameCurrentWorkspace(world: World, name: string | null): World {
     const ws = currentWorkspace(world);
     return replaceCurrentWorkspace(world, { ...ws, name });
+}
+
+/**
+ * Filter workspaces by fuzzy matching on name.
+ * Returns matching workspace indices sorted by score descending.
+ */
+export function filterWorkspaces(world: World, query: string): { wsIndex: number; score: number }[] {
+    if (!query) return [];
+    const results: { wsIndex: number; score: number }[] = [];
+    const len = world.workspaces.length;
+
+    for (let i = 0; i < len; i++) {
+        const name = world.workspaces[i]!.name;
+        if (!name) continue;
+        const match = fuzzyMatch(query, name);
+        if (match) {
+            const positionalBonus = (1 - i / len) * 0.1;
+            results.push({ wsIndex: i, score: match.score + positionalBonus });
+        }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results;
 }
 
 /** Find a workspace by case-insensitive substring match on name. Returns wsIndex or -1. */

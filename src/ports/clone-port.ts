@@ -43,8 +43,16 @@ export interface OverviewRenderPort {
     updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void;
 }
 
+/** Overview filter and rename rendering. All methods optional for backwards compatibility. */
+export interface OverviewFilterPort {
+    applyOverviewFilter?(visibleIndices: number[] | null, transform: OverviewTransform, currentWsIndex: number): void;
+    updateFilterIndicator?(text: string): void;
+    startRename?(wsIndex: number, currentName: string, transform: OverviewTransform, callback: (name: string | null) => void): void;
+    cancelRename?(): void;
+}
+
 /** Composite interface for backwards compatibility — consumers should prefer narrow ports. */
-export interface ClonePort extends CloneLifecyclePort, CloneRenderPort, OverviewRenderPort {
+export interface ClonePort extends CloneLifecyclePort, CloneRenderPort, OverviewRenderPort, OverviewFilterPort {
     addFloatClone(windowId: WindowId, metaWindow: unknown): void;
     removeFloatClone(windowId: WindowId): void;
 }

@@ -166,12 +166,6 @@ vi.mock('../../src/adapters/help-overlay-adapter.js', () => ({
         destroy: vi.fn(),
     })),
 }));
-vi.mock('../../src/adapters/launcher-adapter.js', () => ({
-    LauncherAdapter: vi.fn().mockImplementation(() => ({
-        launch: vi.fn(),
-        destroy: vi.fn(),
-    })),
-}));
 vi.mock('../../src/adapters/mouse-input-adapter.js', () => ({
     MouseInputAdapter: vi.fn().mockImplementation(() => {
         const inst = mockMethods('activate', 'deactivate', 'destroy');

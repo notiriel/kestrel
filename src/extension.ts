@@ -32,7 +32,6 @@ import { PanelIndicatorAdapter } from './adapters/panel-indicator-adapter.js';
 import { WorldHolder } from './adapters/world-holder.js';
 import { NotificationCoordinator } from './adapters/notification-coordinator.js';
 import { HelpOverlayAdapter } from './adapters/help-overlay-adapter.js';
-import { LauncherAdapter } from './adapters/launcher-adapter.js';
 import { MouseInputAdapter } from './adapters/mouse-input-adapter.js';
 import { safeWindow } from './adapters/safe-window.js';
 import type Gio from 'gi://Gio';
@@ -57,7 +56,6 @@ export default class KestrelExtension extends Extension {
     private _panelIndicator: PanelIndicatorAdapter | null = null;
     private _notificationCoordinator: NotificationCoordinator | null = null;
     private _helpOverlay: HelpOverlayAdapter | null = null;
-    private _launcher: LauncherAdapter | null = null;
     private _mouseInputAdapter: MouseInputAdapter | null = null;
     private _debugMode: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -227,10 +225,7 @@ export default class KestrelExtension extends Extension {
                 unwatchWindow: (wid) => this._notificationCoordinator?.unwatchWindow(wid),
             });
 
-            // 6. ULauncher launcher
-            this._launcher = new LauncherAdapter();
-
-            // 7. Connect keybindings
+            // 6. Connect keybindings
             this._keybindingAdapter = new KeybindingAdapter();
             this._keybindingAdapter.connect(settings, {
                 onFocusRight: () => this._navigationHandler!.handleSimpleCommand(focusRight, 'focusRight'),
@@ -261,8 +256,6 @@ export default class KestrelExtension extends Extension {
                         console.error('[Kestrel] Error closing window:', e);
                     }
                 },
-                onLaunchWorkspaceSwitcher: () => this._launcher?.launch('ws '),
-                onLaunchWorkspaceRename: () => this._launcher?.launch('ws rename '),
             });
 
             // 7b. Activate mouse scroll handler
@@ -365,9 +358,6 @@ export default class KestrelExtension extends Extension {
 
             this._helpOverlay?.destroy();
             this._helpOverlay = null;
-
-            this._launcher?.destroy();
-            this._launcher = null;
 
             this._panelIndicator?.destroy();
             this._panelIndicator = null;
