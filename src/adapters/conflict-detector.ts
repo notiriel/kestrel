@@ -18,29 +18,39 @@ export class ConflictDetector implements ConflictDetectorPort {
     private _notified = new Set<string>();
 
     detectConflicts(): void {
-        // Check immediately for already-enabled extensions
         this._checkAll();
+        this._watchExtensionChanges();
+    }
 
-        // Also listen for extensions that enable after us
+    private _watchExtensionChanges(): void {
         try {
             this._signalId = Main.extensionManager.connect(
                 'extension-state-changed',
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (_mgr: any, ext: any): undefined => {
-                    try {
-                        const uuid = ext?.uuid ?? ext?.metadata?.uuid;
-                        if (!uuid) return;
-                        if (!(CONFLICTING_EXTENSIONS as readonly string[]).includes(uuid)) return;
-                        if (ext.state === EXTENSION_STATE_ENABLED) {
-                            this._notifyConflict(uuid);
-                        }
-                    } catch (e) {
-                        console.error('[Kestrel] Error in extension-state-changed handler:', e);
-                    }
+                    this._onExtensionStateChanged(ext);
                 },
             );
         } catch (e) {
             console.error('[Kestrel] Failed to connect extension-state-changed:', e);
         }
+    }
+
+    private _onExtensionStateChanged(ext: { uuid?: string; metadata?: { uuid?: string }; state?: number }): void {
+        try {
+            const uuid = this._getExtensionUuid(ext);
+            if (!uuid) return;
+            if (ext.state === EXTENSION_STATE_ENABLED) {
+                this._notifyConflict(uuid);
+            }
+        } catch (e) {
+            console.error('[Kestrel] Error in extension-state-changed handler:', e);
+        }
+    }
+
+    private _getExtensionUuid(ext: { uuid?: string; metadata?: { uuid?: string } }): string | null {
+        const uuid = ext.uuid || ext.metadata?.uuid;
+        return uuid && (CONFLICTING_EXTENSIONS as readonly string[]).includes(uuid) ? uuid : null;
     }
 
     private _checkAll(): void {
@@ -61,52 +71,40 @@ export class ConflictDetector implements ConflictDetectorPort {
         this._notified.add(uuid);
 
         try {
-            this._source = new Source({
-                title: 'Kestrel',
-                iconName: 'dialog-warning-symbolic',
-            });
+            this._source = new Source({ title: 'Kestrel', iconName: 'dialog-warning-symbolic' });
             Main.messageTray.add(this._source);
 
             const notification = new Notification({
                 source: this._source,
                 title: 'Kestrel: Extension Conflict',
-                body: `"${uuid}" conflicts with Kestrel keybindings (Super+Arrow). ` +
-                      `Disable it for Kestrel to work correctly.`,
+                body: `"${uuid}" conflicts with Kestrel keybindings (Super+Arrow). Disable it for Kestrel to work correctly.`,
                 isTransient: false,
             });
 
-            notification.addAction('Disable ' + uuid, () => {
-                try {
-                    const shellSettings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
-
-                    // Remove from enabled-extensions (user-installed extensions)
-                    const enabled = shellSettings.get_strv('enabled-extensions');
-                    if (enabled.includes(uuid)) {
-                        shellSettings.set_strv(
-                            'enabled-extensions',
-                            enabled.filter(u => u !== uuid),
-                        );
-                    }
-
-                    // Add to disabled-extensions (needed for system/default extensions
-                    // like Ubuntu's tiling-assistant that are enabled implicitly)
-                    const disabled = shellSettings.get_strv('disabled-extensions');
-                    if (!disabled.includes(uuid)) {
-                        shellSettings.set_strv(
-                            'disabled-extensions',
-                            [...disabled, uuid],
-                        );
-                    }
-
-                    console.log(`[Kestrel] Disabled conflicting extension: ${uuid}`); // intentional — user action feedback
-                } catch (e) {
-                    console.error(`[Kestrel] Failed to disable ${uuid}:`, e);
-                }
-            });
-
+            notification.addAction('Disable ' + uuid, () => this._disableExtension(uuid));
             this._source.addNotification(notification);
         } catch (e) {
             console.error('[Kestrel] Failed to show conflict notification:', e);
+        }
+    }
+
+    private _disableExtension(uuid: string): void {
+        try {
+            const shellSettings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
+
+            const enabled = shellSettings.get_strv('enabled-extensions');
+            if (enabled.includes(uuid)) {
+                shellSettings.set_strv('enabled-extensions', enabled.filter(u => u !== uuid));
+            }
+
+            const disabled = shellSettings.get_strv('disabled-extensions');
+            if (!disabled.includes(uuid)) {
+                shellSettings.set_strv('disabled-extensions', [...disabled, uuid]);
+            }
+
+            console.log(`[Kestrel] Disabled conflicting extension: ${uuid}`);
+        } catch (e) {
+            console.error(`[Kestrel] Failed to disable ${uuid}:`, e);
         }
     }
 

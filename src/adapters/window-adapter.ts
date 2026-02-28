@@ -43,6 +43,20 @@ export class WindowAdapter implements WindowPort {
     }
 
     track(windowId: WindowId, metaWindow: Meta.Window): void {
+        const { sizeChangedId, positionChangedId } = this._connectWindowSignals(windowId, metaWindow);
+        this._windows.set(windowId, {
+            metaWindow, sizeChangedId, positionChangedId,
+            targetX: 0, targetY: 0, targetWidth: 0, targetHeight: 0,
+            actualX: 0, actualY: 0, offscreen: false,
+        });
+
+        // Real window actors are always hidden — the clone layer handles
+        // all visual rendering. Actors remain at opacity=0 so they're
+        // invisible but still receive Wayland input (click-through).
+        this._setActorOpacity(metaWindow, 0);
+    }
+
+    private _connectWindowSignals(windowId: WindowId, metaWindow: Meta.Window): { sizeChangedId: number; positionChangedId: number } {
         const sizeChangedId = metaWindow.connect('size-changed', () => {
             try {
                 this._onSizeChanged(windowId);
@@ -57,16 +71,7 @@ export class WindowAdapter implements WindowPort {
                 console.debug('[Kestrel] Error in window position-changed handler:', e);
             }
         });
-        this._windows.set(windowId, {
-            metaWindow, sizeChangedId, positionChangedId,
-            targetX: 0, targetY: 0, targetWidth: 0, targetHeight: 0,
-            actualX: 0, actualY: 0, offscreen: false,
-        });
-
-        // Real window actors are always hidden — the clone layer handles
-        // all visual rendering. Actors remain at opacity=0 so they're
-        // invisible but still receive Wayland input (click-through).
-        this._setActorOpacity(metaWindow, 0);
+        return { sizeChangedId, positionChangedId };
     }
 
     untrack(windowId: WindowId): void {
@@ -88,16 +93,24 @@ export class WindowAdapter implements WindowPort {
     setWindowFullscreen(windowId: WindowId, isFullscreen: boolean): void {
         const tracked = this._windows.get(windowId);
         if (isFullscreen) {
-            this._fullscreenWindows.add(windowId);
-            if (tracked?.offscreen) {
-                tracked.offscreen = false;
-                try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
-            }
-            if (tracked) this._setActorOpacity(tracked.metaWindow, 255);
+            this._enterFullscreen(windowId, tracked);
         } else {
-            this._fullscreenWindows.delete(windowId);
-            if (tracked) this._setActorOpacity(tracked.metaWindow, 0);
+            this._exitFullscreen(windowId, tracked);
         }
+    }
+
+    private _enterFullscreen(windowId: WindowId, tracked: TrackedWindow | undefined): void {
+        this._fullscreenWindows.add(windowId);
+        if (tracked?.offscreen) {
+            tracked.offscreen = false;
+            try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
+        }
+        if (tracked) this._setActorOpacity(tracked.metaWindow, 255);
+    }
+
+    private _exitFullscreen(windowId: WindowId, tracked: TrackedWindow | undefined): void {
+        this._fullscreenWindows.delete(windowId);
+        if (tracked) this._setActorOpacity(tracked.metaWindow, 0);
     }
 
     applyLayout(layout: LayoutState, nudgeUnsettled: boolean = false): void {
@@ -109,80 +122,118 @@ export class WindowAdapter implements WindowPort {
             if (!tracked) continue;
             // Fullscreen windows are positioned by GNOME — don't fight them
             if (this._fullscreenWindows.has(wl.windowId)) {
-                if (tracked.offscreen) {
-                    tracked.offscreen = false;
-                    try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
-                }
+                this._restoreIfOffscreen(tracked);
                 continue;
             }
-            try {
-                // Subtract scrollX so real windows match their visual clone positions
-                const screenX = wl.x - layout.scrollX;
-                // Layout Y is workArea-relative; add workAreaY to convert to stage coords
-                const screenY = wl.y + this._workAreaY;
-
-                // Store target for position-changed and size-changed handlers
-                tracked.targetX = screenX;
-                tracked.targetY = screenY;
-                tracked.targetWidth = wl.width;
-                tracked.targetHeight = wl.height;
-                tracked.actualX = screenX;
-                tracked.actualY = screenY;
-
-                // Restore visibility if window was minimized on another workspace
-                if (tracked.offscreen) {
-                    tracked.offscreen = false;
-                    tracked.metaWindow.unminimize();
-                    this._setActorOpacity(tracked.metaWindow, 0);
-                }
-
-                const frame = tracked.metaWindow.get_frame_rect();
-                const needsResize = frame.width !== wl.width || frame.height !== wl.height;
-
-                this._adjusting = true;
-                try {
-                    // Pass user_op=true so Mutter's constraint solver skips
-                    // constrain_fully_onscreen and constrain_to_single_monitor,
-                    // allowing windows to be positioned offscreen for scrolling.
-                    if (needsResize) {
-                        // When nudging, send a size that differs by 1px first to
-                        // force Mutter to emit a fresh Wayland configure event.
-                        // Some apps (e.g. Chromium) ignore the initial configure
-                        // during startup; Mutter deduplicates identical size
-                        // requests, so subsequent retries with the same size are
-                        // silently dropped. The 1px nudge guarantees a new configure.
-                        if (nudgeUnsettled) {
-                            tracked.metaWindow.move_resize_frame(true,
-                                screenX, screenY, wl.width - 1, wl.height - 1);
-                        }
-                        tracked.metaWindow.move_resize_frame(true,
-                            screenX, screenY, wl.width, wl.height);
-                    } else {
-                        tracked.metaWindow.move_frame(true, screenX, screenY);
-                    }
-
-                    // Compensate if the window is already oversized from a prior
-                    // refused resize (e.g. Chromium). Check current frame since
-                    // move_resize_frame is async and may not have taken effect yet.
-                    this._compensateOversized(tracked);
-                } finally {
-                    this._adjusting = false;
-                }
-            } catch (e) {
-                console.debug('[Kestrel] move_resize_frame skipped (dead window?):', e);
-                this.untrack(wl.windowId);
-            }
+            this._positionWindow(tracked, wl, layout, nudgeUnsettled);
         }
 
-        // Minimize tracked windows not in the current layout (other workspaces).
-        // Minimization is the only reliable way to fully remove Wayland keyboard
-        // focus — Mutter won't send wl_keyboard events to minimized windows.
-        // Clutter.Clone still renders minimized (unmapped) actors via its
-        // internal enable_paint_unmapped mechanism.
+        this._minimizeOffWorkspaceWindows(layoutWindowIds);
+    }
+
+    private _restoreIfOffscreen(tracked: TrackedWindow): void {
+        if (!tracked.offscreen) return;
+        tracked.offscreen = false;
+        try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
+    }
+
+    private _positionWindow(
+        tracked: TrackedWindow,
+        wl: LayoutState['windows'][number],
+        layout: LayoutState,
+        nudgeUnsettled: boolean,
+    ): void {
+        try {
+            // Subtract scrollX so real windows match their visual clone positions
+            const screenX = wl.x - layout.scrollX;
+            // Layout Y is workArea-relative; add workAreaY to convert to stage coords
+            const screenY = wl.y + this._workAreaY;
+
+            this._updateTarget(tracked, screenX, screenY, wl.width, wl.height);
+            this._unminimizeIfOffscreen(tracked);
+            this._applyMoveResize(tracked, screenX, screenY, wl.width, wl.height, nudgeUnsettled);
+        } catch (e) {
+            console.debug('[Kestrel] move_resize_frame skipped (dead window?):', e);
+        }
+    }
+
+    /** Restore a minimized offscreen window, keeping the actor hidden (opacity=0). */
+    private _unminimizeIfOffscreen(tracked: TrackedWindow): void {
+        if (!tracked.offscreen) return;
+        tracked.offscreen = false;
+        tracked.metaWindow.unminimize();
+        this._setActorOpacity(tracked.metaWindow, 0);
+    }
+
+    /** Store target position/size for signal handlers and set initial actual position. */
+    private _updateTarget(tracked: TrackedWindow, x: number, y: number, width: number, height: number): void {
+        tracked.targetX = x;
+        tracked.targetY = y;
+        tracked.targetWidth = width;
+        tracked.targetHeight = height;
+        tracked.actualX = x;
+        tracked.actualY = y;
+    }
+
+    /**
+     * Issue the actual move/resize Mutter calls for a window, with optional
+     * nudge to force a fresh Wayland configure event.
+     */
+    private _applyMoveResize(
+        tracked: TrackedWindow,
+        screenX: number, screenY: number,
+        width: number, height: number,
+        nudgeUnsettled: boolean,
+    ): void {
+        const frame = tracked.metaWindow.get_frame_rect();
+        const needsResize = frame.width !== width || frame.height !== height;
+
+        this._adjusting = true;
+        try {
+            // Pass user_op=true so Mutter's constraint solver skips
+            // constrain_fully_onscreen and constrain_to_single_monitor,
+            // allowing windows to be positioned offscreen for scrolling.
+            if (needsResize) {
+                this._resizeWindow(tracked, screenX, screenY, width, height, nudgeUnsettled);
+            } else {
+                tracked.metaWindow.move_frame(true, screenX, screenY);
+            }
+
+            // Compensate if the window is already oversized from a prior
+            // refused resize (e.g. Chromium). Check current frame since
+            // move_resize_frame is async and may not have taken effect yet.
+            this._compensateOversized(tracked);
+        } finally {
+            this._adjusting = false;
+        }
+    }
+
+    /**
+     * Resize a window, optionally nudging by 1px first to force Mutter to
+     * emit a fresh Wayland configure event for apps that ignore the initial one.
+     */
+    private _resizeWindow(
+        tracked: TrackedWindow,
+        screenX: number, screenY: number,
+        width: number, height: number,
+        nudge: boolean,
+    ): void {
+        if (nudge) {
+            tracked.metaWindow.move_resize_frame(true, screenX, screenY, width - 1, height - 1);
+        }
+        tracked.metaWindow.move_resize_frame(true, screenX, screenY, width, height);
+    }
+
+    /**
+     * Minimize tracked windows not in the current layout (other workspaces).
+     * Minimization is the only reliable way to fully remove Wayland keyboard
+     * focus — Mutter won't send wl_keyboard events to minimized windows.
+     * Clutter.Clone still renders minimized (unmapped) actors via its
+     * internal enable_paint_unmapped mechanism.
+     */
+    private _minimizeOffWorkspaceWindows(layoutWindowIds: Set<WindowId>): void {
         for (const [windowId, tracked] of this._windows) {
-            if (layoutWindowIds.has(windowId)) continue;
-            if (tracked.offscreen) continue;
-            if (this._fullscreenWindows.has(windowId)) continue;
+            if (this._shouldSkipMinimize(windowId, tracked, layoutWindowIds)) continue;
             try {
                 tracked.offscreen = true;
                 tracked.metaWindow.minimize();
@@ -192,15 +243,28 @@ export class WindowAdapter implements WindowPort {
         }
     }
 
+    private _shouldSkipMinimize(windowId: WindowId, tracked: TrackedWindow, layoutWindowIds: Set<WindowId>): boolean {
+        return layoutWindowIds.has(windowId) || tracked.offscreen || this._fullscreenWindows.has(windowId);
+    }
+
+    /**
+     * Get a tracked window if it's active (not adjusting, has targets set, and is onscreen).
+     * Returns null if the window should be skipped in signal handlers.
+     */
+    private _getActiveTracked(windowId: WindowId): TrackedWindow | null {
+        if (this._adjusting) return null;
+        const tracked = this._windows.get(windowId);
+        if (!tracked || tracked.targetWidth === 0 || tracked.offscreen) return null;
+        return tracked;
+    }
+
     /**
      * When a window settles at a new size (async Wayland resize response),
      * re-position at target.
      */
     private _onSizeChanged(windowId: WindowId): void {
-        if (this._adjusting) return;
-
-        const tracked = this._windows.get(windowId);
-        if (!tracked || tracked.targetWidth === 0 || tracked.offscreen) return;
+        const tracked = this._getActiveTracked(windowId);
+        if (!tracked) return;
 
         this._adjusting = true;
         try {
@@ -221,10 +285,8 @@ export class WindowAdapter implements WindowPort {
      * response overwrites our position). PaperWM uses the same pattern.
      */
     private _onPositionChanged(windowId: WindowId): void {
-        if (this._adjusting) return;
-
-        const tracked = this._windows.get(windowId);
-        if (!tracked || tracked.targetWidth === 0 || tracked.offscreen) return;
+        const tracked = this._getActiveTracked(windowId);
+        if (!tracked) return;
 
         const frame = tracked.metaWindow.get_frame_rect();
         if (frame.x !== tracked.actualX || frame.y !== tracked.actualY) {
@@ -269,17 +331,23 @@ export class WindowAdapter implements WindowPort {
      */
     hasUnsettledWindows(): boolean {
         for (const tracked of this._windows.values()) {
-            if (tracked.targetWidth === 0) continue;
-            try {
-                const frame = tracked.metaWindow.get_frame_rect();
-                if (frame.width !== tracked.targetWidth || frame.height !== tracked.targetHeight) {
-                    return true;
-                }
-            } catch {
-                // Window gone
-            }
+            if (this._isWindowUnsettled(tracked)) return true;
         }
         return false;
+    }
+
+    /**
+     * Check if a single tracked window's frame size doesn't match its layout target.
+     */
+    private _isWindowUnsettled(tracked: TrackedWindow): boolean {
+        if (tracked.targetWidth === 0) return false;
+        try {
+            const frame = tracked.metaWindow.get_frame_rect();
+            return frame.width !== tracked.targetWidth || frame.height !== tracked.targetHeight;
+        } catch {
+            // Window gone
+            return false;
+        }
     }
 
     destroy(): void {

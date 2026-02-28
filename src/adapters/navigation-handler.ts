@@ -1,4 +1,4 @@
-import type { WindowId, WorldUpdate } from '../domain/types.js';
+import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import { findWorkspaceIdForWindow } from '../domain/world.js';
 import { computeLayoutForWorkspace } from '../domain/layout.js';
@@ -15,6 +15,10 @@ export interface NavigationDeps {
     applyLayout(layout: WorldUpdate['layout'], animate: boolean): void;
 }
 
+function getActiveWsId(world: World): WorkspaceId | null {
+    return world.workspaces[world.viewport.workspaceIndex]?.id ?? null;
+}
+
 export class NavigationHandler {
     private _deps: NavigationDeps;
 
@@ -22,7 +26,7 @@ export class NavigationHandler {
         this._deps = deps;
     }
 
-    /** Simple command: guard → domain call → animate → focus */
+    /** Simple command: guard -> domain call -> animate -> focus */
     handleSimpleCommand(domainFn: (world: World) => WorldUpdate, label: string): void {
         try {
             const world = this._deps.getWorld();
@@ -47,16 +51,12 @@ export class NavigationHandler {
             if (!this._deps.checkGuard(label)) return;
 
             const oldScrollX = world.viewport.scrollX;
-            const oldWsId = world.workspaces[world.viewport.workspaceIndex]?.id ?? null;
+            const oldWsId = getActiveWsId(world);
 
             const update = domainFn(world);
             this._deps.setWorld(update.world);
 
-            const newWsId = update.world.workspaces[update.world.viewport.workspaceIndex]?.id ?? null;
-            if (newWsId && newWsId !== oldWsId) {
-                this._deps.getCloneAdapter()?.setScrollForWorkspace(newWsId, oldScrollX);
-            }
-
+            this._syncScrollOnSwitch(oldScrollX, oldWsId, update.world);
             this._deps.applyLayout(update.layout, true);
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
@@ -71,44 +71,59 @@ export class NavigationHandler {
             if (!world || world.overviewActive) return;
             if (!this._deps.checkGuard(label)) return;
 
-            const oldScrollX = world.viewport.scrollX;
-            const windowId = world.focusedWindow;
-            const sourceWsId = world.workspaces[world.viewport.workspaceIndex]?.id ?? null;
-
+            const sourceWsId = getActiveWsId(world);
             const update = domainFn(world);
             this._deps.setWorld(update.world);
 
-            // Reparent clone if window moved cross-workspace
-            if (windowId && sourceWsId) {
-                const targetWsId = findWorkspaceIdForWindow(update.world, windowId);
-                if (targetWsId && targetWsId !== sourceWsId) {
-                    this._deps.getCloneAdapter()?.moveCloneToWorkspace(windowId, targetWsId);
-                }
-            }
-            this._deps.getCloneAdapter()?.syncWorkspaces(update.world.workspaces);
-
-            const newWsId = update.world.workspaces[update.world.viewport.workspaceIndex]?.id ?? null;
-            if (newWsId && newWsId !== sourceWsId) {
-                this._deps.getCloneAdapter()?.setScrollForWorkspace(newWsId, oldScrollX);
-            }
-
+            this._reparentCloneIfMoved(world.focusedWindow, sourceWsId, update);
+            this._syncWorkspaces(update);
+            this._syncScrollOnSwitch(world.viewport.scrollX, sourceWsId, update.world);
             this._deps.applyLayout(update.layout, true);
-
-            // Reposition remaining windows on source workspace
-            if (sourceWsId) {
-                const sourceWsNewIndex = update.world.workspaces.findIndex(ws => ws.id === sourceWsId);
-                if (sourceWsNewIndex >= 0) {
-                    const sourceLayout = computeLayoutForWorkspace(update.world, sourceWsNewIndex);
-                    this._deps.getCloneAdapter()?.applyLayout(
-                        { ...sourceLayout, workspaceIndex: update.world.viewport.workspaceIndex },
-                        true,
-                    );
-                }
-            }
-
+            this._layoutSourceWorkspace(update, sourceWsId);
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
             console.error(`[Kestrel] Error handling ${label}:`, e);
+        }
+    }
+
+    private _syncWorkspaces(update: WorldUpdate): void {
+        const clone = this._deps.getCloneAdapter();
+        if (clone) clone.syncWorkspaces(update.world.workspaces);
+    }
+
+    /** If the new workspace differs from oldWsId, carry scroll state over */
+    private _syncScrollOnSwitch(oldScrollX: number, oldWsId: WorkspaceId | null, newWorld: World): void {
+        const newWsId = getActiveWsId(newWorld);
+        if (!newWsId || newWsId === oldWsId) return;
+        const clone = this._deps.getCloneAdapter();
+        if (clone) clone.setScrollForWorkspace(newWsId, oldScrollX);
+    }
+
+    /** If window moved cross-workspace, reparent its clone */
+    private _reparentCloneIfMoved(windowId: WindowId | null, sourceWsId: WorkspaceId | null, update: WorldUpdate): void {
+        if (!windowId || !sourceWsId) return;
+        const targetWsId = findWorkspaceIdForWindow(update.world, windowId);
+        this._reparentClone(windowId, sourceWsId, targetWsId);
+    }
+
+    private _reparentClone(windowId: WindowId, sourceWsId: WorkspaceId, targetWsId: WorkspaceId | null): void {
+        if (!targetWsId || targetWsId === sourceWsId) return;
+        const clone = this._deps.getCloneAdapter();
+        if (clone) clone.moveCloneToWorkspace(windowId, targetWsId);
+    }
+
+    /** Recompute and apply layout for the source workspace after a move */
+    private _layoutSourceWorkspace(update: WorldUpdate, sourceWsId: WorkspaceId | null): void {
+        if (!sourceWsId) return;
+        const idx = update.world.workspaces.findIndex(ws => ws.id === sourceWsId);
+        if (idx < 0) return;
+        const layout = computeLayoutForWorkspace(update.world, idx);
+        const clone = this._deps.getCloneAdapter();
+        if (clone) {
+            clone.applyLayout(
+                { ...layout, workspaceIndex: update.world.viewport.workspaceIndex },
+                true,
+            );
         }
     }
 

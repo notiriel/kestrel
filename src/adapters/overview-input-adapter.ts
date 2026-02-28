@@ -1,12 +1,11 @@
 import Clutter from 'gi://Clutter';
-import St from 'gi://St';
 import Shell from 'gi://Shell';
 import GLib from 'gi://GLib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-export type OverviewDirection = 'left' | 'right' | 'up' | 'down';
+type OverviewDirection = 'left' | 'right' | 'up' | 'down';
 
-export interface OverviewInputCallbacks {
+interface OverviewInputCallbacks {
     onNavigate: (direction: OverviewDirection) => void;
     onConfirm: () => void;
     onCancel: () => void;
@@ -20,6 +19,17 @@ export interface OverviewInputCallbacks {
 }
 
 const DRAG_THRESHOLD = 16;
+
+const NAVIGATION_KEYS: ReadonlyMap<number, OverviewDirection> = new Map([
+    [Clutter.KEY_Left, 'left'],
+    [Clutter.KEY_Right, 'right'],
+    [Clutter.KEY_Up, 'up'],
+    [Clutter.KEY_Down, 'down'],
+]);
+
+const BLOCKED_MODS = Clutter.ModifierType.CONTROL_MASK |
+    Clutter.ModifierType.MOD1_MASK |
+    Clutter.ModifierType.MOD4_MASK;
 
 /**
  * Modal input capture for overview mode.
@@ -50,13 +60,28 @@ export class OverviewInputAdapter {
     activate(callbacks: OverviewInputCallbacks): void {
         if (this._grab) return;
 
-        // Push modal — returns a Clutter.Grab in GNOME 45+
-        const grab = Main.pushModal(global.stage, {
+        this._grab = Main.pushModal(global.stage, {
             actionMode: Shell.ActionMode.ALL,
         });
-        this._grab = grab;
+        this._connectKeyPress(callbacks);
+        this._connectButtonPress();
+        this._connectMotion(callbacks);
+        this._connectButtonRelease(callbacks);
+    }
 
-        // Listen on global stage for key events while modal
+    deactivate(): void {
+        this._disconnectStageSignals();
+        this._resetDragState();
+        this._deferPopModal();
+    }
+
+    destroy(): void {
+        this._disconnectStageSignals();
+        this._resetDragState();
+        this._syncPopModal();
+    }
+
+    private _connectKeyPress(callbacks: OverviewInputCallbacks): void {
         this._keyPressId = global.stage.connect('key-press-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
                 try {
@@ -67,30 +92,22 @@ export class OverviewInputAdapter {
                 }
             },
         );
+    }
 
-        // Listen for mouse button press
+    private _connectButtonPress(): void {
         this._buttonPressId = global.stage.connect('button-press-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
                 try {
-                    const button = event.get_button();
-                    if (button !== 1) return Clutter.EVENT_PROPAGATE;
-                    // Ignore Super+click — GNOME eats motion events when Super is held,
-                    // preventing drag threshold from being reached
-                    if (event.get_state() & Clutter.ModifierType.MOD4_MASK) return Clutter.EVENT_PROPAGATE;
-                    const [x, y] = event.get_coords();
-                    this._startX = x;
-                    this._startY = y;
-                    this._pendingClick = true;
-                    this._dragging = false;
-                    return Clutter.EVENT_STOP;
+                    return this._handleButtonPress(event);
                 } catch (e) {
                     console.error('[Kestrel] Error in overview press handler:', e);
                     return Clutter.EVENT_PROPAGATE;
                 }
             },
         );
+    }
 
-        // Listen for mouse motion (drag detection)
+    private _connectMotion(callbacks: OverviewInputCallbacks): void {
         this._motionId = global.stage.connect('motion-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
                 try {
@@ -101,8 +118,9 @@ export class OverviewInputAdapter {
                 }
             },
         );
+    }
 
-        // Listen for mouse button release
+    private _connectButtonRelease(callbacks: OverviewInputCallbacks): void {
         this._buttonReleaseId = global.stage.connect('button-release-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
                 try {
@@ -115,70 +133,81 @@ export class OverviewInputAdapter {
         );
     }
 
-    deactivate(): void {
-        if (this._keyPressId) {
-            global.stage.disconnect(this._keyPressId);
-            this._keyPressId = 0;
-        }
-        if (this._buttonPressId) {
-            global.stage.disconnect(this._buttonPressId);
-            this._buttonPressId = 0;
-        }
-        if (this._motionId) {
-            global.stage.disconnect(this._motionId);
-            this._motionId = 0;
-        }
-        if (this._buttonReleaseId) {
-            global.stage.disconnect(this._buttonReleaseId);
-            this._buttonReleaseId = 0;
-        }
-
-        this._pendingClick = false;
+    private _handleButtonPress(
+        event: Clutter.Event,
+    ): typeof Clutter.EVENT_STOP | typeof Clutter.EVENT_PROPAGATE {
+        if (event.get_button() !== 1) return Clutter.EVENT_PROPAGATE;
+        // Ignore Super+click — GNOME eats motion events when Super is held
+        if (event.get_state() & Clutter.ModifierType.MOD4_MASK) return Clutter.EVENT_PROPAGATE;
+        const [x, y] = event.get_coords();
+        this._startX = x;
+        this._startY = y;
+        this._pendingClick = true;
         this._dragging = false;
+        return Clutter.EVENT_STOP;
+    }
 
-        if (this._grab) {
-            // Defer popModal to avoid re-entrancy issues when called from key handler
-            const grab = this._grab;
-            this._grab = null;
-            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                try {
-                    Main.popModal(grab);
-                } catch (e) {
-                    console.error('[Kestrel] Error in popModal:', e);
-                }
-                return GLib.SOURCE_REMOVE;
-            });
+    private _disconnectStageSignals(): void {
+        this._disconnectSignal('_keyPressId');
+        this._disconnectSignal('_buttonPressId');
+        this._disconnectSignal('_motionId');
+        this._disconnectSignal('_buttonReleaseId');
+    }
+
+    private _disconnectSignal(field: '_keyPressId' | '_buttonPressId' | '_motionId' | '_buttonReleaseId'): void {
+        if (this[field]) {
+            global.stage.disconnect(this[field]);
+            this[field] = 0;
         }
     }
 
-    destroy(): void {
-        // Synchronous cleanup for extension disable
-        if (this._keyPressId) {
-            global.stage.disconnect(this._keyPressId);
-            this._keyPressId = 0;
-        }
-        if (this._buttonPressId) {
-            global.stage.disconnect(this._buttonPressId);
-            this._buttonPressId = 0;
-        }
-        if (this._motionId) {
-            global.stage.disconnect(this._motionId);
-            this._motionId = 0;
-        }
-        if (this._buttonReleaseId) {
-            global.stage.disconnect(this._buttonReleaseId);
-            this._buttonReleaseId = 0;
-        }
+    private _resetDragState(): void {
         this._pendingClick = false;
         this._dragging = false;
-        if (this._grab) {
+    }
+
+    private _deferPopModal(): void {
+        if (!this._grab) return;
+
+        // Defer popModal to avoid re-entrancy issues when called from key handler
+        const grab = this._grab;
+        this._grab = null;
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
             try {
-                Main.popModal(this._grab);
+                Main.popModal(grab);
             } catch (e) {
-                console.error('[Kestrel] Error in destroy popModal:', e);
+                console.error('[Kestrel] Error in popModal:', e);
             }
-            this._grab = null;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    private _syncPopModal(): void {
+        if (!this._grab) return;
+
+        try {
+            Main.popModal(this._grab);
+        } catch (e) {
+            console.error('[Kestrel] Error in destroy popModal:', e);
         }
+        this._grab = null;
+    }
+
+    private _checkDragThreshold(x: number, y: number): boolean {
+        const dx = x - this._startX;
+        const dy = y - this._startY;
+        return dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD;
+    }
+
+    private _handlePendingMotion(
+        x: number, y: number,
+        callbacks: OverviewInputCallbacks,
+    ): void {
+        if (!this._checkDragThreshold(x, y)) return;
+
+        this._pendingClick = false;
+        this._dragging = true;
+        callbacks.onDragStart?.(this._startX, this._startY);
     }
 
     private _handleMotion(
@@ -190,33 +219,21 @@ export class OverviewInputAdapter {
         const [x, y] = event.get_coords();
 
         if (this._pendingClick) {
-            const dx = x - this._startX;
-            const dy = y - this._startY;
-            if (dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD) {
-                this._pendingClick = false;
-                this._dragging = true;
-                callbacks.onDragStart?.(this._startX, this._startY);
-            }
+            this._handlePendingMotion(x, y, callbacks);
             return Clutter.EVENT_STOP;
         }
 
-        if (this._dragging) {
-            callbacks.onDragMove?.(x, y);
-            return Clutter.EVENT_STOP;
-        }
-
-        return Clutter.EVENT_PROPAGATE;
+        callbacks.onDragMove?.(x, y);
+        return Clutter.EVENT_STOP;
     }
 
     private _handleButtonRelease(
         event: Clutter.Event,
         callbacks: OverviewInputCallbacks,
     ): typeof Clutter.EVENT_STOP | typeof Clutter.EVENT_PROPAGATE {
-        const button = event.get_button();
-        if (button !== 1) return Clutter.EVENT_PROPAGATE;
+        if (event.get_button() !== 1) return Clutter.EVENT_PROPAGATE;
 
         if (this._pendingClick) {
-            // Never exceeded drag threshold — treat as normal click
             this._pendingClick = false;
             callbacks.onClick(this._startX, this._startY);
             return Clutter.EVENT_STOP;
@@ -236,71 +253,100 @@ export class OverviewInputAdapter {
         event: Clutter.Event,
         callbacks: OverviewInputCallbacks,
     ): typeof Clutter.EVENT_STOP | typeof Clutter.EVENT_PROPAGATE {
-        const symbol = event.get_key_symbol();
-        const state = event.get_state();
-
-        // In passthrough mode (rename active), only intercept Escape
         if (this._keyPassthrough) {
-            if (symbol === Clutter.KEY_Escape) {
-                callbacks.onCancel();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
+            return this._handlePassthroughKey(event.get_key_symbol(), callbacks);
         }
+        return this._handleNormalKey(event, callbacks);
+    }
 
-        switch (symbol) {
-            case Clutter.KEY_Left:
-                callbacks.onNavigate('left');
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Right:
-                callbacks.onNavigate('right');
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Up:
-                callbacks.onNavigate('up');
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Down:
-                callbacks.onNavigate('down');
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Return:
-            case Clutter.KEY_KP_Enter:
-                callbacks.onConfirm();
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Escape:
-                if (this._dragging) {
-                    // Cancel drag, not the whole overview
-                    this._dragging = false;
-                    this._pendingClick = false;
-                    callbacks.onCancel();
-                    return Clutter.EVENT_STOP;
-                }
-                callbacks.onCancel();
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_BackSpace:
-                callbacks.onBackspace?.();
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_r:
-            case Clutter.KEY_R:
-                if (state & Clutter.ModifierType.MOD4_MASK) {
-                    callbacks.onRename?.();
-                    return Clutter.EVENT_STOP;
-                }
-                break;
-            default:
-                break;
+    private _handleNormalKey(
+        event: Clutter.Event,
+        callbacks: OverviewInputCallbacks,
+    ): typeof Clutter.EVENT_STOP | typeof Clutter.EVENT_PROPAGATE {
+        const symbol = event.get_key_symbol();
+        const handled = this._handleNavigationKey(symbol, callbacks)
+            || this._handleConfirmOrEscape(symbol, callbacks)
+            || this._handleEditKey(symbol, event.get_state(), callbacks)
+            || this._handlePrintableInput(event, callbacks);
+        return handled ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
+    }
+
+    private _handlePassthroughKey(
+        symbol: number,
+        callbacks: OverviewInputCallbacks,
+    ): typeof Clutter.EVENT_STOP | typeof Clutter.EVENT_PROPAGATE {
+        if (symbol === Clutter.KEY_Escape) {
+            callbacks.onCancel();
+            return Clutter.EVENT_STOP;
         }
-
-        // Check for printable character input (no Ctrl/Alt/Super modifiers)
-        const blockedMods = Clutter.ModifierType.CONTROL_MASK |
-            Clutter.ModifierType.MOD1_MASK |
-            Clutter.ModifierType.MOD4_MASK;
-        if (!(state & blockedMods)) {
-            const ch = event.get_key_unicode();
-            if (ch && ch.length > 0 && ch !== '\0' && ch.charCodeAt(0) >= 32) {
-                callbacks.onTextInput?.(ch);
-                return Clutter.EVENT_STOP;
-            }
-        }
-
         return Clutter.EVENT_PROPAGATE;
+    }
+
+    private _handleNavigationKey(
+        symbol: number,
+        callbacks: OverviewInputCallbacks,
+    ): boolean {
+        const direction = NAVIGATION_KEYS.get(symbol);
+        if (!direction) return false;
+
+        callbacks.onNavigate(direction);
+        return true;
+    }
+
+    private _handleConfirmOrEscape(
+        symbol: number,
+        callbacks: OverviewInputCallbacks,
+    ): boolean {
+        if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_KP_Enter) {
+            callbacks.onConfirm();
+            return true;
+        }
+        if (symbol === Clutter.KEY_Escape) {
+            this._resetDragState();
+            callbacks.onCancel();
+            return true;
+        }
+        return false;
+    }
+
+    private _handleEditKey(
+        symbol: number,
+        state: number,
+        callbacks: OverviewInputCallbacks,
+    ): boolean {
+        if (symbol === Clutter.KEY_BackSpace) {
+            if (callbacks.onBackspace) callbacks.onBackspace();
+            return true;
+        }
+        return this._handleRenameKey(symbol, state, callbacks);
+    }
+
+    private _handleRenameKey(
+        symbol: number,
+        state: number,
+        callbacks: OverviewInputCallbacks,
+    ): boolean {
+        if (symbol !== Clutter.KEY_r && symbol !== Clutter.KEY_R) return false;
+        if (!(state & Clutter.ModifierType.MOD4_MASK)) return false;
+
+        if (callbacks.onRename) callbacks.onRename();
+        return true;
+    }
+
+    private _isPrintableChar(ch: string): boolean {
+        return ch.length > 0 && ch !== '\0' && ch.charCodeAt(0) >= 32;
+    }
+
+    private _handlePrintableInput(
+        event: Clutter.Event,
+        callbacks: OverviewInputCallbacks,
+    ): boolean {
+        if (event.get_state() & BLOCKED_MODS) return false;
+
+        const ch = event.get_key_unicode();
+        if (!ch || !this._isPrintableChar(ch)) return false;
+
+        if (callbacks.onTextInput) callbacks.onTextInput(ch);
+        return true;
     }
 }

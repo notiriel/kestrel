@@ -4,8 +4,6 @@ import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import type { KeybindingPort, KeybindingCallbacks } from '../ports/keybinding-port.js';
 
-export type { KeybindingCallbacks };
-
 /** Mutter setting whose default ('Super_L') opens the Activities Overview. */
 const MUTTER_SCHEMA = 'org.gnome.mutter';
 const OVERLAY_KEY = 'overlay-key';
@@ -73,8 +71,14 @@ export class KeybindingAdapter implements KeybindingPort {
     }
 
     connect(settings: Gio.Settings, callbacks: KeybindingCallbacks): void {
-        // Disable the Super overlay key so it doesn't open the Activities Overview
-        // when Super+Arrow combos are released.
+        this._disableOverlayKey();
+        this._saveAndDisable(MUTTER_KB_SCHEMA, CONFLICTING_MUTTER_KEYS);
+        this._saveAndDisable(SHELL_KB_SCHEMA, CONFLICTING_SHELL_KEYS);
+        this._saveAndDisable(WM_SCHEMA, CONFLICTING_WM_KEYS);
+        this._registerBindings(settings, callbacks);
+    }
+
+    private _disableOverlayKey(): void {
         try {
             const mutterSettings = new Gio.Settings({ schema_id: MUTTER_SCHEMA });
             this._savedOverlayKey = mutterSettings.get_string(OVERLAY_KEY);
@@ -82,11 +86,9 @@ export class KeybindingAdapter implements KeybindingPort {
         } catch (e) {
             console.error('[Kestrel] Failed to disable overlay-key:', e);
         }
+    }
 
-        this._saveAndDisable(MUTTER_KB_SCHEMA, CONFLICTING_MUTTER_KEYS);
-        this._saveAndDisable(SHELL_KB_SCHEMA, CONFLICTING_SHELL_KEYS);
-        this._saveAndDisable(WM_SCHEMA, CONFLICTING_WM_KEYS);
-
+    private _registerBindings(settings: Gio.Settings, callbacks: KeybindingCallbacks): void {
         const bindings: Array<[string, () => void]> = [
             ['focus-right', callbacks.onFocusRight],
             ['focus-left', callbacks.onFocusLeft],
@@ -104,15 +106,13 @@ export class KeybindingAdapter implements KeybindingPort {
             ['close-window', callbacks.onCloseWindow],
         ];
 
+        this._addBindings(settings, bindings);
+    }
+
+    private _addBindings(settings: Gio.Settings, bindings: Array<[string, () => void]>): void {
         for (const [name, handler] of bindings) {
             try {
-                const result = Main.wm.addKeybinding(
-                    name,
-                    settings,
-                    Meta.KeyBindingFlags.NONE,
-                    Shell.ActionMode.NORMAL,
-                    handler,
-                );
+                Main.wm.addKeybinding(name, settings, Meta.KeyBindingFlags.NONE, Shell.ActionMode.NORMAL, handler);
                 this._bound.push(name);
             } catch (e) {
                 console.error(`[Kestrel] Failed to add keybinding ${name}:`, e);

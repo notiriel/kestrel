@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { WindowId, KestrelConfig, MonitorInfo, WorldUpdate } from '../../src/domain/types.js';
+import { describe, it, expect, vi } from 'vitest';
+import type { WindowId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
 import { createWorld, addWindow } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
-import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
+import { focusLeft, focusUp } from '../../src/domain/navigation.js';
 import { NavigationHandler, type NavigationDeps } from '../../src/adapters/navigation-handler.js';
 import { createMockClonePort } from './mock-ports.js';
 import { moveDown, moveUp } from '../../src/domain/window-operations.js';
@@ -132,7 +132,7 @@ describe('NavigationHandler', () => {
 
             // Should have synced scroll for the new workspace
             expect(deps.mocks.clonePort.setScrollForWorkspace).toHaveBeenCalledOnce();
-            const [wsId, scrollX] = deps.mocks.clonePort.setScrollForWorkspace.mock.calls[0]!;
+            const [_wsId, scrollX] = deps.mocks.clonePort.setScrollForWorkspace.mock.calls[0]!;
             expect(scrollX).toBe(100); // old scroll carried over
         });
 
@@ -168,7 +168,7 @@ describe('NavigationHandler', () => {
             handler.handleVerticalMove(moveUp, 'move-up');
 
             expect(deps.mocks.clonePort.moveCloneToWorkspace).toHaveBeenCalledOnce();
-            const [windowId, targetWsId] = deps.mocks.clonePort.moveCloneToWorkspace.mock.calls[0]!;
+            const [windowId, _targetWsId] = deps.mocks.clonePort.moveCloneToWorkspace.mock.calls[0]!;
             expect(windowId).toBe(wid(2));
 
             expect(deps.mocks.clonePort.syncWorkspaces).toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe('NavigationHandler', () => {
             handler.handleVerticalMove(moveDown, 'move-down');
 
             // Window should have moved to the new workspace below
-            const updatedWorld = deps.mocks.currentWorld!;
+            const _updatedWorld = deps.mocks.currentWorld!;
 
             // moveCloneToWorkspace is called when window changes workspace
             // In this case it should be called since win-1 moves from ws0 to ws1

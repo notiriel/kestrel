@@ -90,16 +90,24 @@ export class StatusOverlayAdapter {
         }
 
         if (status === 'end') {
-            this._sessionToWindowId.delete(sessionId);
-            this._windowStatus.delete(windowId);
-            const overlay = this._overlays.get(windowId);
-            if (overlay) {
-                overlay.destroy();
-                this._overlays.delete(windowId);
-            }
+            this._clearSession(sessionId, windowId);
             return;
         }
 
+        this._applyStatus(windowId, status);
+    }
+
+    private _clearSession(sessionId: string, windowId: WindowId): void {
+        this._sessionToWindowId.delete(sessionId);
+        this._windowStatus.delete(windowId);
+        const overlay = this._overlays.get(windowId);
+        if (overlay) {
+            overlay.destroy();
+            this._overlays.delete(windowId);
+        }
+    }
+
+    private _applyStatus(windowId: WindowId, status: string): void {
         const validStatus = status as ClaudeStatus;
         if (!STATUS_COLORS[validStatus]) {
             console.log(`[Kestrel] setWindowStatus: unknown status ${status}`);
@@ -108,7 +116,6 @@ export class StatusOverlayAdapter {
 
         this._windowStatus.set(windowId, validStatus);
 
-        // If overview is active, update overlay color immediately
         const overlay = this._overlays.get(windowId);
         if (overlay && this._overviewActive) {
             overlay.style = `color: ${STATUS_COLORS[validStatus]}; -st-icon-style: symbolic;`;
@@ -132,35 +139,42 @@ export class StatusOverlayAdapter {
         if (!this._layer || !this._iconGFile) return;
         this._overviewActive = true;
 
-        const { scale, offsetX, offsetY } = transform;
-
         for (const [windowId, status] of this._windowStatus) {
             const pos = clonePositions.get(windowId);
             if (!pos) continue;
 
-            let overlay = this._overlays.get(windowId);
-            if (!overlay) {
-                const gicon = new Gio.FileIcon({ file: this._iconGFile });
-                overlay = new St.Icon({
-                    gicon: gicon as any,
-                    icon_size: ICON_SIZE,
-                    style: `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`,
-                    reactive: false,
-                });
-                this._layer.add_child(overlay);
-                this._overlays.set(windowId, overlay);
-            } else {
-                overlay.style = `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`;
-            }
-
-            // Position at top-right of the clone in overview coordinates
-            const x = (pos.x + pos.width - ICON_SIZE - ICON_PADDING) * scale + offsetX;
-            const y = (pos.wsIndex * this._layer.height + pos.y + ICON_PADDING) * scale + offsetY;
-
-            overlay.set_position(Math.round(x), Math.round(y));
-            overlay.set_size(Math.round(ICON_SIZE * scale), Math.round(ICON_SIZE * scale));
-            overlay.visible = true;
+            const overlay = this._getOrCreateOverlay(windowId, status);
+            this._positionOverlay(overlay, pos, transform);
         }
+    }
+
+    private _getOrCreateOverlay(windowId: WindowId, status: ClaudeStatus): St.Icon {
+        let overlay = this._overlays.get(windowId);
+        if (!overlay) {
+            const gicon = new Gio.FileIcon({ file: this._iconGFile! });
+            overlay = new St.Icon({
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                gicon: gicon as any,
+                icon_size: ICON_SIZE,
+                style: `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`,
+                reactive: false,
+            });
+            this._layer!.add_child(overlay);
+            this._overlays.set(windowId, overlay);
+        } else {
+            overlay.style = `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`;
+        }
+        return overlay;
+    }
+
+    private _positionOverlay(overlay: St.Icon, pos: ClonePosition, transform: OverviewTransform): void {
+        const { scale, offsetX, offsetY } = transform;
+        const x = (pos.x + pos.width - ICON_SIZE - ICON_PADDING) * scale + offsetX;
+        const y = (pos.wsIndex * this._layer!.height + pos.y + ICON_PADDING) * scale + offsetY;
+
+        overlay.set_position(Math.round(x), Math.round(y));
+        overlay.set_size(Math.round(ICON_SIZE * scale), Math.round(ICON_SIZE * scale));
+        overlay.visible = true;
     }
 
     exitOverview(): void {

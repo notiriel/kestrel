@@ -1,7 +1,7 @@
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 
-export interface MouseInputDeps {
+interface MouseInputDeps {
     getWorld(): { overviewActive: boolean } | null;
     isOverviewActive(): boolean;
     onScrollHorizontal(direction: 'left' | 'right'): void;
@@ -104,30 +104,28 @@ export class MouseInputAdapter {
         this._smoothDx += dx;
         this._smoothDy += dy;
 
-        // Fire horizontal navigation (inverted: positive dx = scroll right = focus left)
-        while (Math.abs(this._smoothDx) >= 1.0) {
-            if (this._smoothDx > 0) {
-                this._deps.onScrollHorizontal('left');
-                this._smoothDx -= 1.0;
-            } else {
-                this._deps.onScrollHorizontal('right');
-                this._smoothDx += 1.0;
-            }
-        }
+        this._smoothDx = this._drainAxis(this._smoothDx,
+            () => this._deps.onScrollHorizontal('left'),
+            () => this._deps.onScrollHorizontal('right'));
 
-        // Fire vertical navigation (inverted: positive dy = scroll down = workspace up)
-        while (Math.abs(this._smoothDy) >= 1.0) {
-            if (this._smoothDy > 0) {
-                this._deps.onScrollVertical('up');
-                this._smoothDy -= 1.0;
-            } else {
-                this._deps.onScrollVertical('down');
-                this._smoothDy += 1.0;
-            }
-        }
+        this._smoothDy = this._drainAxis(this._smoothDy,
+            () => this._deps.onScrollVertical('up'),
+            () => this._deps.onScrollVertical('down'));
 
-        // Reset accumulators after 300ms idle
         this._scheduleIdleReset();
+    }
+
+    private _drainAxis(value: number, onPositive: () => void, onNegative: () => void): number {
+        while (Math.abs(value) >= 1.0) {
+            if (value > 0) {
+                onPositive();
+                value -= 1.0;
+            } else {
+                onNegative();
+                value += 1.0;
+            }
+        }
+        return value;
     }
 
     private _scheduleIdleReset(): void {

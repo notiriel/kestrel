@@ -71,7 +71,9 @@ export default class KestrelExtension extends Extension {
             this._debugMode = settings.get_boolean('debug-mode');
 
             if (this._debugMode) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (global as any).context.unsafe_mode = true;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (global as any)._kestrel = {
                     debugState: () => this._debugState(),
                 };
@@ -400,7 +402,9 @@ export default class KestrelExtension extends Extension {
             this._worldHolder.setOnWorldChanged(null);
             this._worldHolder = new WorldHolder();
             if (this._debugMode) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (global as any)._kestrel = null;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (global as any).context.unsafe_mode = false;
             }
 

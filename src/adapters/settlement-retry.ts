@@ -5,7 +5,7 @@ import type { WindowPort } from '../ports/window-port.js';
 import type { CloneRenderPort } from '../ports/clone-port.js';
 import GLib from 'gi://GLib';
 
-export interface SettlementDeps {
+interface SettlementDeps {
     getWorld(): World | null;
     checkGuard(label: string): boolean;
     focusWindow(windowId: WindowId | null): void;
@@ -44,27 +44,34 @@ export class SettlementRetry {
         this._timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
             this._timerId = null;
             try {
-                const world = this._deps.getWorld();
-                if (!world) return GLib.SOURCE_REMOVE;
-                if (!this._deps.checkGuard('settlement')) return GLib.SOURCE_REMOVE;
-
-                this._deps.focusWindow(world.focusedWindow);
-
-                const layout = computeLayout(world);
-                this._deps.getWindowAdapter()?.applyLayout(layout, true);
-                this._deps.getCloneAdapter()?.applyLayout(layout, false);
-
-                if (!this._deps.getWindowAdapter()?.hasUnsettledWindows()) {
-                    return GLib.SOURCE_REMOVE;
-                }
-
-                this._step++;
-                this._scheduleNext();
+                this._performSettlement();
             } catch (e) {
                 console.error('[Kestrel] Error in settlement retry:', e);
             }
             return GLib.SOURCE_REMOVE;
         });
+    }
+
+    private _performSettlement(): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        if (!this._deps.checkGuard('settlement')) return;
+
+        this._deps.focusWindow(world.focusedWindow);
+        this._applySettlementLayout(world);
+    }
+
+    private _applySettlementLayout(world: World): void {
+        const layout = computeLayout(world);
+        const winAdapter = this._deps.getWindowAdapter();
+        const cloneAdapter = this._deps.getCloneAdapter();
+        winAdapter?.applyLayout(layout, true);
+        cloneAdapter?.applyLayout(layout, false);
+
+        if (winAdapter?.hasUnsettledWindows()) {
+            this._step++;
+            this._scheduleNext();
+        }
     }
 
     destroy(): void {

@@ -1,6 +1,8 @@
 import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
+import { workspaceNameForWindow } from '../domain/world.js';
 import type { ClaudeStatus } from '../domain/notification-types.js';
+import { classifyPermissionPayload, parseAllowResponse } from '../domain/notification.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
 import { StatusOverlayAdapter } from './status-overlay-adapter.js';
 import { NotificationOverlayAdapter } from './notification-overlay-adapter.js';
@@ -10,7 +12,7 @@ import type Clutter from 'gi://Clutter';
 import type Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
 
-export interface NotificationCoordinatorDeps {
+interface NotificationCoordinatorDeps {
     getWorld(): World | null;
     extensionPath: string;
     getLayer(): Clutter.Actor | null;
@@ -35,24 +37,24 @@ export class NotificationCoordinator {
     }
 
     init(): void {
-        // Status overlay for Claude session indicators
         this._statusOverlay = new StatusOverlayAdapter();
         const layer = this._deps.getLayer();
         if (layer) {
             this._statusOverlay.init(layer, `${this._deps.extensionPath}/data`);
         }
 
-        // Notification overlay for Claude permission requests
         this._notificationOverlay = new NotificationOverlayAdapter();
         this._notificationOverlay.init({
-            onVisitSession: (sessionId) => {
-                this._deps.visitSession(sessionId);
-            },
+            onVisitSession: (sid) => this._deps.visitSession(sid),
             extensionPath: this._deps.extensionPath,
         });
 
-        // Export DBus service for hook scripts
-        this._dbusService = new KestrelDBusService({
+        this._dbusService = this._createDbusService();
+        this._notificationFocusMode = this._createFocusMode();
+    }
+
+    private _createDbusService(): KestrelDBusService {
+        return new KestrelDBusService({
             handleNotification: (payload) => this.handleNotification(payload),
             handlePermissionRequest: (payload) => this.handlePermissionRequest(payload),
             setWindowStatus: (sessionId, status) => this.setWindowStatus(sessionId, status),
@@ -61,37 +63,25 @@ export class NotificationCoordinator {
             switchToWorkspaceByName: (name) => this._deps.switchToWorkspaceByName(name),
             renameCurrentWorkspace: (name) => this._deps.renameCurrentWorkspace(name),
         });
+    }
 
-        // Notification focus mode (Super+.)
-        this._notificationFocusMode = new NotificationFocusMode({
-            getPendingEntries: () => this._notificationOverlay?.getPendingEntries() ?? [],
-            getWindowForSession: (sid) => this._statusOverlay?.getWindowForSession(sid) ?? null,
-            getMetaWindow: (wid) => this._deps.getMetaWindow(wid) as Meta.Window | undefined,
-            respondToEntry: (id, action) => this._notificationOverlay?.respond(id, action),
-            visitSession: (sessionId) => {
-                this._deps.visitSession(sessionId);
-            },
-            getMonitor: () => this._deps.getMonitor(),
-            isOverviewActive: () => this._deps.isOverviewActive(),
-            registerEntriesChanged: (cb) => {
-                if (this._notificationOverlay) {
-                    this._notificationOverlay.onEntriesChanged = cb;
-                }
-            },
-            unregisterEntriesChanged: () => {
-                if (this._notificationOverlay) {
-                    this._notificationOverlay.onEntriesChanged = null;
-                }
-            },
-            // Question support
-            getQuestionState: (id) => this._notificationOverlay?.getQuestionState(id) ?? null,
-            getQuestionCard: (id) => this._notificationOverlay?.getQuestionCard(id) ?? null,
-            questionNavigate: (id, delta) => this._notificationOverlay?.questionNavigate(id, delta),
-            questionSelectOption: (id, qi, oi) => this._notificationOverlay?.questionSelectOption(id, qi, oi),
-            questionSend: (id) => this._notificationOverlay?.questionSend(id),
-            questionDismiss: (id) => this._notificationOverlay?.questionDismiss(id),
-            questionVisit: (id) => this._notificationOverlay?.questionVisit(id),
-            extensionPath: this._deps.extensionPath,
+    private _createFocusMode(): NotificationFocusMode {
+        const o = this._notificationOverlay, s = this._statusOverlay, d = this._deps;
+        return new NotificationFocusMode({
+            getPendingEntries: () => o?.getPendingEntries() ?? [],
+            getWindowForSession: (sid) => s?.getWindowForSession(sid) ?? null,
+            getMetaWindow: (wid) => d.getMetaWindow(wid) as Meta.Window | undefined,
+            respondToEntry: (id, action) => o?.respond(id, action),
+            visitSession: (sid) => d.visitSession(sid),
+            getMonitor: () => d.getMonitor(), isOverviewActive: () => d.isOverviewActive(),
+            registerEntriesChanged: (cb) => { if (o) o.onEntriesChanged = cb; },
+            unregisterEntriesChanged: () => { if (o) o.onEntriesChanged = null; },
+            getQuestionState: (id) => o?.getQuestionState(id) ?? null,
+            getQuestionCard: (id) => o?.getQuestionCard(id) ?? null,
+            questionNavigate: (id, delta) => o?.questionNavigate(id, delta),
+            questionSelectOption: (id, qi, oi) => o?.questionSelectOption(id, qi, oi),
+            questionSend: (id) => o?.questionSend(id), questionDismiss: (id) => o?.questionDismiss(id),
+            questionVisit: (id) => o?.questionVisit(id), extensionPath: d.extensionPath,
         });
     }
 
@@ -132,13 +122,9 @@ export class NotificationCoordinator {
             payload.workspace_name = this._workspaceNameForSession(String(payload.session_id ?? ''));
             const id = `notif-${GLib.uuid_string_random()}`;
 
-            // Route AskUserQuestion to question card
-            if (payload.tool_name === 'AskUserQuestion' && payload.tool_input?.questions) {
-                payload.questions = payload.tool_input.questions;
-                const qCount = Array.isArray(payload.tool_input.questions) ? payload.tool_input.questions.length : 0;
-                payload.title = `Claude asks ${qCount} question${qCount !== 1 ? 's' : ''}`;
-                payload.message = 'Session wants your input';
-                this._notificationOverlay?.showQuestion(id, payload);
+            const classification = classifyPermissionPayload(payload);
+            if (classification.isQuestion) {
+                this._showAsQuestion(id, payload, classification.questions);
             } else {
                 this._notificationOverlay?.showPermission(id, payload);
             }
@@ -147,6 +133,14 @@ export class NotificationCoordinator {
         } catch (e) {
             return `{"error":"${String(e)}"}`;
         }
+    }
+
+    private _showAsQuestion(id: string, payload: Record<string, unknown>, questions: ReturnType<typeof classifyPermissionPayload>['questions']): void {
+        payload.questions = questions;
+        const qCount = questions.length;
+        payload.title = `Claude asks ${qCount} question${qCount !== 1 ? 's' : ''}`;
+        payload.message = 'Session wants your input';
+        this._notificationOverlay?.showQuestion(id, payload);
     }
 
     handleNotification(jsonPayload: string): string {
@@ -166,18 +160,7 @@ export class NotificationCoordinator {
             const response = this._notificationOverlay?.getResponse(id);
             if (!response) return '{"pending":true}';
 
-            // Question cards respond with 'allow:{"0":["opt"]}' — parse the answers
-            if (response.startsWith('allow:')) {
-                const answersJson = response.slice(6);
-                try {
-                    const answers = JSON.parse(answersJson);
-                    return JSON.stringify({ action: 'allow', answers });
-                } catch {
-                    return JSON.stringify({ action: 'allow' });
-                }
-            }
-
-            return JSON.stringify({ action: response });
+            return JSON.stringify(parseAllowResponse(response));
         } catch (e) {
             return `{"error":"${String(e)}"}`;
         }
@@ -216,11 +199,6 @@ export class NotificationCoordinator {
         if (!world || !this._statusOverlay) return null;
         const windowId = this._statusOverlay.getWindowForSession(sessionId);
         if (!windowId) return null;
-        for (let i = 0; i < world.workspaces.length; i++) {
-            if (world.workspaces[i].windows.some(w => w.id === windowId)) {
-                return world.workspaces[i].name ?? null;
-            }
-        }
-        return null;
+        return workspaceNameForWindow(world, windowId);
     }
 }

@@ -13,9 +13,13 @@ build:
 	npx tsc
 
 test:
-	npx vitest run
+	npx vitest run --coverage
+
+coverage:
+	npx vitest run --coverage --coverage.include='src/**/*.ts' --coverage.exclude='src/ambient.d.ts' --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
 
 lint:
+	npx eslint src/ test/
 	npx knip
 
 # ── Install everything ──────────────────────────────────────────────
@@ -143,4 +147,5 @@ dev: install enable
 	@echo "Restart GNOME Shell to load changes"
 	@echo "  Wayland: log out and back in"
 
-.PHONY: build test lint install enable disable status dev
+.PHONY: build test coverage lint install enable disable status dev
+

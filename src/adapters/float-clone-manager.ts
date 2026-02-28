@@ -30,39 +30,37 @@ export class FloatCloneManager implements FloatClonePort {
         const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
         if (!actor || !this._floatLayer) return;
 
+        const wrapper = this._createCloneWrapper(windowId, actor);
+        const clone = wrapper.get_first_child() as Clutter.Clone;
+        this._syncFloatClone(wrapper, clone, metaWindow);
+
+        const entry = this._attachSignals(windowId, wrapper, clone, metaWindow, actor);
+        this._floatClones.set(windowId, entry);
+    }
+
+    private _createCloneWrapper(windowId: WindowId, actor: Meta.WindowActor): Clutter.Actor {
         const wrapper = new Clutter.Actor({ name: `kestrel-float-${windowId}` });
         const clone = new Clutter.Clone({ source: actor });
         wrapper.add_child(clone);
-        this._floatLayer.add_child(wrapper);
+        this._floatLayer!.add_child(wrapper);
+        return wrapper;
+    }
 
-        this._syncFloatClone(wrapper, clone, metaWindow);
-
-        const positionChangedId = metaWindow.connect('position-changed', () => {
-            try {
-                this._syncFloatClone(wrapper, clone, metaWindow);
-            } catch (e) {
-                console.error('[Kestrel] Error in float position-changed handler:', e);
-            }
-        });
-
-        const sizeChangedId = metaWindow.connect('size-changed', () => {
-            try {
-                this._syncFloatClone(wrapper, clone, metaWindow);
-            } catch (e) {
-                console.error('[Kestrel] Error in float size-changed handler:', e);
-            }
-        });
+    private _attachSignals(windowId: WindowId, wrapper: Clutter.Actor, clone: Clutter.Clone, metaWindow: Meta.Window, actor: Meta.WindowActor): FloatCloneEntry {
+        const syncFn = () => {
+            try { this._syncFloatClone(wrapper, clone, metaWindow); }
+            catch (e) { console.error('[Kestrel] Error in float clone sync:', e); }
+        };
+        const positionChangedId = metaWindow.connect('position-changed', syncFn);
+        const sizeChangedId = metaWindow.connect('size-changed', syncFn);
 
         const entry: FloatCloneEntry = {
             wrapper, clone, metaWindow, sourceActor: actor,
             positionChangedId, sizeChangedId,
             sourceDestroyId: 0, sourceDestroyed: false,
         };
-        entry.sourceDestroyId = actor.connect('destroy', () => {
-            entry.sourceDestroyed = true;
-        });
-
-        this._floatClones.set(windowId, entry);
+        entry.sourceDestroyId = actor.connect('destroy', () => { entry.sourceDestroyed = true; });
+        return entry;
     }
 
     removeFloatClone(windowId: WindowId): void {

@@ -21,17 +21,21 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "lint:dead": "knip"
+    "lint:dead": "knip",
+    "lint:eslint": "eslint src/ test/"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.3",
     "@girs/gio-2.0": "2.84.4-4.0.0-beta.36",
     "@girs/gjs": "4.0.0-beta.38",
     "@girs/glib-2.0": "2.84.4-4.0.0-beta.36",
     "@girs/gnome-shell": "46.0.2",
     "@girs/gobject-2.0": "2.84.4-4.0.0-beta.36",
     "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.39.3",
     "knip": "^5.83.1",
     "typescript": "^5.7",
+    "typescript-eslint": "^8.56.1",
     "vitest": "^3.0"
   }
 }

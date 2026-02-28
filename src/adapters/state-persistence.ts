@@ -6,6 +6,20 @@ import { createTiledWindow } from '../domain/window.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
 
+interface SavedWorkspace {
+    windowIds: string[];
+    slotSpans: number[];
+    name: string | null;
+}
+
+interface SavedState {
+    version: number;
+    workspaces: SavedWorkspace[];
+    focusedWindow: string | null;
+    viewportWorkspaceIndex: number;
+    viewportScrollX: number;
+}
+
 export class StatePersistence implements StatePersistencePort {
     private _settings: Gio.Settings;
 
@@ -45,49 +59,67 @@ export class StatePersistence implements StatePersistencePort {
 
     tryRestore(config: KestrelConfig, monitor: MonitorInfo): World | null {
         try {
-            const json = this._settings.get_string('saved-state');
-            if (!json) return null;
+            const state = this._readAndValidateState();
+            if (!state) return null;
 
-            this._settings.set_string('saved-state', '');
-
-            const state = JSON.parse(json);
-            if (state.version !== 1 && state.version !== 2) return null;
-
-            const actors = global.get_window_actors();
-            const existingWindowIds = new Set<string>();
-            for (const actor of actors) {
-                try {
-                    const metaWindow = (actor as Meta.WindowActor).get_meta_window();
-                    if (!metaWindow) continue;
-                    existingWindowIds.add(String(metaWindow.get_stable_sequence()));
-                } catch { /* skip */ }
-            }
-
-            const workspaceData: RestoreWorkspaceData[] = [];
-            for (const savedWs of state.workspaces) {
-                const windows = [];
-                for (let i = 0; i < savedWs.windowIds.length; i++) {
-                    const id = savedWs.windowIds[i] as WindowId;
-                    const slotSpan = (savedWs.slotSpans[i] ?? 1) as 1 | 2;
-                    if (existingWindowIds.has(id)) {
-                        windows.push(createTiledWindow(id, slotSpan));
-                    }
-                }
-                workspaceData.push({ windows, name: savedWs.name ?? null });
-            }
-
-            const world = restoreWorld(
-                config, monitor,
-                workspaceData,
-                state.viewportWorkspaceIndex ?? 0,
-                state.viewportScrollX ?? 0,
-                (state.focusedWindow as WindowId) ?? null,
-            );
-
-            return world;
+            return this._restoreFromState(state, config, monitor);
         } catch (e) {
             console.error('[Kestrel] Error restoring state:', e);
             return null;
         }
+    }
+
+    private _restoreFromState(state: SavedState, config: KestrelConfig, monitor: MonitorInfo): World {
+        const existingWindowIds = this._collectExistingWindowIds();
+        const workspaceData = this._buildWorkspaceData(state, existingWindowIds);
+
+        return restoreWorld(
+            config, monitor,
+            workspaceData,
+            state.viewportWorkspaceIndex ?? 0,
+            state.viewportScrollX ?? 0,
+            (state.focusedWindow as WindowId) ?? null,
+        );
+    }
+
+    private _readAndValidateState(): SavedState | null {
+        const json = this._settings.get_string('saved-state');
+        if (!json) return null;
+
+        this._settings.set_string('saved-state', '');
+
+        const state = JSON.parse(json) as SavedState;
+        if (state.version !== 1 && state.version !== 2) return null;
+
+        return state;
+    }
+
+    private _collectExistingWindowIds(): Set<string> {
+        const actors = global.get_window_actors();
+        const existingWindowIds = new Set<string>();
+        for (const actor of actors) {
+            try {
+                const metaWindow = (actor as Meta.WindowActor).get_meta_window();
+                if (!metaWindow) continue;
+                existingWindowIds.add(String(metaWindow.get_stable_sequence()));
+            } catch { /* skip */ }
+        }
+        return existingWindowIds;
+    }
+
+    private _buildWorkspaceData(state: SavedState, existingWindowIds: Set<string>): RestoreWorkspaceData[] {
+        return state.workspaces.map(savedWs => ({
+            windows: this._filterExistingWindows(savedWs, existingWindowIds),
+            name: savedWs.name ?? null,
+        }));
+    }
+
+    private _filterExistingWindows(
+        savedWs: SavedWorkspace, existingWindowIds: Set<string>,
+    ): ReturnType<typeof createTiledWindow>[] {
+        return savedWs.windowIds
+            .map((idStr, i) => ({ id: idStr as WindowId, slotSpan: (savedWs.slotSpans[i] ?? 1) as 1 | 2 }))
+            .filter(({ id }) => existingWindowIds.has(id))
+            .map(({ id, slotSpan }) => createTiledWindow(id, slotSpan));
     }
 }

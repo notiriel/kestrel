@@ -1,10 +1,7 @@
 import type { WindowId, WorkspaceId, LayoutState, KestrelConfig } from '../domain/types.js';
+import type { OverviewTransform } from '../domain/overview-state.js';
 
-export interface OverviewTransform {
-    readonly scale: number;
-    readonly offsetX: number;
-    readonly offsetY: number;
-}
+export type { OverviewTransform } from '../domain/overview-state.js';
 
 /** Tiled clone lifecycle: create, remove, reparent, fullscreen visibility. */
 export interface CloneLifecyclePort {

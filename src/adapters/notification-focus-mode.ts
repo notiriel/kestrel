@@ -1,7 +1,15 @@
 import type { WindowId } from '../domain/types.js';
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
 import type { QuestionState } from './notification-adapter-types.js';
-import { QuestionCard } from './question-card.js';
+import { QuestionCard } from '../ui-components/question-card.js';
+import {
+    FOCUS_CARD_WIDTH,
+    buildFocusModeBackdrop, buildPreviewContainer, buildCardContainer,
+    buildCounterLabel, buildHintLabel,
+    buildFocusCardRoot, buildFocusCardHeader, buildFocusCardMessage, buildFocusCardCommand,
+    buildPermissionActionRow, buildNotificationActionRow,
+    buildPlaceholderLabel,
+} from '../ui-components/focus-mode-builders.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
@@ -13,22 +21,11 @@ interface Easeable {
     ease(params: Record<string, unknown>): void;
 }
 
-// Kestrel brand palette — same as notification-overlay-adapter
-const SURFACE = '#0a0f0c';
-const BORDER = '#1c2b2c';
-const TEXT = '#e8ede9';
-const TEXT_DIM = '#9ca8a0';
-const ACCENT = '#62af85';
-const GREEN = '#7dd6a4';
-const RED = '#c95a5a';
-const BLUE = '#5a8ec9';
-
-const CARD_WIDTH = 600;
 const ANIM_DURATION = 250;
 const SLIDE_OFFSET = 60;
 const CLONE_SCALE = 0.8;
 
-export interface FocusModeDeps {
+interface FocusModeDeps {
     getPendingEntries(): Array<{ id: string; notification: OverlayNotification }>;
     getWindowForSession(sessionId: string): WindowId | null;
     getMetaWindow(windowId: WindowId): Meta.Window | undefined;
@@ -105,70 +102,50 @@ export class NotificationFocusMode {
         this._currentIndex = 0;
 
         const monitor = this._deps.getMonitor();
+        this._buildBackdrop(monitor);
+        this._pushModalAndConnectInput();
 
-        // Backdrop — fullscreen dimmed overlay
-        this._backdrop = new St.Widget({
-            name: 'kestrel-focus-backdrop',
-            style: 'background-color: rgba(0,0,0,0.6);',
-            reactive: true,
-            x: monitor.x,
-            y: monitor.y,
-            width: monitor.width,
-            height: monitor.height,
-            opacity: 0,
+        // Animate backdrop in
+        (this._backdrop as unknown as Easeable).ease({
+            opacity: 255,
+            duration: ANIM_DURATION,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
 
-        // Preview container — left half, centered
-        this._previewContainer = new Clutter.Actor({
-            name: 'kestrel-focus-preview',
-            x: monitor.x,
-            y: monitor.y,
-            width: Math.floor(monitor.width / 2),
-            height: monitor.height,
-        });
+        this._deps.registerEntriesChanged(() => this._onEntriesChanged());
+        this._showEntry(0, 'none');
+    }
+
+    private _buildBackdrop(monitor: { x: number; y: number; width: number; height: number }): void {
+        this._backdrop = buildFocusModeBackdrop(monitor);
+        const halfW = Math.floor(monitor.width / 2);
+
+        this._previewContainer = buildPreviewContainer(monitor, halfW);
         this._backdrop.add_child(this._previewContainer);
-
-        // Card container — right half, centered
-        this._cardContainer = new Clutter.Actor({
-            name: 'kestrel-focus-cards',
-            x: Math.floor(monitor.width / 2),
-            y: 0,
-            width: Math.floor(monitor.width / 2),
-            height: monitor.height,
-        });
+        this._cardContainer = buildCardContainer(halfW, monitor.height);
         this._backdrop.add_child(this._cardContainer);
 
-        // Counter label
-        this._counterLabel = new St.Label({
-            text: '',
-            style: `font-family: monospace; font-size: 14px; color: ${TEXT_DIM}; text-align: center;`,
-        });
+        this._counterLabel = buildCounterLabel();
         this._cardContainer.add_child(this._counterLabel);
-
-        // Hint label at bottom center
-        this._hintLabel = new St.Label({
-            text: '\u2191\u2193 navigate    1-4 act    \u2190\u2192 page    Esc close',
-            style: `font-family: monospace; font-size: 12px; color: ${TEXT_DIM}; text-align: center;`,
-        });
+        this._hintLabel = buildHintLabel();
         this._backdrop.add_child(this._hintLabel);
-        // Position hint at bottom center
-        this._hintLabel.set_position(
-            Math.round((monitor.width - 320) / 2),
-            monitor.height - 50,
-        );
+        this._hintLabel.set_position(Math.round((monitor.width - 320) / 2), monitor.height - 50);
 
         Main.layoutManager.addTopChrome(this._backdrop, {
             affectsStruts: false,
             trackFullscreen: false,
         });
+    }
 
-        // Push modal
-        const grab = Main.pushModal(global.stage, {
+    private _pushModalAndConnectInput(): void {
+        this._grab = Main.pushModal(global.stage, {
             actionMode: Shell.ActionMode.ALL,
         });
-        this._grab = grab;
+        this._connectKeyPress();
+        this._connectButtonPress();
+    }
 
-        // Connect input handlers
+    private _connectKeyPress(): void {
         this._keyPressId = global.stage.connect('key-press-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
                 try {
@@ -179,13 +156,14 @@ export class NotificationFocusMode {
                 }
             },
         );
+    }
 
+    private _connectButtonPress(): void {
         this._buttonPressId = global.stage.connect('button-press-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
                 try {
                     const button = event.get_button();
                     if (button !== 1) return Clutter.EVENT_PROPAGATE;
-                    // Click on backdrop (outside card/preview) exits
                     this._exit();
                     return Clutter.EVENT_STOP;
                 } catch (e) {
@@ -194,32 +172,21 @@ export class NotificationFocusMode {
                 }
             },
         );
-
-        // Animate backdrop in
-        (this._backdrop as unknown as Easeable).ease({
-            opacity: 255,
-            duration: ANIM_DURATION,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-        });
-
-        // Register for live updates
-        this._deps.registerEntriesChanged(() => this._onEntriesChanged());
-
-        // Show the first entry
-        this._showEntry(0, 'none');
     }
 
     private _exit(): void {
         if (!this._active) return;
         this._active = false;
 
-        // Destroy focus-mode question card if any
         this._destroyFocusModeQuestionCard();
         this._cancelAutoAdvanceSync();
-
         this._deps.unregisterEntriesChanged();
+        this._disconnectInput();
+        this._deferModalClose();
+        this._animateBackdropOut();
+    }
 
-        // Disconnect input
+    private _disconnectInput(): void {
         if (this._keyPressId) {
             global.stage.disconnect(this._keyPressId);
             this._keyPressId = 0;
@@ -228,41 +195,44 @@ export class NotificationFocusMode {
             global.stage.disconnect(this._buttonPressId);
             this._buttonPressId = 0;
         }
+    }
 
-        // Pop modal (deferred)
-        if (this._grab) {
-            const grab = this._grab;
-            this._grab = null;
-            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                try {
-                    Main.popModal(grab);
-                } catch (e) {
-                    console.error('[Kestrel] Error in focus mode popModal:', e);
-                }
-                return GLib.SOURCE_REMOVE;
-            });
-        }
+    private _deferModalClose(): void {
+        if (!this._grab) return;
+        const grab = this._grab;
+        this._grab = null;
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            try {
+                Main.popModal(grab);
+            } catch (e) {
+                console.error('[Kestrel] Error in focus mode popModal:', e);
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+    }
 
-        // Animate out then destroy
-        if (this._backdrop) {
-            const backdrop = this._backdrop;
-            (backdrop as unknown as Easeable).ease({
-                opacity: 0,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_IN_QUAD,
-                onComplete: () => {
-                    try {
-                        this._cleanupUI();
-                        Main.layoutManager.removeChrome(backdrop);
-                        backdrop.destroy();
-                    } catch (e) {
-                        console.error('[Kestrel] Error cleaning up focus mode:', e);
-                    }
-                },
-            });
-            this._backdrop = null;
-        } else {
+    private _animateBackdropOut(): void {
+        if (!this._backdrop) {
             this._cleanupUI();
+            return;
+        }
+        const backdrop = this._backdrop;
+        this._backdrop = null;
+        (backdrop as unknown as Easeable).ease({
+            opacity: 0,
+            duration: 200,
+            mode: Clutter.AnimationMode.EASE_IN_QUAD,
+            onComplete: () => this._onBackdropFadeComplete(backdrop),
+        });
+    }
+
+    private _onBackdropFadeComplete(backdrop: St.Widget): void {
+        try {
+            this._cleanupUI();
+            Main.layoutManager.removeChrome(backdrop);
+            backdrop.destroy();
+        } catch (e) {
+            console.error('[Kestrel] Error cleaning up focus mode:', e);
         }
     }
 
@@ -281,75 +251,74 @@ export class NotificationFocusMode {
         if (!this._cardContainer || !this._previewContainer) return;
 
         const entries = this._deps.getPendingEntries();
-        const entryId = this._entryIds[index];
-        const entryData = entries.find(e => e.id === entryId);
+        const entryData = entries.find(e => e.id === this._entryIds[index]);
 
         if (!entryData) {
-            // Entry was resolved externally, try to advance
-            this._entryIds.splice(index, 1);
-            if (this._entryIds.length === 0) {
-                this._exit();
-                return;
-            }
-            this._currentIndex = Math.min(index, this._entryIds.length - 1);
-            this._showEntry(this._currentIndex, direction);
+            this._handleStaleEntry(index, direction);
             return;
         }
 
         const monitor = this._deps.getMonitor();
-        const halfW = Math.floor(monitor.width / 2);
-
-        // Destroy focus-mode question card before switching entries
         this._destroyFocusModeQuestionCard();
+        this._removeOldCard(direction);
+        this._createAndShowCard(entryData.notification, direction, monitor);
+        this._updateCounter();
+        this._positionCounter(monitor);
+        this._updatePreview(entryData.notification.sessionId, direction);
+    }
 
-        // Remove old card with animation
-        if (this._currentCard) {
-            const oldCard = this._currentCard;
-            const slideY = direction === 'up' ? SLIDE_OFFSET : -SLIDE_OFFSET;
-            (oldCard as unknown as Easeable).ease({
-                translation_y: slideY,
-                opacity: 0,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                onComplete: () => {
-                    try { oldCard.destroy(); } catch { /* already gone */ }
-                },
-            });
+    private _handleStaleEntry(index: number, direction: 'up' | 'down' | 'none'): void {
+        this._entryIds.splice(index, 1);
+        if (this._entryIds.length === 0) {
+            this._exit();
+            return;
         }
+        this._currentIndex = Math.min(index, this._entryIds.length - 1);
+        this._showEntry(this._currentIndex, direction);
+    }
 
-        // Build new card
-        const card = this._buildFocusCard(entryData.notification);
+    private _removeOldCard(direction: 'up' | 'down' | 'none'): void {
+        if (!this._currentCard) return;
+        this._animateSlideOut(this._currentCard, direction);
+    }
+
+    private _createAndShowCard(
+        notification: OverlayNotification,
+        direction: 'up' | 'down' | 'none',
+        monitor: { x: number; y: number; width: number; height: number },
+    ): void {
+        const halfW = Math.floor(monitor.width / 2);
+        const card = this._buildFocusCard(notification);
         this._currentCard = card;
-        this._cardContainer.add_child(card);
+        this._cardContainer!.add_child(card);
 
-        // Position card centered in right half
-        const cardX = Math.round((halfW - CARD_WIDTH) / 2);
-        const [, cardNatH] = card.get_preferred_height(CARD_WIDTH);
+        const cardX = Math.round((halfW - FOCUS_CARD_WIDTH) / 2);
+        const [, cardNatH] = card.get_preferred_height(FOCUS_CARD_WIDTH);
         const cardY = Math.round((monitor.height - cardNatH) / 2);
         card.set_position(cardX, cardY);
+        this._animateSlideIn(card, direction);
+    }
 
-        // Animate card in
+    private _animateSlideIn(actor: Clutter.Actor, direction: 'up' | 'down' | 'none'): void {
         const slideIn = direction === 'up' ? -SLIDE_OFFSET : (direction === 'down' ? SLIDE_OFFSET : 0);
-        card.translation_y = direction === 'none' ? 0 : slideIn;
-        card.opacity = 0;
-        (card as unknown as Easeable).ease({
+        actor.translation_y = direction === 'none' ? 0 : slideIn;
+        actor.opacity = 0;
+        (actor as unknown as Easeable).ease({
             translation_y: 0,
             opacity: 255,
             duration: ANIM_DURATION,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
+    }
 
-        // Update counter
-        this._updateCounter();
-
-        // Position counter below card
-        if (this._counterLabel) {
-            this._counterLabel.set_position(cardX, cardY + cardNatH + 16);
-            this._counterLabel.width = CARD_WIDTH;
-        }
-
-        // Update clone preview
-        this._updatePreview(entryData.notification.sessionId, direction);
+    private _positionCounter(monitor: { x: number; y: number; width: number; height: number }): void {
+        if (!this._counterLabel || !this._currentCard) return;
+        const halfW = Math.floor(monitor.width / 2);
+        const cardX = Math.round((halfW - FOCUS_CARD_WIDTH) / 2);
+        const [, cardNatH] = this._currentCard.get_preferred_height(FOCUS_CARD_WIDTH);
+        const cardY = Math.round((monitor.height - cardNatH) / 2);
+        this._counterLabel.set_position(cardX, cardY + cardNatH + 16);
+        this._counterLabel.width = FOCUS_CARD_WIDTH;
     }
 
     private _updatePreview(sessionId: string | undefined, direction: 'up' | 'down' | 'none'): void {
@@ -358,111 +327,109 @@ export class NotificationFocusMode {
         const monitor = this._deps.getMonitor();
         const halfW = Math.floor(monitor.width / 2);
 
-        // Clean up old preview
-        this._disconnectSourceDestroy();
-        const oldClone = this._previewClone;
-        const oldPlaceholder = this._previewPlaceholder;
+        this._teardownOldPreview(direction);
 
-        if (oldClone) {
-            const slideY = direction === 'up' ? SLIDE_OFFSET : -SLIDE_OFFSET;
-            (oldClone as unknown as Easeable).ease({
-                translation_y: slideY,
-                opacity: 0,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                onComplete: () => {
-                    try { oldClone.destroy(); } catch { /* already gone */ }
-                },
-            });
-            this._previewClone = null;
-        }
-        if (oldPlaceholder) {
-            (oldPlaceholder as unknown as Easeable).ease({
-                opacity: 0,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                onComplete: () => {
-                    try { oldPlaceholder.destroy(); } catch { /* already gone */ }
-                },
-            });
-            this._previewPlaceholder = null;
-        }
-
-        // Resolve session → window → actor
-        let actor: Meta.WindowActor | null = null;
-        let frameRect: { x: number; y: number; width: number; height: number } | null = null;
-        if (sessionId) {
-            const windowId = this._deps.getWindowForSession(sessionId);
-            if (windowId) {
-                const metaWindow = this._deps.getMetaWindow(windowId);
-                if (metaWindow) {
-                    actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
-                    frameRect = metaWindow.get_frame_rect();
-                }
-            }
-        }
-
-        if (actor && frameRect) {
-            const clone = new Clutter.Clone({ source: actor });
-            this._previewClone = clone;
-            this._currentSourceActor = actor;
-
-            // Connect source destroy to swap in placeholder
-            this._sourceDestroyId = actor.connect('destroy', () => {
-                this._sourceDestroyId = 0;
-                this._currentSourceActor = null;
-                if (this._previewClone) {
-                    try { this._previewClone.destroy(); } catch { /* gone */ }
-                    this._previewClone = null;
-                }
-                this._showPlaceholder(sessionId ?? '');
-            });
-
-            // Scale to 80%
-            const scaledW = Math.round(frameRect.width * CLONE_SCALE);
-            const scaledH = Math.round(frameRect.height * CLONE_SCALE);
-            clone.set_size(scaledW, scaledH);
-
-            // Center in left half
-            const cloneX = Math.round((halfW - scaledW) / 2);
-            const cloneY = Math.round((monitor.height - scaledH) / 2);
-            clone.set_position(cloneX, cloneY);
-
-            this._previewContainer.add_child(clone);
-
-            // Animate in
-            const slideIn = direction === 'up' ? -SLIDE_OFFSET : (direction === 'down' ? SLIDE_OFFSET : 0);
-            clone.translation_y = direction === 'none' ? 0 : slideIn;
-            clone.opacity = 0;
-            (clone as unknown as Easeable).ease({
-                translation_y: 0,
-                opacity: 255,
-                duration: ANIM_DURATION,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
+        const resolved = this._resolvePreviewActor(sessionId);
+        if (resolved) {
+            this._createPreviewClone(resolved.actor, resolved.frameRect, halfW, monitor.height, direction, sessionId);
         } else {
             this._showPlaceholder(sessionId ?? '');
         }
     }
 
+    private _teardownOldPreview(direction: 'up' | 'down' | 'none'): void {
+        this._disconnectSourceDestroy();
+        if (this._previewClone) {
+            this._animateSlideOut(this._previewClone, direction);
+            this._previewClone = null;
+        }
+        if (this._previewPlaceholder) {
+            this._animateFadeOut(this._previewPlaceholder);
+            this._previewPlaceholder = null;
+        }
+    }
+
+    private _animateSlideOut(actor: Clutter.Actor, direction: 'up' | 'down' | 'none'): void {
+        const slideY = direction === 'up' ? SLIDE_OFFSET : -SLIDE_OFFSET;
+        (actor as unknown as Easeable).ease({
+            translation_y: slideY,
+            opacity: 0,
+            duration: 200,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete: () => {
+                try { actor.destroy(); } catch { /* already gone */ }
+            },
+        });
+    }
+
+    private _animateFadeOut(actor: Clutter.Actor): void {
+        (actor as unknown as Easeable).ease({
+            opacity: 0,
+            duration: 200,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete: () => {
+                try { actor.destroy(); } catch { /* already gone */ }
+            },
+        });
+    }
+
+    private _resolvePreviewActor(sessionId: string | undefined): {
+        actor: Meta.WindowActor;
+        frameRect: { x: number; y: number; width: number; height: number };
+    } | null {
+        if (!sessionId) return null;
+        const windowId = this._deps.getWindowForSession(sessionId);
+        if (!windowId) return null;
+        const metaWindow = this._deps.getMetaWindow(windowId);
+        if (!metaWindow) return null;
+        const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
+        if (!actor) return null;
+        return { actor, frameRect: metaWindow.get_frame_rect() };
+    }
+
+    private _createPreviewClone(
+        actor: Meta.WindowActor,
+        frameRect: { x: number; y: number; width: number; height: number },
+        halfW: number,
+        monitorHeight: number,
+        direction: 'up' | 'down' | 'none',
+        sessionId: string | undefined,
+    ): void {
+        const clone = new Clutter.Clone({ source: actor });
+        this._previewClone = clone;
+        this._currentSourceActor = actor;
+        this._connectSourceDestroyForPreview(actor, sessionId);
+
+        const scaledW = Math.round(frameRect.width * CLONE_SCALE);
+        const scaledH = Math.round(frameRect.height * CLONE_SCALE);
+        clone.set_size(scaledW, scaledH);
+        clone.set_position(Math.round((halfW - scaledW) / 2), Math.round((monitorHeight - scaledH) / 2));
+
+        this._previewContainer!.add_child(clone);
+        this._animateSlideIn(clone, direction);
+    }
+
+    private _connectSourceDestroyForPreview(actor: Meta.WindowActor, sessionId: string | undefined): void {
+        this._sourceDestroyId = actor.connect('destroy', () => {
+            this._sourceDestroyId = 0;
+            this._currentSourceActor = null;
+            if (this._previewClone) {
+                try { this._previewClone.destroy(); } catch { /* gone */ }
+                this._previewClone = null;
+            }
+            this._showPlaceholder(sessionId ?? '');
+        });
+    }
+
     private _showPlaceholder(sessionId: string): void {
         if (!this._previewContainer) return;
-
         const monitor = this._deps.getMonitor();
         const halfW = Math.floor(monitor.width / 2);
 
-        const label = new St.Label({
-            text: sessionId ? 'No preview available' : 'No associated session',
-            style: `font-size: 14px; color: ${TEXT_DIM}; text-align: center;`,
-        });
+        const label = buildPlaceholderLabel(!!sessionId);
         this._previewPlaceholder = label;
         this._previewContainer.add_child(label);
-        label.set_position(
-            Math.round((halfW - 200) / 2),
-            Math.round(monitor.height / 2),
-        );
-        label.width = 200;
-        label.opacity = 0;
+        label.set_position(Math.round((halfW - 200) / 2), Math.round(monitor.height / 2));
         (label as unknown as Easeable).ease({
             opacity: 255,
             duration: ANIM_DURATION,
@@ -481,148 +448,73 @@ export class NotificationFocusMode {
     }
 
     private _buildFocusCard(notif: OverlayNotification): St.BoxLayout {
-        const card = new St.BoxLayout({
-            vertical: true,
-            style: `background-color: ${SURFACE}; border: 1px solid ${BORDER}; border-radius: 12px; padding: 18px 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);`,
-            width: CARD_WIDTH,
-        });
-
-        // Header row: title + workspace
-        const header = new St.BoxLayout({
-            style: 'spacing: 8px;',
-            x_expand: true,
-        });
-        const titleLabel = new St.Label({
-            text: notif.title,
-            style: `font-weight: bold; font-size: 14px; color: ${TEXT};`,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.START,
-        });
-        header.add_child(titleLabel);
-
-        if (notif.workspaceName) {
-            const wsLabel = new St.Label({
-                text: notif.workspaceName,
-                style: `font-family: monospace; font-size: 11px; color: ${TEXT_DIM};`,
-                x_align: Clutter.ActorAlign.END,
-            });
-            header.add_child(wsLabel);
-        }
-        card.add_child(header);
-
-        // Message — always fully expanded
-        if (notif.message) {
-            const msgLabel = new St.Label({
-                text: notif.message,
-                style: `font-size: 13px; color: ${TEXT_DIM}; margin-top: 8px;`,
-                x_expand: true,
-            });
-            msgLabel.clutter_text.line_wrap = true;
-            msgLabel.clutter_text.ellipsize = 0; // NONE
-            card.add_child(msgLabel);
-        }
-
-        // Command block (permissions)
-        if (notif.type === 'permission' && notif.command) {
-            const cmdBlock = new St.Label({
-                text: `$ ${notif.command}`,
-                style: `font-family: monospace; font-size: 12px; color: ${ACCENT}; background-color: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px 12px; margin-top: 12px; border: 1px solid rgba(255,255,255,0.03);`,
-                x_expand: true,
-            });
-            cmdBlock.clutter_text.line_wrap = true;
-            card.add_child(cmdBlock);
-        }
-
-        // Action hints
         if (notif.type === 'question') {
-            // Create a fresh QuestionCard in focus mode — the overlay card stays untouched
-            const overlayCard = this._deps.getQuestionCard(notif.id);
-            if (overlayCard) {
-                this._destroyFocusModeQuestionCard();
-
-                const focusCard = new QuestionCard(notif, {
-                    extensionPath: this._deps.extensionPath,
-                    onRespond: (nid, action) => this._deps.respondToEntry(nid, action),
-                    onVisitSession: (sid) => this._deps.visitSession(sid),
-                }, true);
-
-                // Sync answers/page state from the overlay card
-                focusCard.syncState(overlayCard);
-                this._focusModeQuestionCard = focusCard;
-
-                return focusCard.actor as St.BoxLayout;
-            }
-        } else if (notif.type === 'permission') {
-            const buttonRow = new St.BoxLayout({
-                style: 'spacing: 8px; margin-top: 14px;',
-                x_expand: true,
-            });
-            buttonRow.add_child(this._makeActionButton('(1) Allow', GREEN, 'rgba(125,214,164,0.12)'));
-            buttonRow.add_child(this._makeActionButton('(2) Always', BLUE, 'rgba(90,142,201,0.12)'));
-            buttonRow.add_child(this._makeActionButton('(3) Deny', RED, 'rgba(201,90,90,0.12)'));
-            card.add_child(buttonRow);
-        } else {
-            const buttonRow = new St.BoxLayout({
-                style: 'spacing: 8px; margin-top: 14px;',
-                x_expand: true,
-            });
-            buttonRow.add_child(this._makeActionButton('(1) Visit', ACCENT, 'rgba(98,175,133,0.12)'));
-            buttonRow.add_child(this._makeActionButton('(2) Dismiss', TEXT_DIM, 'transparent'));
-            card.add_child(buttonRow);
+            const result = this._buildQuestionFocusCard(notif);
+            if (result) return result;
         }
-
-        return card;
+        return this._buildSimpleFocusCard(notif);
     }
 
-    private _makeActionButton(label: string, color: string, bgColor: string): St.Label {
-        return new St.Label({
-            text: label,
-            style: `font-size: 13px; font-weight: bold; color: ${color}; background-color: ${bgColor}; border-radius: 8px; padding: 8px 16px; text-align: center;`,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.CENTER,
-        });
+    private _buildQuestionFocusCard(notif: OverlayNotification): St.BoxLayout | null {
+        const overlayCard = this._deps.getQuestionCard(notif.id);
+        if (!overlayCard) return null;
+
+        this._destroyFocusModeQuestionCard();
+        const focusCard = new QuestionCard(notif, {
+            extensionPath: this._deps.extensionPath,
+            onRespond: (nid, action) => this._deps.respondToEntry(nid, action),
+            onVisitSession: (sid) => this._deps.visitSession(sid),
+        }, true, overlayCard.getSharedState());
+        this._focusModeQuestionCard = focusCard;
+        return focusCard.actor as St.BoxLayout;
+    }
+
+    private _buildSimpleFocusCard(notif: OverlayNotification): St.BoxLayout {
+        const card = buildFocusCardRoot();
+        card.add_child(buildFocusCardHeader(notif.title, notif.workspaceName));
+        if (notif.message) card.add_child(buildFocusCardMessage(notif.message));
+        if (notif.type === 'permission' && notif.command) card.add_child(buildFocusCardCommand(notif.command));
+        card.add_child(notif.type === 'permission' ? buildPermissionActionRow() : buildNotificationActionRow());
+        return card;
     }
 
     private _handleKeyPress(
         event: Clutter.Event,
     ): typeof Clutter.EVENT_STOP | typeof Clutter.EVENT_PROPAGATE {
         const symbol = event.get_key_symbol();
+        const delegated = this._tryDelegateToQuestion(symbol);
+        if (delegated !== null) return delegated;
+        return this._handlePermissionKey(symbol);
+    }
 
-        // Check if current entry is a question
+    private _tryDelegateToQuestion(
+        symbol: number,
+    ): typeof Clutter.EVENT_STOP | null {
         const entryId = this._entryIds[this._currentIndex];
-        if (entryId) {
-            const entries = this._deps.getPendingEntries();
-            const entry = entries.find(e => e.id === entryId);
-            if (entry?.notification.type === 'question') {
-                return this._handleQuestionKeyPress(entryId, symbol);
-            }
-        }
+        if (!entryId) return null;
+        const entries = this._deps.getPendingEntries();
+        const entry = entries.find(e => e.id === entryId);
+        if (entry?.notification.type !== 'question') return null;
+        return this._handleQuestionKeyPress(entryId, symbol);
+    }
 
-        switch (symbol) {
-            case Clutter.KEY_Up:
-                this._navigate(-1);
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Down:
-                this._navigate(1);
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_1:
-            case Clutter.KEY_KP_1:
-                this._handleAction1();
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_2:
-            case Clutter.KEY_KP_2:
-                this._handleAction2();
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_3:
-            case Clutter.KEY_KP_3:
-                this._handleAction3();
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Escape:
-                this._exit();
-                return Clutter.EVENT_STOP;
-            default:
-                return Clutter.EVENT_STOP; // Consume all keys while modal
-        }
+    private _handlePermissionKey(
+        symbol: number,
+    ): typeof Clutter.EVENT_STOP {
+        const keyActions: Record<number, () => void> = {
+            [Clutter.KEY_Up]: () => this._navigate(-1),
+            [Clutter.KEY_Down]: () => this._navigate(1),
+            [Clutter.KEY_1]: () => this._handleAction1(),
+            [Clutter.KEY_KP_1]: () => this._handleAction1(),
+            [Clutter.KEY_2]: () => this._handleAction2(),
+            [Clutter.KEY_KP_2]: () => this._handleAction2(),
+            [Clutter.KEY_3]: () => this._handleAction3(),
+            [Clutter.KEY_KP_3]: () => this._handleAction3(),
+            [Clutter.KEY_Escape]: () => this._exit(),
+        };
+        const action = keyActions[symbol];
+        if (action) action();
+        return Clutter.EVENT_STOP;
     }
 
     private _handleQuestionKeyPress(
@@ -631,81 +523,84 @@ export class NotificationFocusMode {
     ): typeof Clutter.EVENT_STOP {
         const qs = this._deps.getQuestionState(entryId);
         if (!qs) return Clutter.EVENT_STOP;
-
+        if (this._handleQuestionNav(entryId, symbol)) return Clutter.EVENT_STOP;
         const isSubmitPage = qs.currentPage >= qs.questions.length;
+        const keyNumber = this._symbolToNumber(symbol);
+        if (keyNumber !== null) {
+            this._handleQuestionNumberKey(entryId, qs, keyNumber, isSubmitPage);
+            return Clutter.EVENT_STOP;
+        }
+        if (symbol === Clutter.KEY_Escape) this._exit();
+        return Clutter.EVENT_STOP;
+    }
 
-        switch (symbol) {
-            case Clutter.KEY_Left:
-                this._deps.questionNavigate(entryId, -1);
-                this._refreshQuestionCard(entryId);
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Right:
-                this._deps.questionNavigate(entryId, 1);
-                this._refreshQuestionCard(entryId);
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Up:
-                this._navigate(-1);
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Down:
-                this._navigate(1);
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_1:
-            case Clutter.KEY_KP_1:
-                if (isSubmitPage) {
-                    // Send
-                    const allAnswered = qs.questions.every((_: QuestionDefinition, i: number) => (qs.answers.get(i) ?? []).length > 0);
-                    if (allAnswered) {
-                        this._deps.questionSend(entryId);
-                        this._removeCurrentEntry();
-                    }
-                } else {
-                    this._deps.questionSelectOption(entryId, qs.currentPage, 0);
-                    this._refreshQuestionCard(entryId);
-                    // For single-select, schedule delayed sync to pick up auto-advance
-                    const qDef = qs.questions[qs.currentPage];
-                    if (qDef && !qDef.multiSelect) {
-                        this._scheduleAutoAdvanceSync(entryId);
-                    }
-                }
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_2:
-            case Clutter.KEY_KP_2:
-                if (isSubmitPage) {
-                    // Dismiss
-                    this._deps.questionDismiss(entryId);
-                    this._removeCurrentEntry();
-                } else {
-                    // optionIndex 1: second regular option (if exists)
-                    this._selectQuestionOptionByNumber(entryId, qs, 1);
-                }
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_3:
-            case Clutter.KEY_KP_3:
-                if (isSubmitPage) {
-                    // Visit
-                    this._deps.questionVisit(entryId);
-                    this._removeCurrentEntry();
-                } else {
-                    this._selectQuestionOptionByNumber(entryId, qs, 2);
-                }
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_4:
-            case Clutter.KEY_KP_4:
-                if (!isSubmitPage) {
-                    this._selectQuestionOptionByNumber(entryId, qs, 3);
-                }
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_5:
-            case Clutter.KEY_KP_5:
-                if (!isSubmitPage) {
-                    this._selectQuestionOptionByNumber(entryId, qs, 4);
-                }
-                return Clutter.EVENT_STOP;
-            case Clutter.KEY_Escape:
-                this._exit();
-                return Clutter.EVENT_STOP;
-            default:
-                return Clutter.EVENT_STOP;
+    private _handleQuestionNav(entryId: string, symbol: number): boolean {
+        if (symbol === Clutter.KEY_Left) {
+            this._deps.questionNavigate(entryId, -1);
+            this._refreshQuestionCard(entryId);
+            return true;
+        }
+        if (symbol === Clutter.KEY_Right) {
+            this._deps.questionNavigate(entryId, 1);
+            this._refreshQuestionCard(entryId);
+            return true;
+        }
+        if (symbol === Clutter.KEY_Up) { this._navigate(-1); return true; }
+        if (symbol === Clutter.KEY_Down) { this._navigate(1); return true; }
+        return false;
+    }
+
+    private _symbolToNumber(symbol: number): number | null {
+        const map: Record<number, number> = {
+            [Clutter.KEY_1]: 1, [Clutter.KEY_KP_1]: 1,
+            [Clutter.KEY_2]: 2, [Clutter.KEY_KP_2]: 2,
+            [Clutter.KEY_3]: 3, [Clutter.KEY_KP_3]: 3,
+            [Clutter.KEY_4]: 4, [Clutter.KEY_KP_4]: 4,
+            [Clutter.KEY_5]: 5, [Clutter.KEY_KP_5]: 5,
+        };
+        return map[symbol] ?? null;
+    }
+
+    private _handleQuestionNumberKey(
+        entryId: string, qs: QuestionState, keyNumber: number, isSubmitPage: boolean,
+    ): void {
+        if (isSubmitPage) {
+            this._handleQuestionSubmitAction(entryId, qs, keyNumber);
+            return;
+        }
+        if (keyNumber === 1) {
+            this._handleKey1OnQuestion(entryId, qs);
+            return;
+        }
+        this._selectQuestionOptionByNumber(entryId, qs, keyNumber - 1);
+    }
+
+    private _handleQuestionSubmitAction(
+        entryId: string, qs: QuestionState, keyNumber: number,
+    ): void {
+        if (keyNumber === 1) {
+            const allAnswered = qs.questions.every(
+                (_: QuestionDefinition, i: number) => (qs.answers.get(i) ?? []).length > 0,
+            );
+            if (allAnswered) {
+                this._deps.questionSend(entryId);
+                this._removeCurrentEntry();
+            }
+        } else if (keyNumber === 2) {
+            this._deps.questionDismiss(entryId);
+            this._removeCurrentEntry();
+        } else if (keyNumber === 3) {
+            this._deps.questionVisit(entryId);
+            this._removeCurrentEntry();
+        }
+    }
+
+    private _handleKey1OnQuestion(entryId: string, qs: QuestionState): void {
+        this._deps.questionSelectOption(entryId, qs.currentPage, 0);
+        this._refreshQuestionCard(entryId);
+        const qDef = qs.questions[qs.currentPage];
+        if (qDef && !qDef.multiSelect) {
+            this._scheduleAutoAdvanceSync(entryId);
         }
     }
 
@@ -775,23 +670,27 @@ export class NotificationFocusMode {
     }
 
     private _refreshQuestionCard(entryId: string): void {
-        // Sync state from the overlay card (which was just mutated) to the focus card
-        const overlayCard = this._deps.getQuestionCard(entryId);
-        if (this._focusModeQuestionCard && overlayCard) {
-            this._focusModeQuestionCard.syncState(overlayCard);
-        }
+        this._syncQuestionState(entryId);
+        this._repositionCard();
+    }
 
-        // Reposition since height may have changed
+    private _syncQuestionState(_entryId: string): void {
+        if (this._focusModeQuestionCard) {
+            this._focusModeQuestionCard.refresh();
+        }
+    }
+
+    private _repositionCard(): void {
         if (!this._currentCard || !this._cardContainer) return;
         const monitor = this._deps.getMonitor();
         const halfW = Math.floor(monitor.width / 2);
-        const cardX = Math.round((halfW - CARD_WIDTH) / 2);
-        const [, cardNatH] = this._currentCard.get_preferred_height(CARD_WIDTH);
+        const cardX = Math.round((halfW - FOCUS_CARD_WIDTH) / 2);
+        const [, cardNatH] = this._currentCard.get_preferred_height(FOCUS_CARD_WIDTH);
         const cardY = Math.round((monitor.height - cardNatH) / 2);
         this._currentCard.set_position(cardX, cardY);
         if (this._counterLabel) {
             this._counterLabel.set_position(cardX, cardY + cardNatH + 16);
-            this._counterLabel.width = CARD_WIDTH;
+            this._counterLabel.width = FOCUS_CARD_WIDTH;
         }
     }
 
@@ -873,30 +772,34 @@ export class NotificationFocusMode {
         this._showEntry(this._currentIndex, 'down');
     }
 
+    private _syncEntryIds(): string[] {
+        const entries = this._deps.getPendingEntries();
+        const currentIds = new Set(entries.map(e => e.id));
+
+        // Add new entries
+        for (const entry of entries) {
+            if (!this._entryIds.includes(entry.id)) {
+                this._entryIds.push(entry.id);
+            }
+        }
+
+        // Remove resolved entries (but not the one we just acted on — performAction handles that)
+        this._entryIds = this._entryIds.filter(id => currentIds.has(id));
+        return this._entryIds;
+    }
+
     private _onEntriesChanged(): void {
         if (!this._active) return;
 
         try {
-            const entries = this._deps.getPendingEntries();
-            const currentIds = new Set(entries.map(e => e.id));
+            const synced = this._syncEntryIds();
 
-            // Add new entries
-            for (const entry of entries) {
-                if (!this._entryIds.includes(entry.id)) {
-                    this._entryIds.push(entry.id);
-                }
-            }
-
-            // Remove resolved entries (but not the one we just acted on — performAction handles that)
-            this._entryIds = this._entryIds.filter(id => currentIds.has(id));
-
-            if (this._entryIds.length === 0) {
+            if (synced.length === 0) {
                 this._exit();
                 return;
             }
 
-            // Adjust current index
-            this._currentIndex = Math.min(this._currentIndex, this._entryIds.length - 1);
+            this._currentIndex = Math.min(this._currentIndex, synced.length - 1);
             this._updateCounter();
         } catch (e) {
             console.error('[Kestrel] Error handling focus mode entries change:', e);
@@ -909,34 +812,30 @@ export class NotificationFocusMode {
     }
 
     destroy(): void {
-        if (this._active) {
-            // Synchronous cleanup for extension disable
-            this._active = false;
-            this._cancelAutoAdvanceSync();
-            this._deps.unregisterEntriesChanged();
+        if (!this._active) return;
+        this._active = false;
+        this._cancelAutoAdvanceSync();
+        this._deps.unregisterEntriesChanged();
+        this._disconnectInput();
+        this._destroyModal();
+        this._cleanupUI();
+        this._destroyBackdropSync();
+    }
 
-            if (this._keyPressId) {
-                global.stage.disconnect(this._keyPressId);
-                this._keyPressId = 0;
-            }
-            if (this._buttonPressId) {
-                global.stage.disconnect(this._buttonPressId);
-                this._buttonPressId = 0;
-            }
-            if (this._grab) {
-                try {
-                    Main.popModal(this._grab);
-                } catch (e) {
-                    console.error('[Kestrel] Error in focus mode destroy popModal:', e);
-                }
-                this._grab = null;
-            }
-            this._cleanupUI();
-            if (this._backdrop) {
-                Main.layoutManager.removeChrome(this._backdrop);
-                this._backdrop.destroy();
-                this._backdrop = null;
-            }
+    private _destroyModal(): void {
+        if (!this._grab) return;
+        try {
+            Main.popModal(this._grab);
+        } catch (e) {
+            console.error('[Kestrel] Error in focus mode destroy popModal:', e);
         }
+        this._grab = null;
+    }
+
+    private _destroyBackdropSync(): void {
+        if (!this._backdrop) return;
+        Main.layoutManager.removeChrome(this._backdrop);
+        this._backdrop.destroy();
+        this._backdrop = null;
     }
 }

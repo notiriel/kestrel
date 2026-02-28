@@ -35,7 +35,7 @@ const INTERFACE_XML = `
 
 const OBJECT_PATH = '/io/kestrel/Extension';
 
-export interface KestrelDBusCallbacks {
+interface KestrelDBusCallbacks {
     handleNotification(payload: string): string;
     handlePermissionRequest(payload: string): string;
     setWindowStatus(sessionId: string, status: string): void;
@@ -45,60 +45,31 @@ export interface KestrelDBusCallbacks {
     renameCurrentWorkspace(name: string): string;
 }
 
+function safeDbusHandler(fn: (...args: string[]) => string): (...args: string[]) => string {
+    return (...args: string[]) => {
+        try {
+            return fn(...args);
+        } catch (e) {
+            return JSON.stringify({ error: String(e) });
+        }
+    };
+}
+
 export class KestrelDBusService {
     private _dbus: Gio.DBusExportedObject | null = null;
 
     constructor(callbacks: KestrelDBusCallbacks) {
         const handler = {
-            HandleNotification(payload: string): string {
-                try {
-                    return callbacks.handleNotification(payload);
-                } catch (e) {
-                    return JSON.stringify({ error: String(e) });
-                }
-            },
-            HandlePermission(payload: string): string {
-                try {
-                    return callbacks.handlePermissionRequest(payload);
-                } catch (e) {
-                    return JSON.stringify({ error: String(e) });
-                }
-            },
+            HandleNotification: safeDbusHandler(callbacks.handleNotification),
+            HandlePermission: safeDbusHandler(callbacks.handlePermissionRequest),
             SetWindowStatus(sessionId: string, status: string): void {
-                try {
-                    callbacks.setWindowStatus(sessionId, status);
-                } catch (e) {
-                    console.error('[Kestrel] DBus SetWindowStatus error:', e);
-                }
+                try { callbacks.setWindowStatus(sessionId, status); }
+                catch (e) { console.error('[Kestrel] DBus SetWindowStatus error:', e); }
             },
-            GetNotificationResponse(id: string): string {
-                try {
-                    return callbacks.getNotificationResponse(id);
-                } catch (e) {
-                    return JSON.stringify({ error: String(e) });
-                }
-            },
-            ListWorkspaces(): string {
-                try {
-                    return callbacks.listWorkspaces();
-                } catch (e) {
-                    return JSON.stringify({ error: String(e) });
-                }
-            },
-            SwitchToWorkspaceByName(name: string): string {
-                try {
-                    return callbacks.switchToWorkspaceByName(name);
-                } catch (e) {
-                    return JSON.stringify({ error: String(e) });
-                }
-            },
-            RenameCurrentWorkspace(name: string): string {
-                try {
-                    return callbacks.renameCurrentWorkspace(name);
-                } catch (e) {
-                    return JSON.stringify({ error: String(e) });
-                }
-            },
+            GetNotificationResponse: safeDbusHandler(callbacks.getNotificationResponse),
+            ListWorkspaces: safeDbusHandler(callbacks.listWorkspaces),
+            SwitchToWorkspaceByName: safeDbusHandler(callbacks.switchToWorkspaceByName),
+            RenameCurrentWorkspace: safeDbusHandler(callbacks.renameCurrentWorkspace),
         };
 
         this._dbus = Gio.DBusExportedObject.wrapJSObject(INTERFACE_XML, handler);

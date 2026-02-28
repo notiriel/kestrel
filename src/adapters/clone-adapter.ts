@@ -2,6 +2,7 @@ import type { WindowId, WorkspaceId, LayoutState, KestrelConfig } from '../domai
 import type { ClonePort, OverviewTransform } from '../ports/clone-port.js';
 import { safeDisconnect } from './signal-utils.js';
 import { FloatCloneManager } from './float-clone-manager.js';
+import { easeOrSet } from './animation-helpers.js';
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import Meta from 'gi://Meta';
@@ -9,6 +10,13 @@ import Meta from 'gi://Meta';
 // GJS adds ease() to Clutter.Actor at runtime, but @girs types don't include it
 interface Easeable {
     ease(params: Record<string, unknown>): void;
+}
+
+interface Rect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 }
 
 interface CloneEntry {
@@ -35,8 +43,6 @@ const ANIMATION_DURATION = 250;
 const OVERVIEW_BG_COLOR = 'rgba(0,0,0,0.7)';
 /** Horizontal space reserved for workspace name label in overview mode */
 const OVERVIEW_LABEL_WIDTH = 56;
-
-export type { OverviewTransform };
 
 export class CloneAdapter implements ClonePort {
     private _layer: Clutter.Actor | null = null;
@@ -67,24 +73,22 @@ export class CloneAdapter implements ClonePort {
     init(workAreaY: number, monitorHeight: number, config?: KestrelConfig): void {
         this._workAreaY = workAreaY;
         this._monitorHeight = monitorHeight;
+        if (config) this._applyConfig(config);
+        this._createLayer(monitorHeight);
+        this._floatCloneManager.init(this._layer!);
+    }
 
-        if (config) {
-            this._focusBorderWidth = config.focusBorderWidth;
-            this._focusBorderColor = config.focusBorderColor;
-            this._focusBorderRadius = config.focusBorderRadius;
-            this._focusBgColor = config.focusBgColor;
-        }
+    private _applyConfig(config: KestrelConfig): void {
+        this._focusBorderWidth = config.focusBorderWidth;
+        this._focusBorderColor = config.focusBorderColor;
+        this._focusBorderRadius = config.focusBorderRadius;
+        this._focusBgColor = config.focusBgColor;
+    }
 
-        this._layer = new Clutter.Actor({
-            name: 'kestrel-layer',
-            clip_to_allocation: true,
-        });
-
-        // Size the layer to match the monitor so clipping works
-        const parent = global.window_group.get_parent()!;
-        const stage = global.stage;
+    private _createLayer(monitorHeight: number): void {
+        this._layer = new Clutter.Actor({ name: 'kestrel-layer', clip_to_allocation: true });
         this._layer.set_position(0, this._workAreaY);
-        this._layer.set_size(stage.width, monitorHeight);
+        this._layer.set_size(global.stage.width, monitorHeight);
 
         this._workspaceStrip = new Clutter.Actor({ name: 'kestrel-strip' });
         this._layer.add_child(this._workspaceStrip);
@@ -97,9 +101,8 @@ export class CloneAdapter implements ClonePort {
         });
         this._layer.add_child(this._focusIndicator);
 
+        const parent = global.window_group.get_parent()!;
         parent.insert_child_above(this._layer, global.window_group);
-
-        this._floatCloneManager.init(this._layer);
     }
 
     updateConfig(config: KestrelConfig): void {
@@ -140,28 +143,18 @@ export class CloneAdapter implements ClonePort {
     private _getOrCreateWorkspaceContainer(wsId: WorkspaceId): WorkspaceContainer {
         const existing = this._workspaceContainers.get(wsId);
         if (existing) return existing;
+        return this._createWorkspaceContainer(wsId);
+    }
 
-        const container = new Clutter.Actor({
-            name: `kestrel-ws-${wsId}`,
-        });
+    private _createWorkspaceContainer(wsId: WorkspaceId): WorkspaceContainer {
+        const container = new Clutter.Actor({ name: `kestrel-ws-${wsId}` });
         container.set_size(global.stage.width, this._monitorHeight);
 
-        const scrollContainer = new Clutter.Actor({
-            name: `kestrel-scroll-${wsId}`,
-        });
+        const scrollContainer = new Clutter.Actor({ name: `kestrel-scroll-${wsId}` });
         container.add_child(scrollContainer);
-
         this._workspaceStrip!.add_child(container);
 
-        const nameLabel = new St.Label({
-            text: '',
-            style_class: 'kestrel-ws-label',
-            y_align: Clutter.ActorAlign.CENTER,
-            visible: false,
-        });
-        nameLabel.rotation_angle_z = -90;
-        // Positioned to the left of window content; set_position updated on overview enter
-        nameLabel.set_position(4, this._monitorHeight / 2);
+        const nameLabel = this._createWorkspaceLabel();
         container.add_child(nameLabel);
 
         const wc: WorkspaceContainer = { container, scrollContainer, nameLabel };
@@ -169,12 +162,34 @@ export class CloneAdapter implements ClonePort {
         return wc;
     }
 
+    private _createWorkspaceLabel(): St.Label {
+        const nameLabel = new St.Label({
+            text: '',
+            style_class: 'kestrel-ws-label',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        nameLabel.rotation_angle_z = -90;
+        nameLabel.set_position(4, this._monitorHeight / 2);
+        return nameLabel;
+    }
+
     addClone(windowId: WindowId, metaWindow: Meta.Window, workspaceId: WorkspaceId): void {
         const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
         if (!actor || !this._workspaceStrip) return;
 
         const wc = this._getOrCreateWorkspaceContainer(workspaceId);
+        const { wrapper, clone } = this._createCloneActors(windowId, actor);
+        wc.scrollContainer.add_child(wrapper);
 
+        const sizeChangedId = this._connectCloneSizeChanged(windowId, metaWindow);
+        const entry = this._buildCloneEntry(
+            wrapper, clone, metaWindow, actor, sizeChangedId, workspaceId,
+        );
+        this._clones.set(windowId, entry);
+    }
+
+    private _createCloneActors(windowId: WindowId, actor: Meta.WindowActor): { wrapper: Clutter.Actor; clone: Clutter.Clone } {
         const wrapper = new Clutter.Actor({
             name: `kestrel-clone-${windowId}`,
             reactive: false,
@@ -182,10 +197,11 @@ export class CloneAdapter implements ClonePort {
         });
         const clone = new Clutter.Clone({ source: actor });
         wrapper.add_child(clone);
-        wc.scrollContainer.add_child(wrapper);
+        return { wrapper, clone };
+    }
 
-        // Listen for size changes to re-allocate clone geometry (PaperWM pattern).
-        const sizeChangedId = metaWindow.connect('size-changed', () => {
+    private _connectCloneSizeChanged(windowId: WindowId, metaWindow: Meta.Window): number {
+        return metaWindow.connect('size-changed', () => {
             try {
                 this._allocateClone(windowId);
                 this._refreshFocusIndicatorForWindow(windowId);
@@ -193,8 +209,13 @@ export class CloneAdapter implements ClonePort {
                 console.error('[Kestrel] Error in size-changed handler:', e);
             }
         });
+    }
 
-        // Track actor destruction
+    private _buildCloneEntry(
+        wrapper: Clutter.Actor, clone: Clutter.Clone,
+        metaWindow: Meta.Window, actor: Meta.WindowActor,
+        sizeChangedId: number, workspaceId: WorkspaceId,
+    ): CloneEntry {
         const entry: CloneEntry = {
             wrapper, clone, metaWindow, sourceActor: actor,
             sizeChangedId, sourceDestroyId: 0, sourceDestroyed: false,
@@ -203,8 +224,7 @@ export class CloneAdapter implements ClonePort {
         entry.sourceDestroyId = actor.connect('destroy', () => {
             entry.sourceDestroyed = true;
         });
-
-        this._clones.set(windowId, entry);
+        return entry;
     }
 
     removeClone(windowId: WindowId): void {
@@ -230,6 +250,57 @@ export class CloneAdapter implements ClonePort {
         this._floatCloneManager.removeFloatClone(windowId);
     }
 
+    private _hasValidDimensions(rect: Rect): boolean {
+        return rect.width > 0 && rect.height > 0;
+    }
+
+    /**
+     * Get frame and buffer rects for a clone entry, returning null if invalid.
+     */
+    private _getFrameAndBuffer(entry: CloneEntry): { frame: Rect; buffer: Rect } | null {
+        let frame, buffer;
+        try {
+            frame = entry.metaWindow.get_frame_rect();
+            buffer = entry.metaWindow.get_buffer_rect();
+        } catch {
+            return null;
+        }
+
+        if (!this._hasValidDimensions(frame) || !this._hasValidDimensions(buffer)) {
+            return null;
+        }
+
+        return { frame, buffer };
+    }
+
+    /**
+     * Compute clone offset: base offset to align frame with wrapper, plus
+     * centering adjustment when frame exceeds layout target.
+     */
+    private _computeCloneOffset(
+        frame: Rect, buffer: Rect,
+        layoutWidth: number, layoutHeight: number,
+    ): { offX: number; offY: number } {
+        let offX = buffer.x - frame.x;
+        let offY = buffer.y - frame.y;
+
+        if (layoutWidth > 0 && frame.width > layoutWidth) {
+            offX += Math.round((layoutWidth - frame.width) / 2);
+        }
+        if (layoutHeight > 0 && frame.height > layoutHeight) {
+            offY += Math.round((layoutHeight - frame.height) / 2);
+        }
+
+        return { offX, offY };
+    }
+
+    /**
+     * Wrapper size: use layout target if set, otherwise fall back to frame size.
+     */
+    private _wrapperSize(layoutDim: number, frameDim: number): number {
+        return layoutDim > 0 ? layoutDim : frameDim;
+    }
+
     /**
      * Allocate the inner clone's offset and size based on frame/buffer rects.
      */
@@ -237,40 +308,18 @@ export class CloneAdapter implements ClonePort {
         const entry = this._clones.get(windowId);
         if (!entry || entry.sourceDestroyed) return;
 
-        let frame, buffer;
-        try {
-            frame = entry.metaWindow.get_frame_rect();
-            buffer = entry.metaWindow.get_buffer_rect();
-        } catch {
-            return;
-        }
+        const rects = this._getFrameAndBuffer(entry);
+        if (!rects) return;
 
-        if (frame.width <= 0 || frame.height <= 0 ||
-            buffer.width <= 0 || buffer.height <= 0) {
-            return;
-        }
+        const { frame, buffer } = rects;
+        const { offX, offY } = this._computeCloneOffset(frame, buffer, entry.layoutWidth, entry.layoutHeight);
 
-        // Base offset: align frame origin with wrapper origin
-        let cloneOffX = buffer.x - frame.x;
-        let cloneOffY = buffer.y - frame.y;
-
-        // When frame exceeds layout target (e.g. Chromium ignores resize request),
-        // center the frame content within the layout slot so clipping is symmetric.
-        if (entry.layoutWidth > 0 && frame.width > entry.layoutWidth) {
-            cloneOffX += Math.round((entry.layoutWidth - frame.width) / 2);
-        }
-        if (entry.layoutHeight > 0 && frame.height > entry.layoutHeight) {
-            cloneOffY += Math.round((entry.layoutHeight - frame.height) / 2);
-        }
-
-        entry.clone.set_position(cloneOffX, cloneOffY);
+        entry.clone.set_position(offX, offY);
         entry.clone.set_size(buffer.width, buffer.height);
-
-        // Wrapper is always layout-target sized (clip_to_allocation handles overflow).
-        // When layout is not yet set, fall back to frame size.
-        const wrapperW = entry.layoutWidth > 0 ? entry.layoutWidth : frame.width;
-        const wrapperH = entry.layoutHeight > 0 ? entry.layoutHeight : frame.height;
-        entry.wrapper.set_size(wrapperW, wrapperH);
+        entry.wrapper.set_size(
+            this._wrapperSize(entry.layoutWidth, frame.width),
+            this._wrapperSize(entry.layoutHeight, frame.height),
+        );
     }
 
     /**
@@ -300,53 +349,37 @@ export class CloneAdapter implements ClonePort {
         const duration = animate ? ANIMATION_DURATION : 0;
         const easeMode = Clutter.AnimationMode.EASE_OUT_QUAD;
 
-        // Animate workspace strip Y for workspace switching
+        this._animateWorkspaceStrip(layout, duration, easeMode);
+        this._animateContainerPositions(duration, easeMode);
+        this._animateScrollPositions(layout, duration, easeMode);
+        this._animateCloneWrappers(layout, duration, easeMode);
+        this._updateFocusIndicator(layout, duration, easeMode);
+    }
+
+    private _animateWorkspaceStrip(layout: LayoutState, duration: number, easeMode: Clutter.AnimationMode): void {
         if (this._workspaceStrip) {
-            const targetY = -layout.workspaceIndex * this._monitorHeight;
-            if (duration > 0) {
-                (this._workspaceStrip as unknown as Easeable).ease({
-                    y: targetY,
-                    duration,
-                    mode: easeMode,
-                });
-            } else {
-                this._workspaceStrip.set_position(0, targetY);
-            }
+            easeOrSet(this._workspaceStrip, { y: -layout.workspaceIndex * this._monitorHeight }, duration, easeMode);
         }
         if (this._workspaceOrder[layout.workspaceIndex]) {
             this._currentWorkspaceId = this._workspaceOrder[layout.workspaceIndex]!;
         }
+    }
 
-        // Animate workspace containers to their correct Y positions.
+    private _animateContainerPositions(duration: number, easeMode: Clutter.AnimationMode): void {
         for (let i = 0; i < this._workspaceOrder.length; i++) {
             const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
             if (!wc) continue;
-            const targetContainerY = i * this._monitorHeight;
-            if (duration > 0) {
-                (wc.container as unknown as Easeable).ease({
-                    y: targetContainerY,
-                    duration,
-                    mode: easeMode,
-                });
-            } else {
-                wc.container.set_position(0, targetContainerY);
-            }
+            easeOrSet(wc.container, { y: i * this._monitorHeight }, duration, easeMode);
         }
+    }
 
-        // Scroll ALL workspace containers to the same scrollX
+    private _animateScrollPositions(layout: LayoutState, duration: number, easeMode: Clutter.AnimationMode): void {
         for (const wc of this._workspaceContainers.values()) {
-            if (duration > 0) {
-                (wc.scrollContainer as unknown as Easeable).ease({
-                    x: -layout.scrollX,
-                    duration,
-                    mode: easeMode,
-                });
-            } else {
-                wc.scrollContainer.set_position(-layout.scrollX, 0);
-            }
+            easeOrSet(wc.scrollContainer, { x: -layout.scrollX }, duration, easeMode);
         }
+    }
 
-        // Position clone wrappers
+    private _animateCloneWrappers(layout: LayoutState, duration: number, easeMode: Clutter.AnimationMode): void {
         for (const wl of layout.windows) {
             const entry = this._clones.get(wl.windowId);
             if (!entry) continue;
@@ -354,61 +387,35 @@ export class CloneAdapter implements ClonePort {
             entry.layoutWidth = wl.width;
             entry.layoutHeight = wl.height;
             this._allocateClone(wl.windowId);
-
-            if (duration > 0) {
-                (entry.wrapper as unknown as Easeable).ease({
-                    x: wl.x,
-                    y: wl.y,
-                    duration,
-                    mode: easeMode,
-                });
-            } else {
-                entry.wrapper.set_position(wl.x, wl.y);
-            }
+            easeOrSet(entry.wrapper, { x: wl.x, y: wl.y }, duration, easeMode);
         }
-
-        // Position focus indicator on the active workspace
-        this._updateFocusIndicator(layout, duration, easeMode);
     }
 
-    private _updateFocusIndicator(
-        layout: LayoutState,
-        duration: number,
-        easeMode: Clutter.AnimationMode,
-    ): void {
+    private _updateFocusIndicator(layout: LayoutState, duration: number, easeMode: Clutter.AnimationMode): void {
         if (!this._focusIndicator) return;
 
-        if (!layout.focusedWindowId) {
-            this._focusIndicator.visible = false;
-            return;
-        }
-
-        const focusedLayout = layout.windows.find(
-            w => w.windowId === layout.focusedWindowId,
-        );
-        if (!focusedLayout) {
+        const rect = this._computeFocusRect(layout);
+        if (!rect) {
             this._focusIndicator.visible = false;
             return;
         }
 
         this._focusIndicator.visible = true;
+        easeOrSet(this._focusIndicator, rect, duration, easeMode);
+    }
 
-        // Convert from scroll-container-relative to layer-relative coordinates.
-        const x = focusedLayout.x - layout.scrollX - this._focusBorderWidth;
-        const y = focusedLayout.y - this._focusBorderWidth;
-        const width = focusedLayout.width + this._focusBorderWidth * 2;
-        const height = focusedLayout.height + this._focusBorderWidth * 2;
+    private _computeFocusRect(layout: LayoutState): { x: number; y: number; width: number; height: number } | null {
+        if (!layout.focusedWindowId) return null;
 
-        if (duration > 0) {
-            (this._focusIndicator as unknown as Easeable).ease({
-                x, y, width, height,
-                duration,
-                mode: easeMode,
-            });
-        } else {
-            this._focusIndicator.set_position(x, y);
-            this._focusIndicator.set_size(width, height);
-        }
+        const focusedLayout = layout.windows.find(w => w.windowId === layout.focusedWindowId);
+        if (!focusedLayout) return null;
+
+        return {
+            x: focusedLayout.x - layout.scrollX - this._focusBorderWidth,
+            y: focusedLayout.y - this._focusBorderWidth,
+            width: focusedLayout.width + this._focusBorderWidth * 2,
+            height: focusedLayout.height + this._focusBorderWidth * 2,
+        };
     }
 
     /**
@@ -434,14 +441,7 @@ export class CloneAdapter implements ClonePort {
     syncWorkspaces(workspaces: readonly { readonly id: WorkspaceId; readonly name?: string | null }[]): void {
         if (!this._workspaceStrip) return;
 
-        const validIds = new Set(workspaces.map(ws => ws.id));
-
-        for (const [id, wc] of this._workspaceContainers) {
-            if (!validIds.has(id)) {
-                wc.container.destroy();
-                this._workspaceContainers.delete(id);
-            }
-        }
+        this._removeStaleWorkspaces(new Set(workspaces.map(ws => ws.id)));
 
         for (const ws of workspaces) {
             const wc = this._getOrCreateWorkspaceContainer(ws.id);
@@ -449,6 +449,15 @@ export class CloneAdapter implements ClonePort {
         }
 
         this._workspaceOrder = workspaces.map(ws => ws.id);
+    }
+
+    private _removeStaleWorkspaces(validIds: Set<WorkspaceId>): void {
+        for (const [id, wc] of this._workspaceContainers) {
+            if (!validIds.has(id)) {
+                wc.container.destroy();
+                this._workspaceContainers.delete(id);
+            }
+        }
     }
 
     updateWorkspaceName(wsId: WorkspaceId, name: string | null): void {
@@ -468,13 +477,24 @@ export class CloneAdapter implements ClonePort {
         });
     }
 
-    enterOverview(transform: OverviewTransform, layout: LayoutState, numWorkspaces: number): void {
+    enterOverview(transform: OverviewTransform, layout: LayoutState, _numWorkspaces: number): void {
         if (!this._layer || !this._workspaceStrip) return;
         this._overviewActive = true;
+        this._hideSourceActors();
+        this._ensureOverviewBg();
+        this._layer.set_clip(-1, -1, global.stage.width + 2, this._monitorHeight + 2);
+        this._animateEnterStrip(transform);
+        this._showWorkspaceLabels();
+        this._updateOverviewFocus(layout, layout.workspaceIndex, transform);
+    }
+
+    private _hideSourceActors(): void {
         for (const entry of this._clones.values()) {
             if (!entry.sourceDestroyed) entry.sourceActor.visible = false;
         }
+    }
 
+    private _ensureOverviewBg(): void {
         if (!this._overviewBg) {
             this._overviewBg = new St.Widget({
                 name: 'kestrel-overview-bg',
@@ -482,25 +502,26 @@ export class CloneAdapter implements ClonePort {
                 reactive: false,
                 x: 0,
                 y: 0,
-                width: this._layer.width,
-                height: this._layer.height,
+                width: this._layer!.width,
+                height: this._layer!.height,
             });
-            this._layer.insert_child_below(this._overviewBg, this._workspaceStrip);
+            this._layer!.insert_child_below(this._overviewBg, this._workspaceStrip!);
         }
         this._overviewBg.visible = true;
+    }
 
-        this._layer.set_clip(-1, -1, global.stage.width + 2, this._monitorHeight + 2);
-
-        const stripY = transform.offsetY;
-        (this._workspaceStrip as unknown as Easeable).ease({
+    private _animateEnterStrip(transform: OverviewTransform): void {
+        (this._workspaceStrip! as unknown as Easeable).ease({
             scale_x: transform.scale,
             scale_y: transform.scale,
             x: transform.offsetX,
-            y: stripY,
+            y: transform.offsetY,
             duration: ANIMATION_DURATION,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
+    }
 
+    private _showWorkspaceLabels(): void {
         for (const wc of this._workspaceContainers.values()) {
             (wc.scrollContainer as unknown as Easeable).ease({
                 x: OVERVIEW_LABEL_WIDTH,
@@ -509,72 +530,52 @@ export class CloneAdapter implements ClonePort {
             });
             wc.nameLabel.visible = true;
         }
-
-        this._updateOverviewFocus(layout, layout.workspaceIndex, transform);
     }
 
     exitOverview(layout: LayoutState, animate: boolean = true): void {
         if (!this._layer || !this._workspaceStrip) return;
         this._overviewActive = false;
 
-        // Clean up filter/rename state
-        this._filteredPositionMap.clear();
-        if (this._filterIndicator) {
-            this._filterIndicator.visible = false;
-        }
-        this.cancelRename();
-
-        // Restore all container visibility
-        for (const wc of this._workspaceContainers.values()) {
-            wc.container.visible = true;
-        }
-
-        if (this._overviewBg) {
-            this._overviewBg.visible = false;
-        }
+        this._cleanupOverviewState();
 
         const duration = animate ? ANIMATION_DURATION : 0;
         const easeMode = Clutter.AnimationMode.EASE_OUT_QUAD;
         const targetY = -layout.workspaceIndex * this._monitorHeight;
 
+        this._animateExitStrip(targetY, duration, easeMode);
+        this._layer.remove_clip();
+        this._animateExitScroll(layout, duration, easeMode);
+        this._updateFocusIndicator(layout, duration, easeMode);
+    }
+
+    private _cleanupOverviewState(): void {
+        this._filteredPositionMap.clear();
+        if (this._filterIndicator) {
+            this._filterIndicator.visible = false;
+        }
+        this.cancelRename();
+        for (const wc of this._workspaceContainers.values()) {
+            wc.container.visible = true;
+        }
+        if (this._overviewBg) {
+            this._overviewBg.visible = false;
+        }
+    }
+
+    private _animateExitStrip(targetY: number, duration: number, easeMode: Clutter.AnimationMode): void {
         const showWindowActors = (): void => {
             for (const entry of this._clones.values()) {
                 if (!entry.sourceDestroyed) entry.sourceActor.visible = true;
             }
         };
+        easeOrSet(this._workspaceStrip!, { scale_x: 1, scale_y: 1, x: 0, y: targetY }, duration, easeMode, showWindowActors);
+    }
 
-        if (duration > 0) {
-            (this._workspaceStrip as unknown as Easeable).ease({
-                scale_x: 1,
-                scale_y: 1,
-                x: 0,
-                y: targetY,
-                duration,
-                mode: easeMode,
-                onComplete: showWindowActors,
-            });
-        } else {
-            showWindowActors();
-            this._workspaceStrip.set_scale(1, 1);
-            this._workspaceStrip.set_position(0, targetY);
-        }
-
-        this._layer.remove_clip();
-
+    private _animateExitScroll(layout: LayoutState, duration: number, easeMode: Clutter.AnimationMode): void {
         for (const wc of this._workspaceContainers.values()) {
-            if (duration > 0) {
-                (wc.scrollContainer as unknown as Easeable).ease({
-                    x: -layout.scrollX,
-                    duration,
-                    mode: easeMode,
-                });
-            } else {
-                wc.scrollContainer.set_position(-layout.scrollX, 0);
-            }
+            easeOrSet(wc.scrollContainer, { x: -layout.scrollX }, duration, easeMode);
             wc.nameLabel.visible = false;
         }
-
-        this._updateFocusIndicator(layout, duration, easeMode);
     }
 
     updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void {
@@ -589,31 +590,36 @@ export class CloneAdapter implements ClonePort {
     ): void {
         if (!this._focusIndicator) return;
 
-        const focusedLayout = layout.windows.find(
-            w => w.windowId === layout.focusedWindowId,
-        );
+        const focusedLayout = layout.windows.find(w => w.windowId === layout.focusedWindowId);
         if (!focusedLayout) {
             this._focusIndicator.visible = false;
             return;
         }
 
         this._focusIndicator.visible = true;
-
-        const { scale, offsetX, offsetY } = transform;
-        // Use filtered visual position if filter is active
-        const visualPos = this._filteredPositionMap.size > 0
-            ? (this._filteredPositionMap.get(wsIndex) ?? wsIndex)
-            : wsIndex;
-        const x = (focusedLayout.x + OVERVIEW_LABEL_WIDTH) * scale + offsetX - this._focusBorderWidth;
-        const y = (visualPos * this._monitorHeight + focusedLayout.y) * scale + offsetY - this._focusBorderWidth;
-        const width = focusedLayout.width * scale + this._focusBorderWidth * 2;
-        const height = focusedLayout.height * scale + this._focusBorderWidth * 2;
-
+        const rect = this._computeOverviewFocusRect(focusedLayout, wsIndex, transform);
         (this._focusIndicator as unknown as Easeable).ease({
-            x, y, width, height,
+            ...rect,
             duration: ANIMATION_DURATION,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
+    }
+
+    private _computeOverviewFocusRect(
+        focusedLayout: { x: number; y: number; width: number; height: number },
+        wsIndex: number,
+        transform: OverviewTransform,
+    ): { x: number; y: number; width: number; height: number } {
+        const { scale, offsetX, offsetY } = transform;
+        const visualPos = this._filteredPositionMap.size > 0
+            ? (this._filteredPositionMap.get(wsIndex) ?? wsIndex)
+            : wsIndex;
+        return {
+            x: (focusedLayout.x + OVERVIEW_LABEL_WIDTH) * scale + offsetX - this._focusBorderWidth,
+            y: (visualPos * this._monitorHeight + focusedLayout.y) * scale + offsetY - this._focusBorderWidth,
+            width: focusedLayout.width * scale + this._focusBorderWidth * 2,
+            height: focusedLayout.height * scale + this._focusBorderWidth * 2,
+        };
     }
 
     getLayer(): Clutter.Actor | null {
@@ -623,48 +629,39 @@ export class CloneAdapter implements ClonePort {
     applyOverviewFilter(
         visibleIndices: number[] | null,
         transform: OverviewTransform,
-        currentWsIndex: number,
+        _currentWsIndex: number,
     ): void {
         if (!this._workspaceStrip || !this._layer) return;
 
         this._filteredPositionMap.clear();
 
         if (visibleIndices === null) {
-            // Clear filter — show all non-empty workspaces at their original positions
-            for (let i = 0; i < this._workspaceOrder.length; i++) {
-                const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
-                if (!wc) continue;
-                wc.container.visible = true;
-                (wc.container as unknown as Easeable).ease({
-                    y: i * this._monitorHeight,
-                    duration: ANIMATION_DURATION,
-                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                });
-            }
-            // Animate strip to new transform
-            (this._workspaceStrip as unknown as Easeable).ease({
-                scale_x: transform.scale,
-                scale_y: transform.scale,
-                x: transform.offsetX,
-                y: transform.offsetY,
-                duration: ANIMATION_DURATION,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
+            this._clearOverviewFilter(transform);
             return;
         }
 
-        // Build set of visible real indices for hiding non-matches
+        this._positionFilteredWorkspaces(visibleIndices, transform);
+    }
+
+    private _clearOverviewFilter(transform: OverviewTransform): void {
+        for (let i = 0; i < this._workspaceOrder.length; i++) {
+            const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+            if (!wc) continue;
+            wc.container.visible = true;
+            (wc.container as unknown as Easeable).ease({
+                y: i * this._monitorHeight,
+                duration: ANIMATION_DURATION,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
+        this._easeStripToTransform(transform);
+    }
+
+    private _positionFilteredWorkspaces(visibleIndices: number[], transform: OverviewTransform): void {
         const visibleSet = new Set(visibleIndices);
 
-        // Hide non-matching workspaces
-        for (let i = 0; i < this._workspaceOrder.length; i++) {
-            if (!visibleSet.has(i)) {
-                const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
-                if (wc) wc.container.visible = false;
-            }
-        }
+        this._hideNonMatchingWorkspaces(visibleSet);
 
-        // Position visible workspaces in score-sorted order (visibleIndices)
         for (let visualPos = 0; visualPos < visibleIndices.length; visualPos++) {
             const wsIndex = visibleIndices[visualPos]!;
             const wc = this._workspaceContainers.get(this._workspaceOrder[wsIndex]!);
@@ -679,8 +676,20 @@ export class CloneAdapter implements ClonePort {
             });
         }
 
-        // Animate strip to new transform
-        (this._workspaceStrip as unknown as Easeable).ease({
+        this._easeStripToTransform(transform);
+    }
+
+    private _hideNonMatchingWorkspaces(visibleSet: Set<number>): void {
+        for (let i = 0; i < this._workspaceOrder.length; i++) {
+            if (!visibleSet.has(i)) {
+                const wc = this._workspaceContainers.get(this._workspaceOrder[i]!);
+                if (wc) wc.container.visible = false;
+            }
+        }
+    }
+
+    private _easeStripToTransform(transform: OverviewTransform): void {
+        (this._workspaceStrip! as unknown as Easeable).ease({
             scale_x: transform.scale,
             scale_y: transform.scale,
             x: transform.offsetX,
@@ -694,46 +703,49 @@ export class CloneAdapter implements ClonePort {
         if (!this._layer) return;
 
         if (!text || text.length === 0) {
-            if (this._filterIndicator) {
-                this._filterIndicator.visible = false;
-            }
+            this._hideFilterIndicator();
             return;
         }
 
-        if (!this._filterIndicator) {
-            this._filterIndicator = new St.BoxLayout({
-                name: 'kestrel-filter-indicator',
-                style: 'background-color: rgba(0,0,0,0.8); border-radius: 20px; padding: 8px 16px; color: white;',
-                x_align: Clutter.ActorAlign.CENTER,
-                y_align: Clutter.ActorAlign.START,
-            });
+        this._ensureFilterIndicator();
+        this._updateFilterText(text);
+        this._positionFilterIndicator();
+    }
 
-            const icon = new St.Label({
-                text: '\u{1F50D} ',
-                style: 'font-size: 14px;',
-            });
-            this._filterIndicator.add_child(icon);
+    private _hideFilterIndicator(): void {
+        if (this._filterIndicator) this._filterIndicator.visible = false;
+    }
 
-            const label = new St.Label({
-                name: 'kestrel-filter-text',
-                text: '',
-                style: 'font-size: 14px;',
-            });
-            this._filterIndicator.add_child(label);
+    private _ensureFilterIndicator(): void {
+        if (!this._filterIndicator) this._createFilterIndicator();
+        this._filterIndicator!.visible = true;
+    }
 
-            this._layer.add_child(this._filterIndicator);
-        }
+    private _updateFilterText(text: string): void {
+        const textLabel = this._filterIndicator!.get_child_at_index(1) as St.Label;
+        if (textLabel) textLabel.text = text;
+    }
 
-        this._filterIndicator.visible = true;
-        // Update the text label (second child)
-        const textLabel = this._filterIndicator.get_child_at_index(1) as St.Label;
-        if (textLabel) {
-            textLabel.text = text;
-        }
+    private _createFilterIndicator(): void {
+        this._filterIndicator = new St.BoxLayout({
+            name: 'kestrel-filter-indicator',
+            style: 'background-color: rgba(0,0,0,0.8); border-radius: 20px; padding: 8px 16px; color: white;',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.START,
+        });
 
-        // Center horizontally at top of layer
-        this._filterIndicator.set_position(
-            Math.round((this._layer.width - this._filterIndicator.width) / 2),
+        const icon = new St.Label({ text: '\u{1F50D} ', style: 'font-size: 14px;' });
+        this._filterIndicator.add_child(icon);
+
+        const label = new St.Label({ name: 'kestrel-filter-text', text: '', style: 'font-size: 14px;' });
+        this._filterIndicator.add_child(label);
+
+        this._layer!.add_child(this._filterIndicator);
+    }
+
+    private _positionFilterIndicator(): void {
+        this._filterIndicator!.set_position(
+            Math.round((this._layer!.width - this._filterIndicator!.width) / 2),
             12,
         );
     }
@@ -745,7 +757,7 @@ export class CloneAdapter implements ClonePort {
         callback: (name: string | null) => void,
     ): void {
         if (!this._layer) return;
-        this.cancelRename(); // Clean up any previous rename
+        this.cancelRename();
 
         this._renameCallback = callback;
         this._renameWsIndex = wsIndex;
@@ -756,49 +768,56 @@ export class CloneAdapter implements ClonePort {
         if (!wc) return;
 
         wc.nameLabel.visible = false;
+        this._createRenameEntry(currentName, transform, wsIndex);
+        this._connectRenameKeypress(wsIndex);
+        this._renameEntry!.grab_key_focus();
+    }
 
+    private _createRenameEntry(currentName: string, transform: OverviewTransform, wsIndex: number): void {
         this._renameEntry = new St.Entry({
             name: 'kestrel-rename-entry',
             text: currentName,
             style: 'font-size: 14px; background-color: rgba(0,0,0,0.9); color: white; border: 2px solid rgba(125,214,164,0.8); border-radius: 6px; padding: 4px 8px; min-width: 200px;',
         });
 
-        // Position over the name label area
         const visualPos = this._filteredPositionMap.get(wsIndex) ?? wsIndex;
         const containerY = visualPos * this._monitorHeight;
         const entryX = transform.offsetX + 8;
         const entryY = transform.offsetY + containerY * transform.scale + (this._monitorHeight * transform.scale) / 2 - 12;
 
         this._renameEntry.set_position(entryX, entryY);
-        this._layer.add_child(this._renameEntry);
+        this._layer!.add_child(this._renameEntry);
 
-        // Select all text
         const clutterText = this._renameEntry.get_clutter_text();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (clutterText as any).set_selection(0, currentName.length);
+    }
 
-        // Connect key press for Enter/Escape; let all other keys propagate for text editing
+    private _connectRenameKeypress(wsIndex: number): void {
+        const clutterText = this._renameEntry!.get_clutter_text();
         this._renameKeyPressId = clutterText.connect('key-press-event',
             (_actor: Clutter.Actor, event: Clutter.Event) => {
-                try {
-                    const symbol = event.get_key_symbol();
-                    if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_KP_Enter) {
-                        this._finishRename(this._renameEntry!.get_text(), wsIndex);
-                        return Clutter.EVENT_STOP;
-                    }
-                    if (symbol === Clutter.KEY_Escape) {
-                        this._finishRename(null, wsIndex);
-                        return Clutter.EVENT_STOP;
-                    }
-                    return Clutter.EVENT_PROPAGATE; // Let ClutterText handle text input
-                } catch (e) {
-                    console.error('[Kestrel] Error in rename key handler:', e);
-                    return Clutter.EVENT_PROPAGATE;
-                }
+                return this._handleRenameKey(event, wsIndex);
             },
         );
+    }
 
-        // Focus the entry
-        this._renameEntry.grab_key_focus();
+    private _handleRenameKey(event: Clutter.Event, wsIndex: number): boolean {
+        try {
+            const symbol = event.get_key_symbol();
+            if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_KP_Enter) {
+                this._finishRename(this._renameEntry!.get_text(), wsIndex);
+                return Clutter.EVENT_STOP;
+            }
+            if (symbol === Clutter.KEY_Escape) {
+                this._finishRename(null, wsIndex);
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        } catch (e) {
+            console.error('[Kestrel] Error in rename key handler:', e);
+            return Clutter.EVENT_PROPAGATE;
+        }
     }
 
     cancelRename(): void {
@@ -807,27 +826,31 @@ export class CloneAdapter implements ClonePort {
     }
 
     private _finishRename(name: string | null, wsIndex: number): void {
-        if (this._renameEntry) {
-            if (this._renameKeyPressId) {
-                const clutterText = this._renameEntry.get_clutter_text();
-                clutterText.disconnect(this._renameKeyPressId);
-                this._renameKeyPressId = 0;
-            }
-            this._renameEntry.destroy();
-            this._renameEntry = null;
-        }
-
-        // Restore name label visibility
-        const wsId = this._workspaceOrder[wsIndex];
-        if (wsId) {
-            const wc = this._workspaceContainers.get(wsId);
-            if (wc) wc.nameLabel.visible = true;
-        }
+        this._cleanupRenameEntry();
+        this._restoreNameLabel(wsIndex);
 
         const cb = this._renameCallback;
         this._renameCallback = null;
         this._renameWsIndex = -1;
         cb?.(name);
+    }
+
+    private _cleanupRenameEntry(): void {
+        if (!this._renameEntry) return;
+        if (this._renameKeyPressId) {
+            const clutterText = this._renameEntry.get_clutter_text();
+            clutterText.disconnect(this._renameKeyPressId);
+            this._renameKeyPressId = 0;
+        }
+        this._renameEntry.destroy();
+        this._renameEntry = null;
+    }
+
+    private _restoreNameLabel(wsIndex: number): void {
+        const wsId = this._workspaceOrder[wsIndex];
+        if (!wsId) return;
+        const wc = this._workspaceContainers.get(wsId);
+        if (wc) wc.nameLabel.visible = true;
     }
 
     getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; wsIndex: number }> {
@@ -847,41 +870,10 @@ export class CloneAdapter implements ClonePort {
     }
 
     destroy(): void {
-        // Stop all running animations and clean up workspace containers
-        for (const wc of this._workspaceContainers.values()) {
-            wc.scrollContainer.remove_all_transitions();
-            wc.container.remove_all_transitions();
-        }
-        this._focusIndicator?.remove_all_transitions();
-        this._workspaceStrip?.remove_all_transitions();
-
-        for (const entry of this._clones.values()) {
-            entry.wrapper.remove_all_transitions();
-            safeDisconnect(entry.metaWindow, entry.sizeChangedId);
-            if (!entry.sourceDestroyed) {
-                entry.sourceActor.disconnect(entry.sourceDestroyId);
-            }
-        }
-        this._clones.clear();
-
+        this._stopAllTransitions();
+        this._disconnectAllClones();
         this._floatCloneManager.destroy();
-
-        if (this._overviewBg) {
-            this._overviewBg.destroy();
-            this._overviewBg = null;
-        }
-
-        // Clean up filter/rename widgets
-        this.cancelRename();
-        if (this._filterIndicator) {
-            this._filterIndicator.destroy();
-            this._filterIndicator = null;
-        }
-        this._filteredPositionMap.clear();
-
-        for (const entry of this._clones.values()) {
-            if (!entry.sourceDestroyed) entry.sourceActor.visible = true;
-        }
+        this._destroyOverviewWidgets();
 
         if (this._layer) {
             this._layer.destroy();
@@ -890,5 +882,39 @@ export class CloneAdapter implements ClonePort {
             this._workspaceContainers.clear();
             this._workspaceOrder = [];
         }
+    }
+
+    private _stopAllTransitions(): void {
+        for (const wc of this._workspaceContainers.values()) {
+            wc.scrollContainer.remove_all_transitions();
+            wc.container.remove_all_transitions();
+        }
+        this._focusIndicator?.remove_all_transitions();
+        this._workspaceStrip?.remove_all_transitions();
+    }
+
+    private _disconnectAllClones(): void {
+        for (const entry of this._clones.values()) {
+            entry.wrapper.remove_all_transitions();
+            safeDisconnect(entry.metaWindow, entry.sizeChangedId);
+            if (!entry.sourceDestroyed) {
+                entry.sourceActor.disconnect(entry.sourceDestroyId);
+                entry.sourceActor.visible = true;
+            }
+        }
+        this._clones.clear();
+    }
+
+    private _destroyOverviewWidgets(): void {
+        if (this._overviewBg) {
+            this._overviewBg.destroy();
+            this._overviewBg = null;
+        }
+        this.cancelRename();
+        if (this._filterIndicator) {
+            this._filterIndicator.destroy();
+            this._filterIndicator = null;
+        }
+        this._filteredPositionMap.clear();
     }
 }

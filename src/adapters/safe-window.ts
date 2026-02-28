@@ -15,7 +15,7 @@ const RAW = Symbol('SafeWindow.raw');
 
 export function safeWindow(metaWindow: Meta.Window): Meta.Window {
     return new Proxy(metaWindow, {
-        get(target, prop, receiver) {
+        get(target, prop, _receiver) {
             // Allow access to raw underlying object for identity checks
             if (prop === RAW) return target;
 

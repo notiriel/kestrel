@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('gi://Meta', () => ({
     default: {
@@ -12,8 +12,8 @@ vi.mock('../../src/adapters/safe-window.js', () => ({
 }));
 
 import { WindowLifecycleHandler, type WindowLifecycleDeps } from '../../src/adapters/window-lifecycle-handler.js';
-import { createWorld, addWindow, wsIdAt } from '../../src/domain/world.js';
-import type { WindowId, WorkspaceId } from '../../src/domain/types.js';
+import { createWorld, addWindow } from '../../src/domain/world.js';
+import type { WindowId } from '../../src/domain/types.js';
 import type { World } from '../../src/domain/world.js';
 
 const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };

@@ -6,55 +6,58 @@ import GLib from 'gi://GLib';
 
 const FIRST_FRAME_TIMEOUT_MS = 2000;
 
-
-
 // WM classes that should never be tiled (e.g. DING desktop icons)
 const WM_CLASS_BLOCKLIST = ['gjs'];
 
+function isFloatWindowType(type: Meta.WindowType): boolean {
+    return type === Meta.WindowType.POPUP_MENU ||
+        type === Meta.WindowType.DROPDOWN_MENU ||
+        type === Meta.WindowType.MENU ||
+        type === Meta.WindowType.TOOLTIP ||
+        type === Meta.WindowType.COMBO;
+}
+
+function isDialogType(type: Meta.WindowType): boolean {
+    return type === Meta.WindowType.DIALOG ||
+        type === Meta.WindowType.MODAL_DIALOG ||
+        type === Meta.WindowType.UTILITY ||
+        type === Meta.WindowType.SPLASHSCREEN ||
+        type === Meta.WindowType.TOOLBAR;
+}
+
+function isNonTileable(metaWindow: Meta.Window): boolean {
+    return metaWindow.is_above() ||
+        metaWindow.get_transient_for() !== null ||
+        metaWindow.is_skip_taskbar();
+}
+
+function isBlockedWmClass(wmClass: string | null): boolean {
+    return !wmClass || wmClass === 'null' || WM_CLASS_BLOCKLIST.includes(wmClass);
+}
+
 function shouldTile(metaWindow: Meta.Window): boolean {
     if (metaWindow.get_window_type() !== Meta.WindowType.NORMAL) return false;
-    if (metaWindow.is_above()) return false;
-    if (metaWindow.get_transient_for() !== null) return false;
-    if (metaWindow.is_skip_taskbar()) return false;
-    const wmClass = metaWindow.get_wm_class();
-    if (!wmClass || wmClass === 'null') return false;
-    if (WM_CLASS_BLOCKLIST.includes(wmClass)) return false;
+    if (isNonTileable(metaWindow)) return false;
+    if (isBlockedWmClass(metaWindow.get_wm_class())) return false;
     return true;
+}
+
+function isFloatableType(type: Meta.WindowType): boolean {
+    return isDialogType(type) || isFloatWindowType(type);
 }
 
 function shouldFloat(metaWindow: Meta.Window): boolean {
     const type = metaWindow.get_window_type();
-    const wmClass = metaWindow.get_wm_class();
 
     // Popup/menu/tooltip types always float — they must render above the clone
     // layer. These don't require a wm_class check since they're transient
     // surfaces that may not have one set yet.
-    if (type === Meta.WindowType.POPUP_MENU ||
-        type === Meta.WindowType.DROPDOWN_MENU ||
-        type === Meta.WindowType.MENU ||
-        type === Meta.WindowType.TOOLTIP ||
-        type === Meta.WindowType.COMBO) return true;
+    if (isFloatWindowType(type)) return true;
+    if (isBlockedWmClass(metaWindow.get_wm_class())) return false;
 
-    if (!wmClass || wmClass === 'null') return false;
-    if (WM_CLASS_BLOCKLIST.includes(wmClass)) return false;
-
-    // Dialog types always float
-    if (type === Meta.WindowType.DIALOG ||
-        type === Meta.WindowType.MODAL_DIALOG ||
-        type === Meta.WindowType.UTILITY ||
-        type === Meta.WindowType.SPLASHSCREEN ||
-        type === Meta.WindowType.TOOLBAR) return true;
-
-    // Normal windows that can't be tiled (transient, above, skip-taskbar) float.
-    // skip-taskbar windows (e.g. ulauncher) must be floated so they render
-    // above the clone layer; otherwise they're stuck behind it in window_group.
-    if (type === Meta.WindowType.NORMAL) {
-        if (metaWindow.is_above()) return true;
-        if (metaWindow.get_transient_for() !== null) return true;
-        if (metaWindow.is_skip_taskbar()) return true;
-    }
-
-    return false;
+    // Dialog/utility/splash types float; normal non-tileable windows float
+    if (isFloatableType(type)) return true;
+    return type === Meta.WindowType.NORMAL && isNonTileable(metaWindow);
 }
 
 function getWindowId(metaWindow: Meta.Window): WindowId {
@@ -89,75 +92,70 @@ export class WindowEventAdapter implements WindowEventPort {
         const actors = global.get_window_actors();
         for (const actor of actors) {
             try {
-                const metaWindow = (actor as Meta.WindowActor).get_meta_window();
-                if (!metaWindow) continue;
-                const windowId = getWindowId(metaWindow);
-                if (shouldTile(metaWindow)) {
-                    this._callbacks?.onWindowReady(windowId, metaWindow);
-                    this._watchActorDestroy(actor as Meta.WindowActor, windowId, false, metaWindow);
-                } else if (shouldFloat(metaWindow)) {
-                    this._callbacks?.onFloatWindowReady(windowId, metaWindow);
-                    this._watchActorDestroy(actor as Meta.WindowActor, windowId, true);
-                }
+                this._enumerateActor(actor as Meta.WindowActor);
             } catch (e) {
                 console.error('[Kestrel] Error enumerating window:', e);
             }
         }
     }
 
+    private _enumerateActor(actor: Meta.WindowActor): void {
+        const metaWindow = actor.get_meta_window();
+        if (!metaWindow) return;
+        const windowId = getWindowId(metaWindow);
+        this._classifyAndRegisterExisting(metaWindow, windowId, actor);
+    }
+
+    private _classifyAndRegisterExisting(metaWindow: Meta.Window, windowId: WindowId, actor: Meta.WindowActor): void {
+        if (shouldTile(metaWindow)) {
+            this._callbacks?.onWindowReady(windowId, metaWindow);
+            this._watchActorDestroy(actor, windowId, false, metaWindow);
+        } else if (shouldFloat(metaWindow)) {
+            this._callbacks?.onFloatWindowReady(windowId, metaWindow);
+            this._watchActorDestroy(actor, windowId, true);
+        }
+    }
+
     private _handleWindowCreated(metaWindow: Meta.Window): void {
         const windowId = getWindowId(metaWindow);
         const actor = metaWindow.get_compositor_private() as Meta.WindowActor | null;
-
         if (!actor) return;
 
-        // Popup/menu/tooltip windows must be handled immediately — they're very
-        // transient and waiting for first-frame would make them appear too late.
-        const type = metaWindow.get_window_type();
-        if (type === Meta.WindowType.POPUP_MENU ||
-            type === Meta.WindowType.DROPDOWN_MENU ||
-            type === Meta.WindowType.MENU ||
-            type === Meta.WindowType.TOOLTIP ||
-            type === Meta.WindowType.COMBO) {
-            this._callbacks?.onFloatWindowReady(windowId, metaWindow);
-            this._watchActorDestroy(actor, windowId, true);
-            return;
-        }
+        if (this._handleImmediateFloat(metaWindow, windowId, actor)) return;
 
-        // Guard against double-fire (first-frame + timeout)
         this._pendingWindows.add(windowId);
+        this._waitForFirstFrame(actor, windowId, () => {
+            this._classifyAndRegister(metaWindow, windowId, actor);
+        });
+    }
 
-        // Defer tile/float classification to after first-frame, when window
-        // properties (type, transient_for, wm_class) are finalized.
-        const onReady = () => {
-            if (!this._pendingWindows.delete(windowId)) return; // Already fired
-            const tile = shouldTile(metaWindow);
-            const float = !tile && shouldFloat(metaWindow);
-            if (!tile && !float) return;
-            if (tile) {
-                this._callbacks?.onWindowReady(windowId, metaWindow);
-                this._watchActorDestroy(actor, windowId, false, metaWindow);
-            } else {
-                this._callbacks?.onFloatWindowReady(windowId, metaWindow);
-                this._watchActorDestroy(actor, windowId, true);
-            }
-        };
+    private _handleImmediateFloat(metaWindow: Meta.Window, windowId: WindowId, actor: Meta.WindowActor): boolean {
+        if (!isFloatWindowType(metaWindow.get_window_type())) return false;
+        this._callbacks?.onFloatWindowReady(windowId, metaWindow);
+        this._watchActorDestroy(actor, windowId, true);
+        return true;
+    }
 
-        // Wait for first-frame, with timeout fallback.
+    private _classifyAndRegister(metaWindow: Meta.Window, windowId: WindowId, actor: Meta.WindowActor): void {
+        if (!this._pendingWindows.delete(windowId)) return;
+        this._classifyAndRegisterExisting(metaWindow, windowId, actor);
+    }
+
+    private _waitForFirstFrame(actor: Meta.WindowActor, _windowId: WindowId, onReady: () => void): void {
         // Use a fired flag to ensure we only disconnect once — calling
         // actor.disconnect() on an already-disconnected signal emits a
         // GLib C-level warning that JS try/catch cannot suppress.
-        let firstFrameFired = false;
+        let fired = false;
         const firstFrameId = actor.connect('first-frame', () => {
-            if (firstFrameFired) return;
-            firstFrameFired = true;
+            if (fired) return;
+            fired = true;
             actor.disconnect(firstFrameId);
             onReady();
         });
 
         const timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, FIRST_FRAME_TIMEOUT_MS, () => {
-            if (!firstFrameFired) {
-                firstFrameFired = true;
+            if (!fired) {
+                fired = true;
                 actor.disconnect(firstFrameId);
             }
             this._timeoutIds.delete(timeoutId);
@@ -170,43 +168,52 @@ export class WindowEventAdapter implements WindowEventPort {
     private _watchActorDestroy(actor: Meta.WindowActor, windowId: WindowId, isFloat: boolean, metaWindow?: Meta.Window): void {
         const destroyId = actor.connect('destroy', () => {
             try {
-                this._actorDestroyIds.delete(windowId);
-                this._disconnectTrackedSignal(this._fullscreenSignalIds, windowId);
-                this._disconnectTrackedSignal(this._maximizeSignalIds, windowId);
-                if (isFloat) {
-                    this._callbacks?.onFloatWindowDestroyed(windowId);
-                } else {
-                    this._callbacks?.onWindowDestroyed(windowId);
-                }
+                this._handleActorDestroyed(windowId, isFloat);
             } catch (e) {
                 console.error('[Kestrel] Error in actor destroy handler:', e);
             }
         });
         this._actorDestroyIds.set(windowId, destroyId);
 
-        // Track fullscreen changes for tiled windows
         if (!isFloat && metaWindow) {
-            const signalId = metaWindow.connect('notify::fullscreen', () => {
-                try {
-                    this._callbacks?.onWindowFullscreenChanged(windowId, metaWindow.fullscreen);
-                } catch (e) {
-                    console.error('[Kestrel] Error in fullscreen handler:', e);
-                }
-            });
-            this._fullscreenSignalIds.set(windowId, { metaWindow, signalId });
-
-            // Track maximize changes — fire only when becoming maximized
-            const maxSignalId = metaWindow.connect('notify::maximized-horizontally', () => {
-                try {
-                    if (metaWindow.maximized_horizontally) {
-                        this._callbacks?.onWindowMaximized(windowId);
-                    }
-                } catch (e) {
-                    console.error('[Kestrel] Error in maximize handler:', e);
-                }
-            });
-            this._maximizeSignalIds.set(windowId, { metaWindow, signalId: maxSignalId });
+            this._connectFullscreenSignal(windowId, metaWindow);
+            this._connectMaximizeSignal(windowId, metaWindow);
         }
+    }
+
+    private _handleActorDestroyed(windowId: WindowId, isFloat: boolean): void {
+        this._actorDestroyIds.delete(windowId);
+        this._disconnectTrackedSignal(this._fullscreenSignalIds, windowId);
+        this._disconnectTrackedSignal(this._maximizeSignalIds, windowId);
+        if (isFloat) {
+            this._callbacks?.onFloatWindowDestroyed(windowId);
+        } else {
+            this._callbacks?.onWindowDestroyed(windowId);
+        }
+    }
+
+    private _connectFullscreenSignal(windowId: WindowId, metaWindow: Meta.Window): void {
+        const signalId = metaWindow.connect('notify::fullscreen', () => {
+            try {
+                this._callbacks?.onWindowFullscreenChanged(windowId, metaWindow.fullscreen);
+            } catch (e) {
+                console.error('[Kestrel] Error in fullscreen handler:', e);
+            }
+        });
+        this._fullscreenSignalIds.set(windowId, { metaWindow, signalId });
+    }
+
+    private _connectMaximizeSignal(windowId: WindowId, metaWindow: Meta.Window): void {
+        const signalId = metaWindow.connect('notify::maximized-horizontally', () => {
+            try {
+                if (metaWindow.maximized_horizontally) {
+                    this._callbacks?.onWindowMaximized(windowId);
+                }
+            } catch (e) {
+                console.error('[Kestrel] Error in maximize handler:', e);
+            }
+        });
+        this._maximizeSignalIds.set(windowId, { metaWindow, signalId });
     }
 
     private _disconnectTrackedSignal(map: Map<WindowId, { metaWindow: Meta.Window; signalId: number }>, windowId: WindowId): void {
@@ -218,11 +225,21 @@ export class WindowEventAdapter implements WindowEventPort {
     }
 
     destroy(): void {
+        this._disconnectWindowCreated();
+        this._clearAllSignals();
+        this._actorDestroyIds.clear();
+        this._pendingWindows.clear();
+        this._callbacks = null;
+    }
+
+    private _disconnectWindowCreated(): void {
         if (this._windowCreatedId !== null) {
             global.display.disconnect(this._windowCreatedId);
             this._windowCreatedId = null;
         }
+    }
 
+    private _clearAllSignals(): void {
         for (const timeoutId of this._timeoutIds) {
             GLib.source_remove(timeoutId);
         }
@@ -237,10 +254,5 @@ export class WindowEventAdapter implements WindowEventPort {
             safeDisconnect(entry.metaWindow, entry.signalId);
         }
         this._maximizeSignalIds.clear();
-
-        // Note: actor destroy signals are cleaned up when actors are destroyed
-        this._actorDestroyIds.clear();
-        this._pendingWindows.clear();
-        this._callbacks = null;
     }
 }

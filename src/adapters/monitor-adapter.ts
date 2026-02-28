@@ -10,9 +10,17 @@ export class MonitorAdapter implements MonitorPort {
         if (!monitors || monitors.length === 0) {
             return { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
         }
-        const count = monitors.length;
 
-        // Compute combined geometry across all monitors
+        const count = monitors.length;
+        const { stageOffsetX, totalWidth, minHeight } = this._computeMonitorBounds(monitors);
+        const workAreaY = this._computeWorkAreaY();
+        const totalHeight = minHeight - workAreaY;
+        const slotWidth = Math.floor(totalWidth / (count * 2));
+
+        return { count, totalWidth, totalHeight, slotWidth, workAreaY, stageOffsetX };
+    }
+
+    private _computeMonitorBounds(monitors: Array<{x: number; width: number; height: number}>): { stageOffsetX: number; totalWidth: number; minHeight: number } {
         let minX = Infinity;
         let maxX = -Infinity;
         let minHeight = Infinity;
@@ -23,30 +31,27 @@ export class MonitorAdapter implements MonitorPort {
             minHeight = Math.min(minHeight, m.height);
         }
 
-        const stageOffsetX = minX;
-        const totalWidth = maxX - minX;
+        return { stageOffsetX: minX, totalWidth: maxX - minX, minHeight };
+    }
 
-        // Use primary monitor's work area for panel offset
+    private _computeWorkAreaY(): number {
         const primaryMonitor = Main.layoutManager.primaryMonitor;
         const workArea = primaryMonitor
             ? Main.layoutManager.getWorkAreaForMonitor(primaryMonitor.index)
             : null;
 
-        let workAreaY = 0;
+        const offset = this._getWorkAreaOffset(primaryMonitor, workArea);
+        return offset > 0 ? offset : (Main.panel?.height ?? 0);
+    }
+
+    private _getWorkAreaOffset(
+        primaryMonitor: { y: number } | null,
+        workArea: { y: number } | null,
+    ): number {
         if (primaryMonitor && workArea) {
-            workAreaY = workArea.y - primaryMonitor.y;
+            return workArea.y - primaryMonitor.y;
         }
-        // On some systems (e.g. Parallels VMs), the GNOME panel doesn't create
-        // a strut, so workArea.y == monitor.y.  Fall back to reading panel height.
-        const panelHeight = Main.panel?.height ?? 0;
-        if (workAreaY === 0 && panelHeight > 0) {
-            workAreaY = panelHeight;
-        }
-
-        const totalHeight = minHeight - workAreaY;
-        const slotWidth = Math.floor(totalWidth / (count * 2));
-
-        return { count, totalWidth, totalHeight, slotWidth, workAreaY, stageOffsetX };
+        return 0;
     }
 
     connectMonitorsChanged(callback: (info: MonitorInfo) => void): void {

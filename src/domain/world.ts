@@ -21,6 +21,10 @@ import {
 import { createViewport, type Viewport } from './viewport.js';
 import { computeLayout } from './layout.js';
 import { fuzzyMatch } from './fuzzy-match.js';
+import type { OverviewInteractionState } from './overview-state.js';
+import { createOverviewInteractionState } from './overview-state.js';
+import type { NotificationState } from './notification.js';
+import { createNotificationState } from './notification.js';
 
 export interface World {
     readonly workspaces: readonly Workspace[];
@@ -29,6 +33,8 @@ export interface World {
     readonly config: KestrelConfig;
     readonly monitor: MonitorInfo;
     readonly overviewActive: boolean;
+    readonly overviewInteractionState: OverviewInteractionState;
+    readonly notificationState: NotificationState;
 }
 
 let workspaceCounter = 0;
@@ -51,6 +57,8 @@ export function createWorld(config: KestrelConfig, monitor: MonitorInfo): World 
         config,
         monitor,
         overviewActive: false,
+        overviewInteractionState: createOverviewInteractionState(),
+        notificationState: createNotificationState(),
     };
 }
 
@@ -86,6 +94,12 @@ export function wsIdAt(world: World, index: number): WorkspaceId | null {
 export function findWorkspaceIdForWindow(world: World, windowId: WindowId): WorkspaceId | null {
     const result = findWindowInWorld(world, windowId);
     return result ? world.workspaces[result.wsIndex]!.id : null;
+}
+
+/** Find the workspace name for the workspace containing the given window. */
+export function workspaceNameForWindow(world: World, windowId: WindowId): string | null {
+    const result = findWindowInWorld(world, windowId);
+    return result ? world.workspaces[result.wsIndex]!.name : null;
 }
 
 export function currentWorkspace(world: World): Workspace {
@@ -414,7 +428,7 @@ export function restoreWorld(
     viewportScrollX: number,
     focusedWindow: WindowId | null,
 ): World {
-    let workspaces: Workspace[] = workspaceData.map((data) => {
+    const workspaces: Workspace[] = workspaceData.map((data) => {
         const ws = createWorkspace(nextWorkspaceId(), data.name);
         return { ...ws, windows: data.windows };
     });
@@ -437,6 +451,8 @@ export function restoreWorld(
         config,
         monitor,
         overviewActive: false,
+        overviewInteractionState: createOverviewInteractionState(),
+        notificationState: createNotificationState(),
     };
 
     world = pruneEmptyWorkspaces(world);

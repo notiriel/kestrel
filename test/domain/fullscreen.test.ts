@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow, enterFullscreen, exitFullscreen, buildUpdate } from '../../src/domain/world.js';
+import { createWorld, addWindow, enterFullscreen, exitFullscreen } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';

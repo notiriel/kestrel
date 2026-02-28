@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { WindowId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
 import { createWorld, addWindow } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
@@ -74,7 +74,7 @@ describe('OverviewHandler', () => {
         });
 
         it('confirms when already active', () => {
-            const { deps, clonePort, windowPort, inputAdapter } = createDeps(buildWorld(1, 2));
+            const { deps, clonePort, windowPort: _windowPort, inputAdapter } = createDeps(buildWorld(1, 2));
             const handler = new OverviewHandler(deps);
 
             // Enter first

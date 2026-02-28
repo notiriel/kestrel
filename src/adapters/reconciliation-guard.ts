@@ -24,20 +24,12 @@ export class ReconciliationGuard {
      */
     check(label: string): boolean {
         const now = Date.now();
-
         if (now < this._cooldownUntil) return false;
 
-        this._timestamps = this._timestamps.filter(t => now - t < this._windowMs);
-        this._timestamps.push(now);
-
-        const count = this._timestamps.length;
+        const count = this._pruneAndRecord(now);
 
         if (count >= this._hardThreshold) {
-            console.error(
-                `[Kestrel] CIRCUIT BREAKER: ${count} reconciliations in ${this._windowMs}ms (trigger: ${label}). Blocking for ${this._cooldownMs}ms.`,
-            );
-            this._cooldownUntil = now + this._cooldownMs;
-            this._timestamps = [];
+            this._tripCircuitBreaker(now, count, label);
             return false;
         }
 
@@ -48,6 +40,20 @@ export class ReconciliationGuard {
         }
 
         return true;
+    }
+
+    private _pruneAndRecord(now: number): number {
+        this._timestamps = this._timestamps.filter(t => now - t < this._windowMs);
+        this._timestamps.push(now);
+        return this._timestamps.length;
+    }
+
+    private _tripCircuitBreaker(now: number, count: number, label: string): void {
+        console.error(
+            `[Kestrel] CIRCUIT BREAKER: ${count} reconciliations in ${this._windowMs}ms (trigger: ${label}). Blocking for ${this._cooldownMs}ms.`,
+        );
+        this._cooldownUntil = now + this._cooldownMs;
+        this._timestamps = [];
     }
 
     destroy(): void {

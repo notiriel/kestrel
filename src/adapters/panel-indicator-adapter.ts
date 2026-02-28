@@ -3,17 +3,10 @@ import type { PanelIndicatorPort } from '../ports/panel-indicator-port.js';
 import type { WindowId } from '../domain/types.js';
 import type { ClaudeStatus } from './status-overlay-adapter.js';
 import St from 'gi://St';
-import GObject from 'gi://GObject';
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-
-const STATUS_COLORS: Record<string, string> = {
-    'working': '#4CAF50',
-    'needs-input': '#F44336',
-    'done': '#FF9800',
-};
 
 const STATUS_ICONS: Record<string, string> = {
     'working': '\u{1F7E2}',    // 🟢
@@ -32,33 +25,10 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
     init(switchCallback: (wsIndex: number) => void): void {
         try {
             this._switchCallback = switchCallback;
-
             this._indicator = new PanelMenu.Button(0.0, 'Kestrel', false);
 
-            const box = new St.BoxLayout({ style_class: 'panel-status-indicators-box' });
-
-            this._label = new St.Label({
-                text: 'Kestrel',
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            box.add_child(this._label);
-
-            this._statusDot = new St.Label({
-                text: '',
-                y_align: Clutter.ActorAlign.CENTER,
-                style: 'padding-left: 4px; font-size: 10px;',
-            });
-            box.add_child(this._statusDot);
-
-            (this._indicator as any).add_child(box);
-
-            // Lazy menu rebuild: only rebuild when menu is opened
-            const menu = (this._indicator as any).menu;
-            menu.connect('open-state-changed', (_menu: any, isOpen: boolean) => {
-                if (isOpen && this._lastWorld) {
-                    this._rebuildMenu(this._lastWorld, this._lastStatusOverlay);
-                }
-            });
+            this._buildIndicatorBox();
+            this._connectMenuRebuild();
 
             Main.panel.addToStatusArea('kestrel', this._indicator);
         } catch (e) {
@@ -66,25 +36,49 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         }
     }
 
+    private _buildIndicatorBox(): void {
+        const box = new St.BoxLayout({ style_class: 'panel-status-indicators-box' });
+        this._label = new St.Label({ text: 'Kestrel', y_align: Clutter.ActorAlign.CENTER });
+        box.add_child(this._label);
+        this._statusDot = new St.Label({ text: '', y_align: Clutter.ActorAlign.CENTER, style: 'padding-left: 4px; font-size: 10px;' });
+        box.add_child(this._statusDot);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this._indicator as any).add_child(box);
+    }
+
+    private _connectMenuRebuild(): void {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const menu = (this._indicator as any).menu;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        menu.connect('open-state-changed', (_menu: any, isOpen: boolean) => {
+            if (isOpen && this._lastWorld) {
+                this._rebuildMenu(this._lastWorld, this._lastStatusOverlay);
+            }
+        });
+    }
+
     update(world: World, statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> }): void {
         try {
             if (!this._indicator || !this._label) return;
-
             this._lastWorld = world;
             this._lastStatusOverlay = statusOverlay;
 
-            const currentWs = world.workspaces[world.viewport.workspaceIndex];
-            const wsName = currentWs?.name ?? `WS ${world.viewport.workspaceIndex + 1}`;
-            this._label.text = wsName;
-
-            // Aggregate Claude status for current workspace
-            const currentStatus = this._aggregateStatus(world, world.viewport.workspaceIndex, statusOverlay);
-            if (this._statusDot) {
-                this._statusDot.text = currentStatus ? (STATUS_ICONS[currentStatus] ?? '') : '';
-            }
+            this._updateLabel(world);
+            this._updateStatusDot(world, statusOverlay);
         } catch (e) {
             console.error('[Kestrel] Error updating panel indicator:', e);
         }
+    }
+
+    private _updateLabel(world: World): void {
+        const currentWs = world.workspaces[world.viewport.workspaceIndex];
+        this._label!.text = currentWs?.name ?? `WS ${world.viewport.workspaceIndex + 1}`;
+    }
+
+    private _updateStatusDot(world: World, statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> }): void {
+        if (!this._statusDot) return;
+        const currentStatus = this._aggregateStatus(world, world.viewport.workspaceIndex, statusOverlay);
+        this._statusDot.text = currentStatus ? (STATUS_ICONS[currentStatus] ?? '') : '';
     }
 
     destroy(): void {
@@ -105,31 +99,35 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
 
     private _rebuildMenu(world: World, statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> }): void {
         if (!this._indicator) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const menu = (this._indicator as any).menu as InstanceType<typeof PopupMenu.PopupMenu>;
         menu.removeAll();
 
         for (let i = 0; i < world.workspaces.length; i++) {
             const ws = world.workspaces[i]!;
             if (ws.windows.length === 0) continue;
-
-            const isCurrent = i === world.viewport.workspaceIndex;
-            const name = ws.name ?? `WS ${i + 1}`;
-            const claudeStatus = this._aggregateStatus(world, i, statusOverlay);
-            const statusIcon = claudeStatus ? ` ${STATUS_ICONS[claudeStatus] ?? ''}` : '';
-            const currentMark = isCurrent ? '\u{25CF} ' : '  ';
-            const label = `${currentMark}${name}    ${ws.windows.length}${statusIcon}`;
-
-            const item = new PopupMenu.PopupMenuItem(label);
-            const wsIndex = i;
-            item.connect('activate', () => {
-                try {
-                    this._switchCallback?.(wsIndex);
-                } catch (e) {
-                    console.error('[Kestrel] Error switching workspace from panel:', e);
-                }
-            });
-            menu.addMenuItem(item);
+            this._addWorkspaceMenuItem(menu, world, ws, i, statusOverlay);
         }
+    }
+
+    private _addWorkspaceMenuItem(
+        menu: InstanceType<typeof PopupMenu.PopupMenu>, world: World,
+        ws: World['workspaces'][number], wsIndex: number,
+        statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> },
+    ): void {
+        const isCurrent = wsIndex === world.viewport.workspaceIndex;
+        const name = ws.name ?? `WS ${wsIndex + 1}`;
+        const claudeStatus = this._aggregateStatus(world, wsIndex, statusOverlay);
+        const statusIcon = claudeStatus ? ` ${STATUS_ICONS[claudeStatus] ?? ''}` : '';
+        const currentMark = isCurrent ? '\u{25CF} ' : '  ';
+        const label = `${currentMark}${name}    ${ws.windows.length}${statusIcon}`;
+
+        const item = new PopupMenu.PopupMenuItem(label);
+        item.connect('activate', () => {
+            try { this._switchCallback?.(wsIndex); }
+            catch (e) { console.error('[Kestrel] Error switching workspace from panel:', e); }
+        });
+        menu.addMenuItem(item);
     }
 
     private _aggregateStatus(
@@ -142,14 +140,17 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         if (!ws) return null;
 
         const statusMap = statusOverlay.getWindowStatusMap();
-        let best: ClaudeStatus | null = null;
-        const priority: Record<string, number> = { 'needs-input': 3, 'working': 2, 'done': 1 };
+        const statuses = ws.windows.map(w => statusMap.get(w.id)).filter(Boolean) as ClaudeStatus[];
+        return this._highestPriority(statuses);
+    }
 
-        for (const win of ws.windows) {
-            const status = statusMap.get(win.id);
-            if (status && (priority[status] ?? 0) > (priority[best ?? ''] ?? 0)) {
-                best = status;
-            }
+    private _highestPriority(statuses: ClaudeStatus[]): ClaudeStatus | null {
+        const priority: Record<string, number> = { 'needs-input': 3, 'working': 2, 'done': 1 };
+        let best: ClaudeStatus | null = null;
+        let bestPriority = 0;
+        for (const s of statuses) {
+            const p = priority[s] ?? 0;
+            if (p > bestPriority) { best = s; bestPriority = p; }
         }
         return best;
     }

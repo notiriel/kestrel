@@ -18,32 +18,19 @@ export class ShellAdapter implements ShellPort {
     }
 
     interceptWmAnimations(): void {
-        this._wmDestroyId = global.window_manager.connect('destroy',
-            (shellWm: any, actor: Meta.WindowActor) => {
-                try {
-                    shellWm.completed_destroy(actor);
-                } catch (e) {
-                    console.error('[Kestrel] Error completing destroy:', e);
-                }
-            },
-        );
+        this._wmDestroyId = this._connectWmSignal('destroy', 'completed_destroy');
+        this._wmMinimizeId = this._connectWmSignal('minimize', 'completed_minimize');
+        this._wmUnminimizeId = this._connectWmSignal('unminimize', 'completed_unminimize');
+    }
 
-        this._wmMinimizeId = global.window_manager.connect('minimize',
+    private _connectWmSignal(signal: string, completedMethod: string): number {
+        return global.window_manager.connect(signal,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (shellWm: any, actor: Meta.WindowActor) => {
                 try {
-                    shellWm.completed_minimize(actor);
+                    shellWm[completedMethod](actor);
                 } catch (e) {
-                    console.error('[Kestrel] Error completing minimize:', e);
-                }
-            },
-        );
-
-        this._wmUnminimizeId = global.window_manager.connect('unminimize',
-            (shellWm: any, actor: Meta.WindowActor) => {
-                try {
-                    shellWm.completed_unminimize(actor);
-                } catch (e) {
-                    console.error('[Kestrel] Error completing unminimize:', e);
+                    console.error(`[Kestrel] Error completing ${completedMethod}:`, e);
                 }
             },
         );

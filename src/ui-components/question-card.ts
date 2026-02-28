@@ -1,5 +1,16 @@
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
-import type { NotificationCardDelegate, VisitableCardOptions, QuestionState } from './notification-adapter-types.js';
+import {
+    parseQuestion as domainParseQuestion,
+    selectQuestionOption as domainSelectOption,
+    setOtherText as domainSetOtherText,
+    shouldAutoAdvance,
+    formatQuestionResponse,
+    type QuestionInteractionState,
+    type DomainNotification,
+    type ParsedOption,
+    type ParsedQuestion,
+} from '../domain/notification.js';
+import type { NotificationCardDelegate, VisitableCardOptions, QuestionState } from '../adapters/notification-adapter-types.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
@@ -12,7 +23,6 @@ interface Easeable {
 
 // Kestrel brand palette
 const SURFACE = '#0a0f0c';
-const SURFACE_HOVER = '#0f1612';
 const BORDER = '#1c2b2c';
 const TEXT = '#e8ede9';
 const TEXT_DIM = '#9ca8a0';
@@ -24,22 +34,15 @@ const WARNING = '#f59e0b';
 
 const QUESTION_CARD_WIDTH = 600;
 const FOCUS_MODE_CARD_WIDTH = 480;
-const ANIMATION_DURATION = 300;
 const AUTO_ADVANCE_DELAY = 300;
 const PERMISSION_TIMEOUT_SECS = 600;
 
-interface ParsedOption {
-    label: string;
-    rawLabel: string;
-    description: string;
-    isRecommended: boolean;
-}
-
-interface ParsedQuestion {
-    question: string;
-    header: string;
-    options: ParsedOption[];
-    multiSelect: boolean;
+/** Shared question interaction state — can be referenced by multiple QuestionCard instances. */
+interface SharedQuestionState {
+    currentPage: number;
+    answers: Map<number, string[]>;
+    otherTexts: Map<number, string>;
+    otherActive: Map<number, boolean>;
 }
 
 export class QuestionCard implements NotificationCardDelegate {
@@ -51,13 +54,11 @@ export class QuestionCard implements NotificationCardDelegate {
     private _notification: OverlayNotification;
     private _options: VisitableCardOptions;
     private _questions: ParsedQuestion[];
-    private _currentPage: number = 0;
-    private _answers: Map<number, string[]> = new Map();
-    private _otherTexts: Map<number, string> = new Map();
-    private _otherActive: Map<number, boolean> = new Map();
+    /** Shared state — may be owned by this card or shared with a focus mode card. */
+    private _state: SharedQuestionState;
     private _pageContainer: St.BoxLayout;
     private _footerBar: St.BoxLayout;
-    private _timerLabel: St.Label;
+    private _timerLabel!: St.Label;
     private _timeoutBar: St.Widget;
     private _timeoutOverlay: St.Widget | null = null;
     private _autoAdvanceTimeoutId: number | null = null;
@@ -69,9 +70,9 @@ export class QuestionCard implements NotificationCardDelegate {
     private _focusMode: boolean = false;
     private _workspaceName: string | undefined;
     private _title: string;
-    private _titleLabel: St.Label;
+    private _titleLabel!: St.Label;
 
-    constructor(notification: OverlayNotification, options: VisitableCardOptions, focusMode?: boolean) {
+    constructor(notification: OverlayNotification, options: VisitableCardOptions, focusMode?: boolean, sharedState?: SharedQuestionState) {
         this._notification = notification;
         this._options = options;
         this._extensionPath = options.extensionPath;
@@ -80,8 +81,8 @@ export class QuestionCard implements NotificationCardDelegate {
         this._title = notification.title;
         this._focusMode = focusMode ?? false;
 
-        // Parse questions
         this._questions = (notification.questions ?? []).map(q => this._parseQuestion(q));
+        this._state = sharedState ?? { currentPage: 0, answers: new Map(), otherTexts: new Map(), otherActive: new Map() };
 
         // Card root — clip_to_allocation only in overlay mode (for collapse animation);
         // focus mode uses fixed positioning where clipping would hide content.
@@ -94,119 +95,21 @@ export class QuestionCard implements NotificationCardDelegate {
             clip_to_allocation: !this._focusMode,
         });
 
-        // Timeout bar track at top
-        const timeoutTrack = new St.Widget({
-            style: 'background-color: rgba(255,255,255,0.04);',
-            height: 3,
-            x_expand: true,
-        });
-        this._timeoutBar = new St.Widget({
-            style: `background-color: ${ACCENT};`,
-            height: 3,
-            x_expand: true,
-            pivot_point: new Graphene.Point({ x: 0, y: 0.5 }),
-        });
-        timeoutTrack.add_child(this._timeoutBar);
-        this.actor.add_child(timeoutTrack);
-
-        // Header
-        const headerBox = new St.BoxLayout({
-            style: `padding: 14px 18px 10px; border-bottom: 1px solid ${BORDER};`,
-            x_expand: true,
-        });
-
-        // Question icon
-        const iconBg = new St.Bin({
-            style: `background-color: rgba(98,175,133,0.08); border: 1px solid rgba(98,175,133,0.15); border-radius: 7px; min-width: 28px; min-height: 28px;`,
-            child: new St.Icon({
-                gicon: new Gio.FileIcon({ file: Gio.File.new_for_path(`${this._extensionPath}/data/question-icon.svg`) }) as any,
-                icon_size: 14,
-                style: `color: ${ACCENT};`,
-            }),
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        headerBox.add_child(iconBg);
-
-        this._titleLabel = new St.Label({
-            text: this._title,
-            style: `font-size: 13px; font-weight: bold; color: ${TEXT_DIM}; margin-left: 10px;`,
-            x_expand: true,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        headerBox.add_child(this._titleLabel);
-
-        // Workspace label (right-aligned, monospace)
-        if (this._workspaceName) {
-            const wsLabel = new St.Label({
-                text: this._workspaceName,
-                style: `font-family: monospace; font-size: 11px; color: ${TEXT_DIM}; margin-right: 8px;`,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            headerBox.add_child(wsLabel);
-        }
-
-        // Timer pill
-        this._timerLabel = new St.Label({
-            text: `${this._remainingSeconds}s`,
-            style: `font-family: monospace; font-size: 12px; font-weight: bold; color: ${TEXT_MUTED}; background-color: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 20px; border: 1px solid ${BORDER}; min-width: 48px; text-align: center;`,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        headerBox.add_child(this._timerLabel);
-        this.actor.add_child(headerBox);
-
-        // Message (hidden in collapsed view, shown as part of card)
-        this.msgLabel = new St.Label({
-            text: notification.message || '',
-            style: `font-size: 12px; color: ${TEXT_DIM}; padding: 0 18px; margin-top: 6px;`,
-            x_expand: true,
-            visible: this._focusMode ? !!notification.message : false,
-        });
-        this.msgLabel.clutter_text.line_wrap = this._focusMode;
-        this.msgLabel.clutter_text.ellipsize = this._focusMode ? 0 : 3;
+        this._timeoutBar = this._buildTimeoutBar();
+        this.actor.add_child(this._buildHeader());
+        this.msgLabel = this._buildMessageLabel(notification.message || '');
         this.actor.add_child(this.msgLabel);
 
-        // Expand wrapper — must be St.BoxLayout (not raw Clutter.Actor) so children
-        // with x_expand actually get allocated the full card width.
-        // In focus mode, height is set to -1 (natural) so content shows immediately.
-        this.expandWrapper = new St.BoxLayout({
-            vertical: true,
-            clip_to_allocation: !this._focusMode,
-            height: this._focusMode ? -1 : 0,
-            x_expand: true,
-        });
-
-        const expandContent = new St.BoxLayout({
-            vertical: true,
-            x_expand: true,
-            style: 'padding: 0;',
-        });
-
-        // Page container (question pages rendered here)
-        this._pageContainer = new St.BoxLayout({
-            vertical: true,
-            x_expand: true,
-            style: 'padding: 16px 18px 8px;',
-        });
-        expandContent.add_child(this._pageContainer);
-
-        // Footer: step dots + nav buttons
-        this._footerBar = new St.BoxLayout({
-            style: `padding: 12px 18px 14px; border-top: 1px solid ${BORDER};`,
-            x_expand: true,
-        });
-        expandContent.add_child(this._footerBar);
-
-        this.expandWrapper.add_child(expandContent);
+        // Expand wrapper + page content
+        const { expandWrapper, pageContainer, footerBar } = this._buildExpandArea();
+        this.expandWrapper = expandWrapper;
+        this._pageContainer = pageContainer;
+        this._footerBar = footerBar;
         this.actor.add_child(this.expandWrapper);
 
-        // No bottom progress bar for question cards — we have the top timeout bar instead
         this.progressBar = null;
-
-        // Build initial page
         this._rebuildPage();
 
-        // Start timer (only for overlay cards — focus mode cards are display-only)
         if (!this._focusMode) {
             this._startTimer();
         }
@@ -214,25 +117,26 @@ export class QuestionCard implements NotificationCardDelegate {
 
     // --- Public API for focus mode ---
 
-    get currentPage(): number { return this._currentPage; }
-    get answers(): ReadonlyMap<number, readonly string[]> { return this._answers; }
+    get currentPage(): number { return this._state.currentPage; }
+    get answers(): ReadonlyMap<number, readonly string[]> { return this._state.answers; }
     get questions(): readonly ParsedQuestion[] { return this._questions; }
     get focusMode(): boolean { return this._focusMode; }
 
-    /** Copy answer/navigation state from the source (overlay) card and rebuild. */
-    syncState(source: QuestionCard): void {
-        this._currentPage = source._currentPage;
-        this._answers = new Map(source._answers);
-        this._otherTexts = new Map(source._otherTexts);
-        this._otherActive = new Map(source._otherActive);
+    /** Get the shared state reference for passing to a focus-mode card. */
+    getSharedState(): SharedQuestionState {
+        return this._state;
+    }
+
+    /** Rebuild the page from current shared state (called when state changes externally). */
+    refresh(): void {
         this._rebuildPage();
     }
 
     get questionState(): QuestionState {
         return {
-            currentPage: this._currentPage,
-            answers: this._answers,
-            otherActive: this._otherActive,
+            currentPage: this._state.currentPage,
+            answers: this._state.answers,
+            otherActive: this._state.otherActive,
             questions: this._notification.questions ?? [],
             pageContainer: this._pageContainer,
             navBar: this._footerBar,
@@ -242,10 +146,10 @@ export class QuestionCard implements NotificationCardDelegate {
 
     navigate(delta: number): void {
         const totalPages = this._questions.length + 1;
-        const newPage = Math.max(0, Math.min(totalPages - 1, this._currentPage + delta));
-        if (newPage === this._currentPage) return;
+        const newPage = Math.max(0, Math.min(totalPages - 1, this._state.currentPage + delta));
+        if (newPage === this._state.currentPage) return;
         const direction = delta > 0 ? 'forward' : 'back';
-        this._currentPage = newPage;
+        this._state.currentPage = newPage;
         this._rebuildPage(direction);
     }
 
@@ -253,64 +157,40 @@ export class QuestionCard implements NotificationCardDelegate {
         const qDef = this._questions[questionIndex];
         if (!qDef) return;
 
-        // optionIndex === qDef.options.length means "Other"
-        const isOther = optionIndex === qDef.options.length;
-        const current = [...(this._answers.get(questionIndex) ?? [])];
+        // Delegate selection logic to domain
+        const domainNotif = this._toDomainNotification();
+        const tempState = { notifications: new Map([['_', domainNotif]]), responses: new Map() };
+        const newState = domainSelectOption(tempState, '_', questionIndex, optionIndex);
+        const updated = newState.notifications.get('_');
+        if (!updated) return;
 
-        if (isOther) {
-            // Select "Other", deselect everything else
-            this._otherActive.set(questionIndex, true);
-            const otherText = this._otherTexts.get(questionIndex) ?? '';
-            this._answers.set(questionIndex, otherText ? [otherText] : []);
-        } else if (qDef.multiSelect) {
-            const label = qDef.options[optionIndex].label;
-            // Deselect "Other" when picking a regular option
-            this._otherActive.delete(questionIndex);
-            this._otherTexts.delete(questionIndex);
-            if (current.includes(label)) {
-                this._answers.set(questionIndex, current.filter(l => l !== label));
-            } else {
-                // Remove any "Other" answer
-                const regularLabels = qDef.options.map(o => o.label);
-                const filtered = current.filter(l => regularLabels.includes(l));
-                this._answers.set(questionIndex, [...filtered, label]);
-            }
-        } else {
-            if (optionIndex < 0 || optionIndex >= qDef.options.length) return;
-            const label = qDef.options[optionIndex].label;
-            // Deselect "Other" when picking a regular option
-            this._otherActive.delete(questionIndex);
-            this._otherTexts.delete(questionIndex);
-            this._answers.set(questionIndex, [label]);
-        }
-
+        // Apply domain result back to shared mutable state
+        this._applyQuestionState(updated.questionState);
         this._rebuildPage();
 
         // Auto-advance for single-select (not for "Other")
-        if (!qDef.multiSelect && !isOther && this._currentPage < this._questions.length) {
+        const isOther = optionIndex === qDef.options.length;
+        if (shouldAutoAdvance(qDef, isOther) && this._state.currentPage < this._questions.length) {
             this._scheduleAutoAdvance();
         }
     }
 
     setOtherText(questionIndex: number, text: string): void {
-        this._otherTexts.set(questionIndex, text);
-        if (text.trim()) {
-            this._answers.set(questionIndex, [text.trim()]);
-        } else {
-            this._answers.set(questionIndex, []);
-        }
+        // Delegate to domain
+        const domainNotif = this._toDomainNotification();
+        const tempState = { notifications: new Map([['_', domainNotif]]), responses: new Map() };
+        const newState = domainSetOtherText(tempState, '_', questionIndex, text);
+        const updated = newState.notifications.get('_');
+        if (!updated) return;
+
+        this._applyQuestionState(updated.questionState);
         this._rebuildPage();
     }
 
     send(): void {
         if (this._timedOut) return;
-        const answersObj: Record<string, string> = {};
-        for (const [qIdx, labels] of this._answers) {
-            if (qIdx < this._questions.length) {
-                answersObj[this._questions[qIdx].question] = labels.join(', ');
-            }
-        }
-        this._options.onRespond(this._notification.id, `allow:${JSON.stringify(answersObj)}`);
+        const response = formatQuestionResponse(this._toDomainNotification());
+        this._options.onRespond(this._notification.id, response);
     }
 
     dismiss(): void {
@@ -342,36 +222,147 @@ export class QuestionCard implements NotificationCardDelegate {
     // --- Private ---
 
     private _parseQuestion(q: QuestionDefinition): ParsedQuestion {
-        const options: ParsedOption[] = q.options.map(opt => {
-            const isRecommended = /\(Recommended\)\s*$/i.test(opt.label);
-            const cleanLabel = opt.label.replace(/\s*\(Recommended\)\s*$/i, '').trim();
-            return {
-                label: cleanLabel,
-                rawLabel: opt.label,
-                description: opt.description,
-                isRecommended,
-            };
-        });
+        return domainParseQuestion(q);
+    }
+
+    /** Build a minimal DomainNotification to pass to domain functions. */
+    private _toDomainNotification(): DomainNotification {
         return {
-            question: q.question,
-            header: q.header,
-            options,
-            multiSelect: q.multiSelect,
+            id: this._notification.id,
+            sessionId: this._notification.sessionId ?? '',
+            type: 'question',
+            title: this._title,
+            message: this._notification.message || '',
+            questions: this._questions,
+            status: 'pending',
+            response: null,
+            timestamp: 0,
+            questionState: {
+                currentPage: this._state.currentPage,
+                answers: new Map(this._state.answers),
+                otherTexts: new Map(this._state.otherTexts),
+                otherActive: new Map(this._state.otherActive),
+            },
         };
     }
 
-    private _rebuildPage(direction?: 'forward' | 'back'): void {
+    /** Apply domain QuestionInteractionState back to shared mutable state. */
+    private _applyQuestionState(qs: QuestionInteractionState): void {
+        this._state.currentPage = qs.currentPage;
+        this._state.answers.clear();
+        for (const [k, v] of qs.answers) this._state.answers.set(k, v);
+        this._state.otherTexts.clear();
+        for (const [k, v] of qs.otherTexts) this._state.otherTexts.set(k, v);
+        this._state.otherActive.clear();
+        for (const [k, v] of qs.otherActive) this._state.otherActive.set(k, v);
+    }
+
+    private _buildTimeoutBar(): St.Widget {
+        const track = new St.Widget({
+            style: 'background-color: rgba(255,255,255,0.04);',
+            height: 3,
+            x_expand: true,
+        });
+        const bar = new St.Widget({
+            style: `background-color: ${ACCENT};`,
+            height: 3,
+            x_expand: true,
+            pivot_point: new Graphene.Point({ x: 0, y: 0.5 }),
+        });
+        track.add_child(bar);
+        this.actor.add_child(track);
+        return bar;
+    }
+
+    private _buildHeader(): St.BoxLayout {
+        const headerBox = new St.BoxLayout({
+            style: `padding: 14px 18px 10px; border-bottom: 1px solid ${BORDER};`,
+            x_expand: true,
+        });
+
+        headerBox.add_child(new St.Bin({
+            style: `background-color: rgba(98,175,133,0.08); border: 1px solid rgba(98,175,133,0.15); border-radius: 7px; min-width: 28px; min-height: 28px;`,
+            child: new St.Icon({
+                gicon: this._fileIcon('question-icon.svg'),
+                icon_size: 14,
+                style: `color: ${ACCENT};`,
+            }),
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+
+        this._titleLabel = new St.Label({
+            text: this._title,
+            style: `font-size: 13px; font-weight: bold; color: ${TEXT_DIM}; margin-left: 10px;`,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        headerBox.add_child(this._titleLabel);
+
+        if (this._workspaceName) {
+            headerBox.add_child(new St.Label({
+                text: this._workspaceName,
+                style: `font-family: monospace; font-size: 11px; color: ${TEXT_DIM}; margin-right: 8px;`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+        }
+
+        this._timerLabel = new St.Label({
+            text: `${this._remainingSeconds}s`,
+            style: `font-family: monospace; font-size: 12px; font-weight: bold; color: ${TEXT_MUTED}; background-color: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 20px; border: 1px solid ${BORDER}; min-width: 48px; text-align: center;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        headerBox.add_child(this._timerLabel);
+        return headerBox;
+    }
+
+    private _buildMessageLabel(text: string): St.Label {
+        const label = new St.Label({
+            text,
+            style: `font-size: 12px; color: ${TEXT_DIM}; padding: 0 18px; margin-top: 6px;`,
+            x_expand: true,
+            visible: this._focusMode ? !!text : false,
+        });
+        label.clutter_text.line_wrap = this._focusMode;
+        label.clutter_text.ellipsize = this._focusMode ? 0 : 3;
+        return label;
+    }
+
+    private _buildExpandArea(): { expandWrapper: St.BoxLayout; pageContainer: St.BoxLayout; footerBar: St.BoxLayout } {
+        const expandWrapper = new St.BoxLayout({
+            vertical: true,
+            clip_to_allocation: !this._focusMode,
+            height: this._focusMode ? -1 : 0,
+            x_expand: true,
+        });
+
+        const expandContent = new St.BoxLayout({ vertical: true, x_expand: true, style: 'padding: 0;' });
+
+        const pageContainer = new St.BoxLayout({ vertical: true, x_expand: true, style: 'padding: 16px 18px 8px;' });
+        expandContent.add_child(pageContainer);
+
+        const footerBar = new St.BoxLayout({
+            style: `padding: 12px 18px 14px; border-top: 1px solid ${BORDER};`,
+            x_expand: true,
+        });
+        expandContent.add_child(footerBar);
+
+        expandWrapper.add_child(expandContent);
+        return { expandWrapper, pageContainer, footerBar };
+    }
+
+    private _rebuildPage(_direction?: 'forward' | 'back'): void {
         // Clear existing content
         this._pageContainer.destroy_all_children();
         this._footerBar.destroy_all_children();
 
         const totalPages = this._questions.length + 1;
-        const isSubmitPage = this._currentPage >= this._questions.length;
+        const isSubmitPage = this._state.currentPage >= this._questions.length;
 
         if (isSubmitPage) {
             this._buildSummaryPage();
         } else {
-            this._buildQuestionPage(this._currentPage);
+            this._buildQuestionPage(this._state.currentPage);
         }
 
         this._buildFooter(totalPages);
@@ -382,9 +373,9 @@ export class QuestionCard implements NotificationCardDelegate {
 
     private _buildQuestionPage(pageIndex: number): void {
         const q = this._questions[pageIndex];
-        const selected = this._answers.get(pageIndex) ?? [];
-        const otherText = this._otherTexts.get(pageIndex) ?? '';
-        const isOtherSelected = this._otherActive.get(pageIndex) === true;
+        const selected = this._state.answers.get(pageIndex) ?? [];
+        const otherText = this._state.otherTexts.get(pageIndex) ?? '';
+        const isOtherSelected = this._state.otherActive.get(pageIndex) === true;
 
         // Badge: HEADER · Q1/N
         const badge = new St.Label({
@@ -429,70 +420,57 @@ export class QuestionCard implements NotificationCardDelegate {
         qIndex: number,
         optIndex: number,
     ): St.BoxLayout {
-        // Determine styling
-        let bgColor = 'rgba(26,28,42,0.5)';
-        let borderColor = 'rgba(255,255,255,0.08)';
+        const { bgColor, borderColor } = this._optionRowColors(isSelected, opt.isRecommended);
+        const rowStyle = `background-color: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;`;
 
-        if (opt.isRecommended && isSelected) {
-            bgColor = 'rgba(125,214,164,0.12)';
-            borderColor = 'rgba(125,214,164,0.3)';
-        } else if (opt.isRecommended) {
-            bgColor = 'rgba(125,214,164,0.04)';
-            borderColor = 'rgba(125,214,164,0.2)';
-        } else if (isSelected) {
-            bgColor = 'rgba(98,175,133,0.1)';
-            borderColor = 'rgba(98,175,133,0.4)';
-        }
+        const row = new St.BoxLayout({ style: rowStyle, reactive: true, x_expand: true });
 
-        const row = new St.BoxLayout({
-            style: `background-color: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;`,
-            reactive: true,
-            x_expand: true,
-        });
-
-        // Shortcut badge in focus mode
         if (this._focusMode) {
-            const badge = new St.Label({
-                text: `(${optIndex + 1})`,
-                style: `font-family: monospace; font-size: 11px; font-weight: bold; color: ${TEXT_MUTED}; background-color: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; margin-right: 8px; min-width: 28px; text-align: center;`,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            row.add_child(badge);
+            row.add_child(this._shortcutBadge(optIndex + 1));
         }
 
-        // Radio/checkbox indicator
         const indicatorSvg = this._getIndicatorSvg(multiSelect, isSelected, opt.isRecommended);
-        const indicatorIcon = new St.Icon({
-            gicon: new Gio.FileIcon({ file: Gio.File.new_for_path(`${this._extensionPath}/data/${indicatorSvg}`) }) as any,
+        row.add_child(new St.Icon({
+            gicon: this._fileIcon(indicatorSvg),
             icon_size: 18,
             style: `color: ${isSelected ? (opt.isRecommended ? GREEN : ACCENT) : TEXT_MUTED}; margin-right: 10px; margin-top: 1px;`,
-        });
-        row.add_child(indicatorIcon);
+        }));
 
-        // Content column
-        const content = new St.BoxLayout({
-            vertical: true,
-            x_expand: true,
-        });
+        row.add_child(this._optionContent(opt));
+        this._connectRowEvents(row, rowStyle, isSelected, qIndex, optIndex);
+        return row;
+    }
 
-        // Label row with recommended tag
-        const labelRow = new St.BoxLayout({
-            style: 'spacing: 8px;',
-            x_expand: true,
+    private _optionRowColors(isSelected: boolean, isRecommended: boolean): { bgColor: string; borderColor: string } {
+        if (isRecommended && isSelected) return { bgColor: 'rgba(125,214,164,0.12)', borderColor: 'rgba(125,214,164,0.3)' };
+        if (isRecommended) return { bgColor: 'rgba(125,214,164,0.04)', borderColor: 'rgba(125,214,164,0.2)' };
+        if (isSelected) return { bgColor: 'rgba(98,175,133,0.1)', borderColor: 'rgba(98,175,133,0.4)' };
+        return { bgColor: 'rgba(26,28,42,0.5)', borderColor: 'rgba(255,255,255,0.08)' };
+    }
+
+    private _shortcutBadge(number: number): St.Label {
+        return new St.Label({
+            text: `(${number})`,
+            style: `font-family: monospace; font-size: 11px; font-weight: bold; color: ${TEXT_MUTED}; background-color: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; margin-right: 8px; min-width: 28px; text-align: center;`,
+            y_align: Clutter.ActorAlign.CENTER,
         });
-        const label = new St.Label({
+    }
+
+    private _optionContent(opt: ParsedOption): St.BoxLayout {
+        const content = new St.BoxLayout({ vertical: true, x_expand: true });
+
+        const labelRow = new St.BoxLayout({ style: 'spacing: 8px;', x_expand: true });
+        labelRow.add_child(new St.Label({
             text: opt.label,
             style: `font-size: 14px; font-weight: bold; color: ${TEXT};`,
-        });
-        labelRow.add_child(label);
+        }));
 
         if (opt.isRecommended) {
-            const tag = new St.Label({
+            labelRow.add_child(new St.Label({
                 text: 'RECOMMENDED',
                 style: `font-family: monospace; font-size: 9px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; color: ${GREEN}; background-color: rgba(125,214,164,0.1); padding: 2px 7px; border-radius: 3px;`,
                 y_align: Clutter.ActorAlign.CENTER,
-            });
-            labelRow.add_child(tag);
+            }));
         }
         content.add_child(labelRow);
 
@@ -505,9 +483,10 @@ export class QuestionCard implements NotificationCardDelegate {
             desc.clutter_text.line_wrap = true;
             content.add_child(desc);
         }
-        row.add_child(content);
+        return content;
+    }
 
-        // Hover effects
+    private _connectRowEvents(row: St.BoxLayout, restStyle: string, isSelected: boolean, qIndex: number, optIndex: number): void {
         row.connect('enter-event', () => {
             if (!isSelected) {
                 row.style = `background-color: rgba(34,36,56,0.6); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;`;
@@ -516,22 +495,16 @@ export class QuestionCard implements NotificationCardDelegate {
         row.connect('leave-event', (_actor: Clutter.Actor, event: Clutter.Event) => {
             const related = event.get_related();
             if (related && row.contains(related)) return;
-            row.style = `background-color: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;`;
+            row.style = restStyle;
         });
-
-        // Click handler
         row.connect('button-press-event', () => {
             this.selectOption(qIndex, optIndex);
             return Clutter.EVENT_STOP;
         });
-
-        return row;
     }
 
     private _buildOtherOption(q: ParsedQuestion, qIndex: number, isSelected: boolean, otherText: string): void {
-        const bgColor = isSelected ? 'rgba(98,175,133,0.1)' : 'rgba(26,28,42,0.5)';
-        const borderColor = isSelected ? 'rgba(98,175,133,0.4)' : 'rgba(255,255,255,0.08)';
-
+        const { bgColor, borderColor } = this._optionRowColors(isSelected, false);
         const row = new St.BoxLayout({
             vertical: true,
             style: `background-color: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;`,
@@ -539,159 +512,140 @@ export class QuestionCard implements NotificationCardDelegate {
             x_expand: true,
         });
 
-        const topRow = new St.BoxLayout({
-            x_expand: true,
-        });
-
-        // Shortcut badge in focus mode
+        const topRow = new St.BoxLayout({ x_expand: true });
         if (this._focusMode) {
-            const badge = new St.Label({
-                text: `(${q.options.length + 1})`,
-                style: `font-family: monospace; font-size: 11px; font-weight: bold; color: ${TEXT_MUTED}; background-color: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; margin-right: 8px; min-width: 28px; text-align: center;`,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            topRow.add_child(badge);
+            topRow.add_child(this._shortcutBadge(q.options.length + 1));
         }
 
         const indicatorSvg = this._getIndicatorSvg(q.multiSelect, isSelected, false);
-        const indicatorIcon = new St.Icon({
-            gicon: new Gio.FileIcon({ file: Gio.File.new_for_path(`${this._extensionPath}/data/${indicatorSvg}`) }) as any,
+        topRow.add_child(new St.Icon({
+            gicon: this._fileIcon(indicatorSvg),
             icon_size: 18,
             style: `color: ${isSelected ? ACCENT : TEXT_MUTED}; margin-right: 10px; margin-top: 1px;`,
-        });
-        topRow.add_child(indicatorIcon);
-
-        const label = new St.Label({
+        }));
+        topRow.add_child(new St.Label({
             text: 'Other',
             style: `font-size: 14px; font-weight: bold; color: ${TEXT};`,
             y_align: Clutter.ActorAlign.CENTER,
-        });
-        topRow.add_child(label);
+        }));
         row.add_child(topRow);
 
-        // Text entry (visible when selected)
         if (isSelected) {
-            const entry = new St.Entry({
-                hint_text: 'Type your answer\u2026',
-                text: otherText,
-                style: `font-size: 13px; color: ${TEXT}; background-color: rgba(10,15,12,0.8); border: 1px solid ${BORDER}; border-radius: 6px; padding: 8px 12px; margin-top: 8px; margin-left: 28px;`,
-                x_expand: true,
-            });
-
-            entry.clutter_text.connect('text-changed', () => {
-                try {
-                    const text = entry.get_text();
-                    this.setOtherText(qIndex, text);
-                } catch (e) {
-                    console.error('[Kestrel] Error in other text changed:', e);
-                }
-            });
-
-            row.add_child(entry);
-
-            // Focus the entry
-            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                try {
-                    (global.stage as any).set_key_focus(entry.clutter_text);
-                } catch { /* may be gone */ }
-                return GLib.SOURCE_REMOVE;
-            });
+            this._addOtherEntry(row, qIndex, otherText);
         }
 
-        // Click handler
         row.connect('button-press-event', (_actor: Clutter.Actor, event: Clutter.Event) => {
-            // Don't handle if clicking inside the entry
             const source = event.get_source();
             if (source instanceof St.Entry || (source as Clutter.Actor)?.get_parent?.() instanceof St.Entry) {
                 return Clutter.EVENT_PROPAGATE;
             }
-            this.selectOption(qIndex, q.options.length); // "Other" index
+            this.selectOption(qIndex, q.options.length);
             return Clutter.EVENT_STOP;
         });
 
         this._pageContainer.add_child(row);
     }
 
+    private _addOtherEntry(row: St.BoxLayout, qIndex: number, otherText: string): void {
+        const entry = new St.Entry({
+            hint_text: 'Type your answer\u2026',
+            text: otherText,
+            style: `font-size: 13px; color: ${TEXT}; background-color: rgba(10,15,12,0.8); border: 1px solid ${BORDER}; border-radius: 6px; padding: 8px 12px; margin-top: 8px; margin-left: 28px;`,
+            x_expand: true,
+        });
+
+        entry.clutter_text.connect('text-changed', () => {
+            try {
+                this.setOtherText(qIndex, entry.get_text());
+            } catch (e) {
+                console.error('[Kestrel] Error in other text changed:', e);
+            }
+        });
+        row.add_child(entry);
+
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            try {
+                (global.stage as Clutter.Stage).set_key_focus(entry.clutter_text);
+            } catch { /* may be gone */ }
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
     private _buildSummaryPage(): void {
-        // Summary badge
-        const badge = new St.Label({
+        this._pageContainer.add_child(new St.Label({
             text: 'REVIEW \u00b7 SUMMARY',
             style: `font-family: monospace; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.08em; color: ${GREEN}; background-color: rgba(125,214,164,0.08); padding: 4px 10px; border-radius: 4px; margin-bottom: 10px;`,
-        });
-        this._pageContainer.add_child(badge);
-
-        const title = new St.Label({
+        }));
+        this._pageContainer.add_child(new St.Label({
             text: 'Review your answers',
             style: `font-size: 16px; font-weight: bold; color: ${TEXT}; margin-bottom: 6px;`,
-        });
-        this._pageContainer.add_child(title);
-
-        const hint = new St.Label({
+        }));
+        this._pageContainer.add_child(new St.Label({
             text: 'Click "Edit" to go back and change an answer',
             style: `font-size: 12px; color: ${TEXT_MUTED}; margin-bottom: 14px;`,
-        });
-        this._pageContainer.add_child(hint);
+        }));
 
-        // Summary items
         for (let i = 0; i < this._questions.length; i++) {
-            const q = this._questions[i];
-            const selected = this._answers.get(i) ?? [];
-            const answerText = selected.length > 0 ? selected.join(', ') : '\u2014';
-
-            const item = new St.BoxLayout({
-                vertical: true,
-                style: `background-color: rgba(26,28,42,0.5); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 12px 14px; margin-bottom: 10px;`,
-                x_expand: true,
-            });
-
-            const headerText = new St.Label({
-                text: q.header.toUpperCase(),
-                style: `font-family: monospace; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; color: ${TEXT_MUTED}; margin-bottom: 4px;`,
-            });
-            item.add_child(headerText);
-
-            const questionText = new St.Label({
-                text: q.question,
-                style: `font-size: 13px; color: ${TEXT_DIM}; margin-bottom: 6px;`,
-                x_expand: true,
-            });
-            questionText.clutter_text.line_wrap = true;
-            item.add_child(questionText);
-
-            const answerLabel = new St.Label({
-                text: answerText,
-                style: `font-size: 14px; font-weight: bold; color: ${selected.length > 0 ? ACCENT : RED};`,
-            });
-            item.add_child(answerLabel);
-
-            // Edit link
-            const editLink = new St.Label({
-                text: 'Edit \u2197',
-                style: `font-size: 11px; color: ${TEXT_MUTED}; margin-top: 4px;`,
-                reactive: true,
-            });
-            editLink.connect('enter-event', () => {
-                editLink.style = `font-size: 11px; color: ${ACCENT}; margin-top: 4px;`;
-            });
-            editLink.connect('leave-event', () => {
-                editLink.style = `font-size: 11px; color: ${TEXT_MUTED}; margin-top: 4px;`;
-            });
-            const pageTarget = i;
-            editLink.connect('button-press-event', () => {
-                this._currentPage = pageTarget;
-                this._rebuildPage('back');
-                return Clutter.EVENT_STOP;
-            });
-            item.add_child(editLink);
-
-            this._pageContainer.add_child(item);
+            this._pageContainer.add_child(this._buildSummaryItem(i));
         }
     }
 
-    private _buildFooter(totalPages: number): void {
-        const isSubmitPage = this._currentPage >= this._questions.length;
+    private _buildSummaryItem(qIndex: number): St.BoxLayout {
+        const q = this._questions[qIndex];
+        const selected = this._state.answers.get(qIndex) ?? [];
+        const answerText = selected.length > 0 ? selected.join(', ') : '\u2014';
 
-        // Step dots (left side)
+        const item = new St.BoxLayout({
+            vertical: true,
+            style: `background-color: rgba(26,28,42,0.5); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 12px 14px; margin-bottom: 10px;`,
+            x_expand: true,
+        });
+
+        item.add_child(new St.Label({
+            text: q.header.toUpperCase(),
+            style: `font-family: monospace; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; color: ${TEXT_MUTED}; margin-bottom: 4px;`,
+        }));
+
+        const questionText = new St.Label({
+            text: q.question,
+            style: `font-size: 13px; color: ${TEXT_DIM}; margin-bottom: 6px;`,
+            x_expand: true,
+        });
+        questionText.clutter_text.line_wrap = true;
+        item.add_child(questionText);
+
+        item.add_child(new St.Label({
+            text: answerText,
+            style: `font-size: 14px; font-weight: bold; color: ${selected.length > 0 ? ACCENT : RED};`,
+        }));
+
+        const editLink = new St.Label({
+            text: 'Edit \u2197',
+            style: `font-size: 11px; color: ${TEXT_MUTED}; margin-top: 4px;`,
+            reactive: true,
+        });
+        editLink.connect('enter-event', () => {
+            editLink.style = `font-size: 11px; color: ${ACCENT}; margin-top: 4px;`;
+        });
+        editLink.connect('leave-event', () => {
+            editLink.style = `font-size: 11px; color: ${TEXT_MUTED}; margin-top: 4px;`;
+        });
+        editLink.connect('button-press-event', () => {
+            this._state.currentPage = qIndex;
+            this._rebuildPage('back');
+            return Clutter.EVENT_STOP;
+        });
+        item.add_child(editLink);
+
+        return item;
+    }
+
+    private _buildFooter(totalPages: number): void {
+        this._footerBar.add_child(this._buildStepDots(totalPages));
+        this._footerBar.add_child(this._buildNavButtons());
+    }
+
+    private _buildStepDots(totalPages: number): St.BoxLayout {
         const dotsBox = new St.BoxLayout({
             style: 'spacing: 6px;',
             x_expand: true,
@@ -699,8 +653,8 @@ export class QuestionCard implements NotificationCardDelegate {
         });
 
         for (let i = 0; i < totalPages; i++) {
-            const isCurrent = i === this._currentPage;
-            const isAnswered = i < this._questions.length && (this._answers.get(i) ?? []).length > 0;
+            const isCurrent = i === this._state.currentPage;
+            const isAnswered = i < this._questions.length && (this._state.answers.get(i) ?? []).length > 0;
             const isSummary = i === this._questions.length;
 
             let dotStyle: string;
@@ -713,65 +667,50 @@ export class QuestionCard implements NotificationCardDelegate {
                 dotStyle = `background-color: ${TEXT_MUTED}; border-radius: 50%; min-width: 6px; min-height: 6px; opacity: 76;`;
             }
 
-            const dot = new St.Widget({
-                style: dotStyle,
-                reactive: true,
-            });
+            const dot = new St.Widget({ style: dotStyle, reactive: true });
             const targetPage = i;
             dot.connect('button-press-event', () => {
-                this._currentPage = targetPage;
-                this._rebuildPage(targetPage < this._currentPage ? 'back' : 'forward');
+                this._state.currentPage = targetPage;
+                this._rebuildPage(targetPage < this._state.currentPage ? 'back' : 'forward');
                 return Clutter.EVENT_STOP;
             });
             dotsBox.add_child(dot);
         }
-        this._footerBar.add_child(dotsBox);
+        return dotsBox;
+    }
 
-        // Nav buttons (right side)
+    private _buildNavButtons(): St.BoxLayout {
         const navBox = new St.BoxLayout({
             style: 'spacing: 8px;',
             x_align: Clutter.ActorAlign.END,
         });
+        const isSubmitPage = this._state.currentPage >= this._questions.length;
 
         if (isSubmitPage) {
-            // Abort button
             navBox.add_child(this._makeNavButton(
-                this._focusMode ? '(2) Abort' : 'Abort', 'abort', () => {
-                    this.dismiss();
-                }));
+                this._focusMode ? '(2) Abort' : 'Abort', 'abort', () => { this.dismiss(); }));
 
-            // Submit button
-            const allAnswered = this._questions.every((_, i) => (this._answers.get(i) ?? []).length > 0);
+            const allAnswered = this._questions.every((_, i) => (this._state.answers.get(i) ?? []).length > 0);
             navBox.add_child(this._makeNavButton(
                 this._focusMode ? '(1) Submit' : 'Submit', 'submit', () => {
                     if (allAnswered) this.send();
                 }, !allAnswered));
 
-            // Visit button (focus mode only, on submit page)
             if (this._focusMode) {
-                navBox.add_child(this._makeNavButton('(3) Visit', 'ghost', () => {
-                    this.visit();
-                }));
+                navBox.add_child(this._makeNavButton('(3) Visit', 'ghost', () => { this.visit(); }));
             }
         } else {
-            // Back button (hidden on first page)
-            if (this._currentPage > 0) {
-                navBox.add_child(this._makeNavButton('Back', 'ghost', () => {
-                    this.navigate(-1);
-                }));
+            if (this._state.currentPage > 0) {
+                navBox.add_child(this._makeNavButton('Back', 'ghost', () => { this.navigate(-1); }));
             }
-
-            // Next/Review button
-            const isLastQuestion = this._currentPage === this._questions.length - 1;
-            const hasAnswer = (this._answers.get(this._currentPage) ?? []).length > 0;
+            const isLastQuestion = this._state.currentPage === this._questions.length - 1;
+            const hasAnswer = (this._state.answers.get(this._state.currentPage) ?? []).length > 0;
             navBox.add_child(this._makeNavButton(
-                isLastQuestion ? 'Review' : 'Next',
-                'primary',
-                () => { this.navigate(1); },
-                !hasAnswer,
+                isLastQuestion ? 'Review' : 'Next', 'primary',
+                () => { this.navigate(1); }, !hasAnswer,
             ));
         }
-        this._footerBar.add_child(navBox);
+        return navBox;
     }
 
     private _makeNavButton(label: string, variant: 'ghost' | 'primary' | 'submit' | 'abort', onClick: () => void, disabled?: boolean): St.Button {
@@ -815,6 +754,13 @@ export class QuestionCard implements NotificationCardDelegate {
         return btn;
     }
 
+    // Returns Gio.FileIcon typed as Gio.Icon for gicon props.
+    // Cast via unknown needed: @girs has conflicting $signals between gio-2.0 re-exports.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private _fileIcon(filename: string): any {
+        return new Gio.FileIcon({ file: Gio.File.new_for_path(`${this._extensionPath}/data/${filename}`) });
+    }
+
     private _getIndicatorSvg(multiSelect: boolean, isSelected: boolean, _isRecommended: boolean): string {
         if (multiSelect) {
             return isSelected ? 'checkbox-checked.svg' : 'checkbox-unchecked.svg';
@@ -828,8 +774,8 @@ export class QuestionCard implements NotificationCardDelegate {
         }
         this._autoAdvanceTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, AUTO_ADVANCE_DELAY, () => {
             this._autoAdvanceTimeoutId = null;
-            if (this._currentPage < this._questions.length) {
-                this._currentPage++;
+            if (this._state.currentPage < this._questions.length) {
+                this._state.currentPage++;
                 this._rebuildPage('forward');
             }
             return GLib.SOURCE_REMOVE;
@@ -910,13 +856,12 @@ export class QuestionCard implements NotificationCardDelegate {
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        const clockIcon = new St.Icon({
-            gicon: new Gio.FileIcon({ file: Gio.File.new_for_path(`${this._extensionPath}/data/timeout-clock.svg`) }) as any,
+        overlayContent.add_child(new St.Icon({
+            gicon: this._fileIcon('timeout-clock.svg'),
             icon_size: 28,
             style: `color: ${TEXT_DIM}; margin-bottom: 8px;`,
             x_align: Clutter.ActorAlign.CENTER,
-        });
-        overlayContent.add_child(clockIcon);
+        }));
 
         overlayContent.add_child(new St.Label({
             text: 'Time expired',

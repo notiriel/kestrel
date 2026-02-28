@@ -4,7 +4,6 @@ import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navi
 import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import type { World } from '../../src/domain/world.js';
-import { createViewport } from '../../src/domain/viewport.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {

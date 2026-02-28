@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow, removeWindow, setFocus, restoreWorld } from '../../src/domain/world.js';
+import { createWorld, addWindow, removeWindow, setFocus, restoreWorld, workspaceNameForWindow, renameCurrentWorkspace, switchToWorkspace } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
-import { createViewport } from '../../src/domain/viewport.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -395,6 +394,33 @@ describe('World', () => {
             );
             // Should be clamped to valid range
             expect(result.viewport.workspaceIndex).toBeLessThan(result.workspaces.length);
+        });
+    });
+
+    describe('workspaceNameForWindow', () => {
+        it('returns workspace name for a window', () => {
+            let w = addWindow(world, wid(1)).world;
+            w = renameCurrentWorkspace(w, 'Dev');
+            expect(workspaceNameForWindow(w, wid(1))).toBe('Dev');
+        });
+
+        it('returns default workspace name when not renamed', () => {
+            const w = addWindow(world, wid(1)).world;
+            expect(workspaceNameForWindow(w, wid(1))).toBe('Workspace 1');
+        });
+
+        it('returns null for unknown window', () => {
+            expect(workspaceNameForWindow(world, wid(99))).toBeNull();
+        });
+
+        it('returns correct name when window is on a non-current workspace', () => {
+            // Add window to ws0, navigate to ws1, add another, rename ws1
+            let w = addWindow(world, wid(1)).world;
+            w = switchToWorkspace(w, 1).world;
+            w = addWindow(w, wid(2)).world;
+            w = renameCurrentWorkspace(w, 'Other');
+            expect(workspaceNameForWindow(w, wid(1))).toBe('Workspace 1');
+            expect(workspaceNameForWindow(w, wid(2))).toBe('Other');
         });
     });
 });
