@@ -56,17 +56,24 @@ export class ShellAdapter implements ShellPort {
     }
 
     /**
-     * Intercept unminimize: cancel GNOME Shell's default animation which
-     * resets actor opacity to 255 in _unminimizeWindowDone, then complete
-     * the unminimize immediately.
+     * Intercept unminimize: skip GNOME's animation but go through its natural
+     * completion path (_unminimizeWindowDone) so Mutter properly restores
+     * Wayland pointer input routing. Calling completed_unminimize directly
+     * (bypassing _unminimizeWindowDone) corrupts Mutter's input state.
      */
     private _connectUnminimize(): number {
         return global.window_manager.connect('unminimize',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (shellWm: any, actor: Meta.WindowActor) => {
+            (_shellWm: any, actor: Meta.WindowActor) => {
                 try {
-                    this._cancelGnomeAnimation(actor, '_unminimizing');
-                    shellWm.completed_unminimize(actor);
+                    // Cancel GNOME's animation (opacity ease 0→255)
+                    actor.remove_all_transitions();
+                    // Trigger GNOME's natural completion path which calls
+                    // completed_unminimize internally after proper cleanup
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (Main.wm as any)._unminimizeWindowDone(_shellWm, actor);
+                    // Override the opacity=255 that _unminimizeWindowDone sets
+                    actor.set_opacity(0);
                 } catch (e) {
                     console.error('[Kestrel] Error completing unminimize:', e);
                 }

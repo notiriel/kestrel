@@ -2,6 +2,9 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import type { WindowId, WorkspaceId, MonitorInfo } from './domain/types.js';
 import type { World } from './domain/world.js';
 import { createWorld, setFocus, updateMonitor, updateConfig, buildUpdate, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
+import { computeScene, diffScene } from './domain/scene.js';
+import type { SceneModel, CloneScene, RealWindowScene, FocusIndicatorScene, WorkspaceStripScene } from './domain/scene.js';
+import { computeLayout, computeLayoutForWorkspace } from './domain/layout.js';
 import { focusRight, focusLeft, focusDown, focusUp } from './domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from './domain/window-operations.js';
 import type { ClonePort } from './ports/clone-port.js';
@@ -76,6 +79,7 @@ export default class KestrelExtension extends Extension {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (global as any)._kestrel = {
                     debugState: () => this._debugState(),
+                    diagnostics: () => this._getDiagnostics(),
                 };
             }
 
@@ -149,6 +153,7 @@ export default class KestrelExtension extends Extension {
                 listWorkspaces: () => this._listWorkspaces(),
                 switchToWorkspaceByName: (name) => this._switchToWorkspaceByName(name),
                 renameCurrentWorkspace: (name) => this._renameCurrentWorkspace(name),
+                getDiagnostics: () => this._getDiagnostics(),
             });
             this._notificationCoordinator.init();
 
@@ -474,6 +479,83 @@ export default class KestrelExtension extends Extension {
                 windows: layout.windows,
             },
         });
+    }
+
+    private _getDiagnostics(): string {
+        try {
+            const world = this._worldHolder.world;
+            if (!world) return '{"error":"no world"}';
+
+            // Compute expected scene from domain
+            const layouts = world.workspaces.map((_, i) =>
+                i === world.viewport.workspaceIndex
+                    ? computeLayout(world)
+                    : computeLayoutForWorkspace(world, i),
+            );
+            const expected = computeScene(world, layouts);
+
+            // Read actual state from adapters
+            const adapter = this._cloneAdapter as CloneAdapter;
+            const clonePositions = adapter?.getClonePositions?.();
+            const windowStates = (this._windowAdapter as WindowAdapter)?.getWindowStates?.();
+            const focusState = adapter?.getFocusIndicatorState?.();
+            const stripState = adapter?.getWorkspaceStripState?.();
+
+            // Build actual clone scenes
+            const actualClones: CloneScene[] = [];
+            if (clonePositions) {
+                for (const [windowId, pos] of clonePositions) {
+                    actualClones.push({
+                        windowId,
+                        workspaceId: pos.workspaceId,
+                        x: pos.x,
+                        y: pos.y,
+                        width: pos.width,
+                        height: pos.height,
+                        visible: pos.visible,
+                    });
+                }
+            }
+
+            // Build actual real window scenes
+            const actualRealWindows: RealWindowScene[] = [];
+            if (windowStates) {
+                for (const [windowId, state] of windowStates) {
+                    actualRealWindows.push({
+                        windowId,
+                        x: state.frameX,
+                        y: state.frameY,
+                        width: state.frameWidth,
+                        height: state.frameHeight,
+                        opacity: state.fullscreen ? 255 : 0,
+                        minimized: state.offscreen,
+                    });
+                }
+            }
+
+            // Build actual focus indicator
+            const actualFocus: FocusIndicatorScene = focusState
+                ? focusState
+                : { visible: false, x: 0, y: 0, width: 0, height: 0 };
+
+            // Build actual workspace strip
+            const actualStrip: WorkspaceStripScene = stripState
+                ? { y: stripState.y, workspaces: stripState.workspaces }
+                : expected.workspaceStrip;
+
+            const actual: SceneModel = {
+                clones: actualClones,
+                realWindows: actualRealWindows,
+                focusIndicator: actualFocus,
+                workspaceStrip: actualStrip,
+            };
+
+            const mismatches = diffScene(expected, actual);
+
+            return JSON.stringify({ expected, actual, mismatches });
+        } catch (e) {
+            return `{"error":"${String(e)}"}`;
+        }
     }
 
     private _renameCurrentWorkspace(name: string): string {

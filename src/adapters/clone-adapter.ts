@@ -4,6 +4,7 @@ import { safeDisconnect } from './signal-utils.js';
 import { FloatCloneManager } from './float-clone-manager.js';
 import { easeOrSet } from './animation-helpers.js';
 import Clutter from 'gi://Clutter';
+import GObject from 'gi://GObject';
 import St from 'gi://St';
 import Meta from 'gi://Meta';
 
@@ -38,6 +39,20 @@ interface WorkspaceContainer {
     scrollContainer: Clutter.Actor;
     nameLabel: St.Label;
 }
+
+/**
+ * A Clutter.Actor that skips the pick phase entirely.  This makes the actor
+ * (and all its descendants) invisible to Mutter's hit-testing so pointer
+ * input passes through to the MetaWindowActors in global.window_group below.
+ */
+const UnpickableActor = GObject.registerClass(
+    { GTypeName: 'Kestrel_UnpickableActor' },
+    class UnpickableActor extends Clutter.Actor {
+        vfunc_pick(_pickContext: Clutter.PickContext): void {
+            // intentionally empty — don't pick this actor or its children
+        }
+    },
+);
 
 const ANIMATION_DURATION = 250;
 const OVERVIEW_BG_COLOR = 'rgba(0,0,0,0.7)';
@@ -85,7 +100,7 @@ export class CloneAdapter implements ClonePort {
     }
 
     private _createLayer(monitorHeight: number): void {
-        this._layer = new Clutter.Actor({ name: 'kestrel-layer', clip_to_allocation: true });
+        this._layer = new UnpickableActor({ name: 'kestrel-layer', clip_to_allocation: true });
         this._layer.set_position(0, this._workAreaY);
         this._layer.set_size(global.stage.width, monitorHeight);
 
@@ -851,8 +866,8 @@ export class CloneAdapter implements ClonePort {
         if (wc) wc.nameLabel.visible = true;
     }
 
-    getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; wsIndex: number }> {
-        const positions = new Map<WindowId, { x: number; y: number; width: number; height: number; wsIndex: number }>();
+    getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; visible: boolean; workspaceId: WorkspaceId; wsIndex: number }> {
+        const positions = new Map<WindowId, { x: number; y: number; width: number; height: number; visible: boolean; workspaceId: WorkspaceId; wsIndex: number }>();
         for (const [windowId, entry] of this._clones) {
             const wsIndex = this._workspaceOrder.indexOf(entry.workspaceId);
             if (wsIndex < 0) continue;
@@ -861,10 +876,38 @@ export class CloneAdapter implements ClonePort {
                 y: entry.wrapper.y,
                 width: entry.wrapper.width,
                 height: entry.wrapper.height,
+                visible: entry.wrapper.visible,
+                workspaceId: entry.workspaceId,
                 wsIndex,
             });
         }
         return positions;
+    }
+
+    getFocusIndicatorState(): { visible: boolean; x: number; y: number; width: number; height: number } | null {
+        if (!this._focusIndicator) return null;
+        return {
+            visible: this._focusIndicator.visible,
+            x: this._focusIndicator.x,
+            y: this._focusIndicator.y,
+            width: this._focusIndicator.width,
+            height: this._focusIndicator.height,
+        };
+    }
+
+    getWorkspaceStripState(): { y: number; workspaces: { workspaceId: WorkspaceId; y: number; scrollX: number }[] } | null {
+        if (!this._workspaceStrip) return null;
+        const workspaces: { workspaceId: WorkspaceId; y: number; scrollX: number }[] = [];
+        for (const wsId of this._workspaceOrder) {
+            const wc = this._workspaceContainers.get(wsId);
+            if (!wc) continue;
+            workspaces.push({
+                workspaceId: wsId,
+                y: wc.container.y,
+                scrollX: -wc.scrollContainer.x,
+            });
+        }
+        return { y: this._workspaceStrip.y, workspaces };
     }
 
     destroy(): void {

@@ -98,7 +98,7 @@ export class WindowAdapter implements WindowPort {
         }
     }
 
-    private _enterFullscreen(windowId: WindowId, tracked: TrackedWindow | undefined): void {
+    private _enterFullscreen(_windowId: WindowId, tracked: TrackedWindow | undefined): void {
         if (!tracked) return;
         tracked.fullscreen = true;
         if (tracked.offscreen) {
@@ -161,19 +161,25 @@ export class WindowAdapter implements WindowPort {
             const screenY = wl.y + this._workAreaY;
 
             this._updateTarget(tracked, screenX, screenY, wl.width, wl.height);
-            this._unminimizeIfOffscreen(tracked);
+            this._restoreFromOffscreen(tracked);
             this._applyMoveResize(tracked, screenX, screenY, wl.width, wl.height, nudgeUnsettled);
         } catch (e) {
             console.debug('[Kestrel] move_resize_frame skipped (dead window?):', e);
         }
     }
 
-    /** Restore a minimized offscreen window, keeping the actor hidden (opacity=0). */
-    private _unminimizeIfOffscreen(tracked: TrackedWindow): void {
+    /**
+     * Restore a minimized offscreen window. The shell adapter's unminimize
+     * interception handles suppressing GNOME's animation and calling
+     * completed_unminimize through GNOME's natural completion path, which
+     * is required for Mutter to properly restore Wayland pointer input routing.
+     */
+    private _restoreFromOffscreen(tracked: TrackedWindow): void {
         if (!tracked.offscreen) return;
         tracked.offscreen = false;
-        tracked.metaWindow.unminimize();
-        this._setActorOpacity(tracked.metaWindow, 0);
+        try {
+            tracked.metaWindow.unminimize();
+        } catch { /* already gone */ }
     }
 
     /** Store target position/size for signal handlers and set initial actual position. */
@@ -237,25 +243,25 @@ export class WindowAdapter implements WindowPort {
 
     /**
      * Minimize tracked windows not in the current layout (other workspaces).
-     * Minimization is the only reliable way to fully remove Wayland keyboard
-     * focus — Mutter won't send wl_keyboard events to minimized windows.
-     * Clutter.Clone still renders minimized (unmapped) actors via its
-     * internal enable_paint_unmapped mechanism.
+     * Minimization hides windows and removes them from Wayland keyboard focus.
+     * The unminimize path is NOT intercepted — GNOME's default handler runs
+     * its full animation + completed_unminimize call, which is required for
+     * Mutter to properly restore Wayland pointer input routing.
      */
     private _minimizeOffWorkspaceWindows(layoutWindowIds: Set<WindowId>): void {
         for (const [windowId, tracked] of this._windows) {
-            if (this._shouldSkipMinimize(windowId, tracked, layoutWindowIds)) continue;
-            try {
-                tracked.offscreen = true;
-                tracked.metaWindow.minimize();
-            } catch {
-                // Window already gone
-            }
+            if (layoutWindowIds.has(windowId) || tracked.offscreen || tracked.fullscreen) continue;
+            this._minimizeWindow(tracked);
         }
     }
 
-    private _shouldSkipMinimize(windowId: WindowId, tracked: TrackedWindow, layoutWindowIds: Set<WindowId>): boolean {
-        return layoutWindowIds.has(windowId) || tracked.offscreen || tracked.fullscreen;
+    private _minimizeWindow(tracked: TrackedWindow): void {
+        try {
+            tracked.offscreen = true;
+            tracked.metaWindow.minimize();
+        } catch {
+            // Window already gone
+        }
     }
 
     /**
@@ -359,6 +365,26 @@ export class WindowAdapter implements WindowPort {
             // Window gone
             return false;
         }
+    }
+
+    getWindowStates(): Map<WindowId, { frameX: number; frameY: number; frameWidth: number; frameHeight: number; offscreen: boolean; fullscreen: boolean }> {
+        const states = new Map<WindowId, { frameX: number; frameY: number; frameWidth: number; frameHeight: number; offscreen: boolean; fullscreen: boolean }>();
+        for (const [windowId, tracked] of this._windows) {
+            try {
+                const frame = tracked.metaWindow.get_frame_rect();
+                states.set(windowId, {
+                    frameX: frame.x,
+                    frameY: frame.y,
+                    frameWidth: frame.width,
+                    frameHeight: frame.height,
+                    offscreen: tracked.offscreen,
+                    fullscreen: tracked.fullscreen,
+                });
+            } catch {
+                // Window already gone
+            }
+        }
+        return states;
     }
 
     destroy(): void {

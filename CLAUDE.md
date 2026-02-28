@@ -6,13 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 make build          # Compile TypeScript → dist/
-make test           # Run all Vitest tests
-make install        # Build + deploy to GNOME extensions dir + compile schemas
-make dev            # Install + show restart instructions
+make test           # Run all Vitest tests (with coverage)
+make lint           # ESLint + Knip (dead code detection)
+make install        # Build + test + lint + deploy to GNOME extensions dir + compile schemas
+make dev            # Install + enable + show restart instructions
+make enable         # Enable extension, disable conflicting exts, enable Claude Code plugin
+make disable        # Disable extension, restore GNOME defaults, disable plugin
+make status         # Show installation/enable status
+make coverage       # Vitest with detailed coverage report
 npx vitest run test/domain/world.test.ts  # Run a single test file
 ```
 
-**Always run `make install` after making code changes.** This deploys to the GNOME extensions directory so changes take effect on next session restart.
+**IMPORTANT: Always run `make install` after making code changes.** This deploys to the GNOME extensions directory so changes take effect on next session restart. Do not skip this step or wait to be reminded.
 
 After `make install`, a Wayland session restart (log out/in) is required to pick up JS changes.
 
@@ -22,7 +27,7 @@ If GNOME crashes, it sets `disable-user-extensions=true` in dconf — re-enable 
 
 ## Architecture
 
-Hexagonal architecture with a pure domain core and GNOME Shell adapters. This project follows hexagonal/ports-and-adapters architecture. Never import GNOME Shell APIs (Main, Meta, etc.) directly in domain layers. All platform interactions must go through adapter interfaces.
+Hexagonal/ports-and-adapters architecture with a pure domain core and GNOME Shell adapters. Never add direct system imports (e.g., `Main`, `Meta`, `gi://` modules) to domain or controller layers. All external interactions must go through port interfaces defined in `src/ports/`.
 
 ### Core data flow
 
@@ -30,9 +35,9 @@ Hexagonal architecture with a pure domain core and GNOME Shell adapters. This pr
 Reality -(events)-> Domain -(new world model)-> Adapter -(animates)-> Reality
 ```
 
-Adapters detect changes in reality (window created, window destroyed, key pressed, focus changed) and inform the domain. The domain computes the complete new world model. The adapter turns that model into reality (positions clones, animates transitions, activates focus). **The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output.
+Adapters detect changes in reality (window created, destroyed, key pressed, focus changed) and inform the domain. The domain computes the complete new world model. The adapter turns that model into reality (positions clones, animates transitions, activates focus). **The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output.
 
-This means operations like workspace pruning happen immediately in the domain. If a workspace empties, the domain removes it and adjusts all indices in the same operation. The adapter must reconcile its visual state (e.g. clone containers) to match.
+Operations like workspace pruning happen immediately in the domain. If a workspace empties, the domain removes it and adjusts all indices in the same operation. The adapter must reconcile its visual state (e.g. clone containers) to match.
 
 ### Textual model notation
 
@@ -54,91 +59,146 @@ B is focused. WS2 has D, E.
 
 ### Domain core
 
-`src/domain/` — Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return `WorldUpdate { world, layout }`. Key modules:
-- `world.ts` — Aggregate root. `addWindow`/`removeWindow`/`setFocus`/`updateMonitor`
-- `navigation.ts` — `focusRight`/`focusLeft`/`focusDown`/`focusUp`
-- `workspace.ts` — Workspace-level window list operations
-- `layout.ts` — `computeLayout()` turns workspace + config + monitor into pixel positions (`LayoutState`)
-- `types.ts` — Branded types (`WindowId`, `WorkspaceId`), interfaces (`World`, `Workspace`, `TiledWindow`, `Viewport`)
+`src/domain/` — Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return `WorldUpdate { world, layout }`.
+
+| File | Purpose |
+|------|---------|
+| `world.ts` | Aggregate root. `createWorld`, `addWindow`, `removeWindow`, `setFocus`, `updateMonitor`, `switchToWorkspace`, `buildUpdate` |
+| `types.ts` | Branded types (`WindowId`, `WorkspaceId`), core interfaces (`KestrelConfig`, `MonitorInfo`, `WindowLayout`, `LayoutState`, `WorldUpdate`) |
+| `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (slotSpan, fullscreen state) |
+| `workspace.ts` | `Workspace` type and operations: `addWindow`, `removeWindow`, `replaceWindow`, `windowAfter`, `windowBefore`, `slotIndexOf`, `windowAtSlot` |
+| `viewport.ts` | `Viewport` type: tracks current workspace index, scrollX, widthPx |
+| `layout.ts` | `computeLayout()` / `computeLayoutForWorkspace()` — turns workspace + config + monitor into pixel positions (`LayoutState`) |
+| `scene.ts` | `computeScene()` — pure function computing the complete physical scene (`SceneModel`) from world + layouts. Produces `CloneScene[]`, `RealWindowScene[]`, `FocusIndicatorScene`, `WorkspaceStripScene` |
+| `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp` |
+| `window-operations.ts` | `moveLeft`, `moveRight`, `moveDown`, `moveUp`, `toggleSize` |
+| `overview.ts` | Overview mode domain logic: `enterOverview`, `exitOverview`, `cancelOverview`, filter management |
+| `overview-state.ts` | `OverviewInteractionState`: filter text, workspace rename, focused indices |
+| `notification.ts` | Notification domain: `addNotification`, `respondToNotification`, `dismissNotificationsForWindow`, session/status tracking, focus mode |
+| `notification-types.ts` | Type definitions for notifications (`QuestionOption`, `OverlayNotification`, `FocusModeState`) |
+| `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
 
 ### Ports
 
 `src/ports/` — Adapter interfaces (no `gi://` imports). Extension depends on ports, not concrete adapters.
-- `clone-port.ts` — `ClonePort` interface + `OverviewTransform` type
-- `window-port.ts` — `WindowPort` interface (positioning, settlement check)
-- `focus-port.ts` — `FocusPort` interface (focus activation, tracking)
-- `monitor-port.ts` — `MonitorPort` interface (geometry reading)
+
+| File | Purpose |
+|------|---------|
+| `clone-port.ts` | `ClonePort` — clone lifecycle, layout rendering, overview transforms, filter/sort |
+| `window-port.ts` | `WindowPort` — position real windows, check settlement |
+| `focus-port.ts` | `FocusPort` — focus activation, feedback loop suppression |
+| `monitor-port.ts` | `MonitorPort` — monitor geometry reading |
+| `keybinding-port.ts` | `KeybindingPort` — register/unregister keybindings |
+| `shell-port.ts` | `ShellPort` — GNOME Shell interaction (hide overview, intercept animations) |
+| `window-event-port.ts` | `WindowEventPort` — window lifecycle signals, enumerate existing windows |
+| `state-persistence-port.ts` | `StatePersistencePort` — save/load world state across enable/disable cycles |
+| `conflict-detector-port.ts` | `ConflictDetectorPort` — detect conflicting GNOME extensions |
+| `notification-port.ts` | `NotificationPort` — render permission/notification/question cards |
+| `panel-indicator-port.ts` | `PanelIndicatorPort` — workspace indicator in top panel |
 
 ### Adapters
 
-`src/adapters/` — GNOME Shell integration via `gi://` imports. Each adapter `implements` its corresponding port.
-- `overview-handler.ts` — Overview mode enter/exit/navigate/click logic
-- `navigation-handler.ts` — Unified keybinding handlers: `handleSimpleCommand`, `handleVerticalFocus`, `handleVerticalMove`
-- `window-lifecycle-handler.ts` — Window add/remove/fullscreen/maximize handling
-- `notification-coordinator.ts` — Orchestrates status overlay, notification overlay, DBus service, and focus mode
-- `world-holder.ts` — Holds current `World` state, fires panel update on change
-- `settlement-retry.ts` — Exponential-backoff layout retry for async Wayland configures
-- `state-persistence.ts` — Save/restore world state across disable/enable cycles
-- `window-event-adapter.ts` — Listens for `window-created`/`destroy` signals, waits for `first-frame`
-- `clone-adapter.ts` — Creates `Clutter.Clone` of `WindowActor`s on a custom layer above `global.window_group`
-- `window-adapter.ts` — Positions real `Meta.Window`s via `move_resize_frame()`
-- `focus-adapter.ts` — Activates windows via `Meta.Window.activate()`, suppresses feedback loops via `focusInternal()`
-- `monitor-adapter.ts` — Reads monitor geometry, listens for layout changes
+`src/adapters/` — GNOME Shell integration via `gi://` imports. Each adapter implements its corresponding port.
 
-**Entry point**: `src/extension.ts` — Composition root. `KestrelExtension` extends the GNOME `Extension` base class and wires domain ↔ adapters in `enable()`/`disable()`.
+**Core adapters:**
 
-## Claude Code Hook Integration
+| File | Purpose |
+|------|---------|
+| `clone-adapter.ts` | `Clutter.Clone` of `WindowActor`s on custom layer; manages clone lifecycle, workspace containers, layout |
+| `window-adapter.ts` | Positions real `Meta.Window`s via `move_resize_frame()`, tracks settlement |
+| `focus-adapter.ts` | Activates windows via `Meta.Window.activate()`, suppresses feedback loops |
+| `monitor-adapter.ts` | Reads monitor geometry, listens for layout changes |
+| `keybinding-adapter.ts` | Registers GNOME keybindings from settings schema |
+| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations |
+| `window-event-adapter.ts` | Listens for `window-created`/`destroy` signals, waits for `first-frame`, separates float windows |
+| `state-persistence.ts` | Saves/restores world state to dconf settings, reads config from schema |
+| `conflict-detector.ts` | Detects and disables conflicting GNOME extensions at runtime |
 
-Kestrel integrates with Claude Code via a plugin (`kestrel-plugin/`) that registers shell hooks for Claude Code lifecycle events. The hooks communicate with the GNOME extension over session DBus.
+**Handlers (orchestrate domain calls + adapter updates):**
 
-### DBus interface
+| File | Purpose |
+|------|---------|
+| `overview-handler.ts` | Overview mode: enter/exit/navigate/filter/click, transforms clones, workspace labels |
+| `navigation-handler.ts` | Keybinding handlers: `handleSimpleCommand`, `handleVerticalFocus`, `handleVerticalMove` |
+| `window-lifecycle-handler.ts` | Window add/remove/fullscreen/maximize → domain updates + adapter sync |
 
-The extension exports `io.kestrel.Extension` at `/io/kestrel/Extension` (see `src/adapters/dbus-service.ts`):
+**Notification system:**
+
+| File | Purpose |
+|------|---------|
+| `notification-coordinator.ts` | Orchestrates permission cards, notifications, DBus, focus mode, Claude session watching |
+| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI |
+| `notification-focus-mode.ts` | Keyboard-driven navigation for permission/question cards |
+| `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
+| `notification-card.ts` | Card UI component |
+| `card-base.ts` | Shared card skeleton/styling |
+| `card-behavior.ts` | Card hover/focus/animation behavior |
+| `notification-adapter-types.ts` | Notification adapter type definitions |
+| `dbus-service.ts` | Exports `io.kestrel.Extension` DBus interface for Claude Code plugin |
+
+**UI:**
+
+| File | Purpose |
+|------|---------|
+| `help-overlay-adapter.ts` | Keybindings help sheet (Super+') |
+| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch |
+| `overview-input-adapter.ts` | Keyboard input handler for overview mode |
+| `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
+
+**Utilities:**
+
+| File | Purpose |
+|------|---------|
+| `world-holder.ts` | Holds current `World` state, fires panel update on change |
+| `settlement-retry.ts` | Exponential-backoff layout retry for async Wayland configures |
+| `float-clone-manager.ts` | Floating (non-tiled) window clone management |
+| `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
+| `safe-window.ts` | Safe extraction of window information |
+| `signal-utils.ts` | GObject signal management helpers |
+| `animation-helpers.ts` | Clutter animation utilities |
+
+**Entry point**: `src/extension.ts` — Composition root. `KestrelExtension` extends the GNOME `Extension` base class and wires domain + adapters in `enable()`/`disable()`.
+
+## Claude Code Plugin
+
+`kestrel-plugin/` — Claude Code integration via shell hooks that communicate with the extension over session DBus (`io.kestrel.Extension` at `/io/kestrel/Extension`).
+
+### DBus methods
 
 | Method | Args | Returns | Purpose |
 |--------|------|---------|---------|
-| `HandlePermission` | `payload: s` | `{"id":"notif-N"}` | Show permission card in overlay, return notification ID for polling |
-| `HandleNotification` | `payload: s` | `{"id":"notif-N"}` | Show fire-and-forget notification card |
-| `GetNotificationResponse` | `id: s` | `{"action":"allow"}` or `{"pending":true}` | Poll for user's response to a permission card |
-| `SetWindowStatus` | `sessionId: s, status: s` | — | Update status indicator on the Claude session's window clone |
+| `HandlePermission` | `payload: s` | `{"id":"notif-N"}` | Show permission card, return ID for polling |
+| `HandleNotification` | `payload: s` | `{"id":"notif-N"}` | Fire-and-forget notification card |
+| `GetNotificationResponse` | `id: s` | `{"action":"allow"}` or `{"pending":true}` | Poll user's response to a permission card |
+| `SetWindowStatus` | `sessionId: s, status: s` | — | Update clone status badge |
+| `GetDiagnostics` | — | `{"expected":…,"actual":…,"mismatches":…}` | Compare expected scene model vs actual adapter state for debugging layout bugs |
 
-### Hook scripts
+### Hook scripts (`kestrel-plugin/hooks/`)
 
-All scripts live in `kestrel-plugin/hooks/` and log to `/tmp/kestrel-hooks.log` with `[scriptname]` prefix.
-
-| Script | Claude Code event | What it does |
-|--------|------------------|--------------|
-| `kestrel-probe.sh` | `SessionStart` | Writes a terminal title escape sequence (`kestrel_probe_<session_id>`) so the extension can map session IDs to GNOME windows |
-| `kestrel-status.sh` | `SessionStart`, `Notification`, `Stop`, `SessionEnd` | Calls `SetWindowStatus` to update the clone's status badge (`done`, `working`, `needs-input`, `end`) |
-| `kestrel-notify.sh` | `Notification`, `Stop` | Calls `HandleNotification` — fire-and-forget, no response needed |
-| `kestrel-permission.sh` | `PermissionRequest` | Calls `HandlePermission`, then polls `GetNotificationResponse` every 0.5s (up to 10 min) until the user clicks Allow/Deny/Always. Outputs Claude Code decision JSON. |
+| Script | Event | What it does |
+|--------|-------|--------------|
+| `kestrel-probe.sh` | `SessionStart` | Writes terminal title escape to map session IDs to GNOME windows |
+| `kestrel-status.sh` | `SessionStart`, `Notification`, `Stop`, `SessionEnd` | Updates clone status badge |
+| `kestrel-notify.sh` | `Notification`, `Stop` | Fire-and-forget notification |
+| `kestrel-permission.sh` | `PermissionRequest` | Shows permission card, polls response (10 min timeout) |
+| `kestrel-question.sh` | Question events | Question interaction |
 
 ### Data flow
 
 ```
-Claude Code -(lifecycle event)-> hook script -(gdbus call)-> GNOME extension DBus
-  -> notification-coordinator.handlePermissionRequest / handleNotification
-  -> injects current workspace name from domain
-  -> notification-overlay-adapter renders card
-  -> user clicks button -> response written
+Claude Code -(event)-> hook script -(gdbus)-> extension DBus
+  -> notification-coordinator -> notification-overlay-adapter renders card
+  -> user clicks -> response stored
   <- hook polls GetNotificationResponse <- returns action
   <- hook outputs decision JSON to Claude Code
 ```
-
-### Hook registration
-
-`kestrel-plugin/hooks/hooks.json` maps Claude Code events to scripts:
-- **SessionStart**: probe + status(done)
-- **Notification**: status(needs-input) + notify
-- **PermissionRequest**: permission (blocking, 10 min timeout)
-- **Stop**: status(done) + notify
-- **SessionEnd**: status(end)
 
 ## Key Design Decisions
 
 - **Clone-based rendering**: Real `WindowActor`s can't be reparented from `global.window_group` on Wayland. `Clutter.Clone` allows free positioning on a custom layer for horizontal scrolling.
 - **Single GNOME workspace**: All windows on one GNOME workspace; Kestrel workspaces are virtual (domain-managed) to avoid GNOME workspace animation conflicts.
-- **Target-state model**: Domain computes only final layout positions, not transitions. Adapters will handle animation (Clutter.ease) separately.
+- **Scene model**: `computeScene()` produces a complete physical-state snapshot (`SceneModel`) from domain state. Keeps rendering logic testable without GNOME. Adapters consume the scene model rather than computing positions themselves.
+- **Target-state model**: Domain computes only final positions, not transitions. Adapters handle animation (`Clutter.ease`) separately.
 - **GObject subclassing**: Use `GObject.registerClass()` + `_init()`, not `constructor()`.
 - **`gi://` ambient types**: Declared in `src/ambient.d.ts`; runtime types from `@girs/*` packages.
 
@@ -149,24 +209,57 @@ Claude Code -(lifecycle event)-> hook script -(gdbus call)-> GNOME extension DBu
 - Console logs prefixed with `[Kestrel]`
 - Window filtering: only `Meta.WindowType.NORMAL`, not `is_above()`, not transient
 
+## Tests
+
+| Directory | Coverage |
+|-----------|----------|
+| `test/domain/` | Unit tests for all domain modules (world, navigation, layout, scene, workspace, window-operations, overview, notifications, fullscreen, fuzzy-match, filter-workspaces, workspace-naming) |
+| `test/adapters/` | Integration tests for handlers and extension (overview-handler, navigation-handler, window-lifecycle-handler, extension) |
+| `test/arch/` | Architecture boundary test — verifies domain files have no `gi://` imports |
+| `test/adapters/mock-ports.ts` | Mock implementations of all ports for adapter testing |
+
 ## Design Docs
 
-- `docs/design.md` — Product design spec (keybindings, UX, phasing)
-- `docs/solution-design.md` — Technical architecture (data model, adapter contracts, phase breakdown)
-- `docs/debug.md` — Live debugging via DBus Eval (`global._kestrel`), journal logs, crash recovery
+| File | Content |
+|------|---------|
+| `docs/design.md` | Product design spec (keybindings, UX, phasing) |
+| `docs/solution-design.md` | Technical architecture (data model, adapter contracts, phases) |
+| `docs/architecture.md` | Architecture overview and design decisions |
+| `docs/debug.md` | Live debugging via DBus Eval (`global._kestrel`), journal logs, crash recovery |
+| `docs/adapter-refactoring.md` | Adapter refactoring design: UI extraction, domain model migration |
+| `docs/overview-filter-rename.md` | Overview filter and workspace rename feature |
+| `docs/mouse-interaction-design.md` | Mouse scroll interaction design |
+| `docs/event-interception-design.md` | Event interception strategy |
 
 ## General Principles
 
-- Always read design docs and existing documentation before proposing fixes. Never guess at solutions — check `docs/` folder first for architectural decisions and stated approaches.
-- When asked to write output to a file, write it to the file directly. Do not present it inline first and wait to be asked again.
+- Always read existing design docs and architecture documents BEFORE attempting fixes or implementations. Never guess at solutions when documentation exists — check `docs/` folder first for architectural decisions and stated approaches.
+- When asked to write output to a file, write it to the file immediately. Do not present it inline first and wait for confirmation.
+- Do not start coding before the user has finished explaining the problem and expected behavior. Wait for the full context before proposing or implementing solutions.
 
 ## Debugging
 
-- When the user reports a bug, first determine whether it reproduces via both keyboard shortcuts AND DBus commands. If only one path is affected, the bug is in that specific handler path, not in shared domain/layout logic.
-
-## GNOME Shell Specifics
-
+- When the user reports a bug, first determine the minimal reproduction path (e.g., keyboard shortcut vs DBus trigger). If one path works and another doesn't, the bug is in the differing code path — do NOT investigate shared infrastructure.
 - When debugging GNOME Shell/Mutter/Wayland issues: Chromium and CSD windows have async timing behaviors where size-changed signals can undo layout changes. Always check for signal handler interference before assuming layout logic bugs.
+- **DBus addressing**: The extension exports its DBus object at `/io/kestrel/Extension` on the GNOME Shell session bus connection. It does NOT own a well-known bus name, so you must use `org.gnome.Shell` as the destination:
+  ```bash
+  # Correct — use org.gnome.Shell as destination
+  gdbus call --session --dest org.gnome.Shell \
+    --object-path /io/kestrel/Extension \
+    --method io.kestrel.Extension.GetDiagnostics
+
+  # Wrong — will fail with ServiceUnknown
+  gdbus call --session --dest io.kestrel.Extension ...
+  ```
+- **GetDiagnostics**: Compares expected scene state (from domain `computeScene()`) against actual adapter state read from Clutter actors. Returns `{ expected, actual, mismatches }` — mismatches show which clones, real windows, focus indicator, or workspace strip fields differ between domain computation and what GNOME actually rendered.
+- **Debug mode** (`debug-mode` setting): Exposes `global._kestrel` with `debugState()` (domain world + layout) and `diagnostics()` (full scene comparison). Access via Shell.Eval:
+  ```bash
+  gdbus call --session --dest org.gnome.Shell \
+    --object-path /org/gnome/Shell \
+    --method org.gnome.Shell.Eval 'JSON.stringify(global._kestrel.debugState())'
+  ```
+  Note: Shell.Eval output is GVariant-escaped — the JSON is wrapped in multiple quoting layers.
+- **Deployed vs source**: DBus methods and `global._kestrel` properties reflect the deployed code, not the current source. After `make install`, a Wayland session restart is required for JS changes to take effect. Use `gdbus introspect --session --dest org.gnome.Shell --object-path /io/kestrel/Extension` to verify which methods are available on the running instance.
 
 ## Clutter / Mutter / St API Reference
 
