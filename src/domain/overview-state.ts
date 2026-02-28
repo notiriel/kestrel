@@ -119,6 +119,12 @@ export function navigateFiltered(
     return filteredIndices[targetPos]!;
 }
 
+// --- Filtered indices ---
+
+export function updateFilteredIndices(state: OverviewInteractionState, indices: number[]): OverviewInteractionState {
+    return { ...state, filteredIndices: indices };
+}
+
 // --- Rename ---
 
 export function startRename(state: OverviewInteractionState): OverviewInteractionState {

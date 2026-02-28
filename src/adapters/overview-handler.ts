@@ -4,6 +4,7 @@ import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace }
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
 import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
+import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename } from '../domain/overview-state.js';
 import { computeLayoutForWorkspace } from '../domain/layout.js';
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
@@ -24,18 +25,12 @@ export interface OverviewDeps {
 
 export class OverviewHandler {
     private _deps: OverviewDeps;
-    private _preOverviewState: { focusedWindow: WindowId | null; viewport: { workspaceIndex: number; scrollX: number } } | null = null;
     private _overviewTransform: OverviewTransform | null = null;
     private _overviewInputAdapter: OverviewInputAdapter | null = null;
 
     // Drag state
     private _dragSubject: WindowId | null = null;
     private _preDragWorld: World | null = null;
-
-    // Filter state
-    private _filterText: string = '';
-    private _filteredIndices: number[] = []; // workspace indices sorted by score
-    private _renameActive: boolean = false;
 
     constructor(deps: OverviewDeps) {
         this._deps = deps;
@@ -64,7 +59,6 @@ export class OverviewHandler {
         const world = this._deps.getWorld();
         if (!world) return;
 
-        this._savePreOverviewState(world);
         const update = enterOverview(world);
         this._deps.setWorld(update.world);
 
@@ -72,7 +66,6 @@ export class OverviewHandler {
         this._overviewTransform = this._computeTransform(update.world, numWs);
         this._notifyEnter(this._overviewTransform, update.layout, numWs);
 
-        this._resetFilterState();
         this._activateOverviewInput();
     }
 
@@ -85,22 +78,6 @@ export class OverviewHandler {
             this._deps.notifyOverviewEnter?.(transform);
         });
         this._deps.onOverviewEnter?.();
-    }
-
-    private _savePreOverviewState(world: World): void {
-        this._preOverviewState = {
-            focusedWindow: world.focusedWindow,
-            viewport: {
-                workspaceIndex: world.viewport.workspaceIndex,
-                scrollX: world.viewport.scrollX,
-            },
-        };
-    }
-
-    private _resetFilterState(): void {
-        this._filterText = '';
-        this._filteredIndices = [];
-        this._renameActive = false;
     }
 
     private _activateOverviewInput(): void {
@@ -141,27 +118,28 @@ export class OverviewHandler {
     }
 
     private _navigateFilteredVertical(world: World, direction: string): boolean {
-        if (this._filteredIndices.length === 0) return false;
+        const filteredIndices = world.overviewInteractionState.filteredIndices;
+        if (filteredIndices.length === 0) return false;
         if (direction !== 'up' && direction !== 'down') return false;
 
         const currentWsIndex = world.viewport.workspaceIndex;
-        const currentPos = this._filteredIndices.indexOf(currentWsIndex);
-        const targetPos = this._computeFilteredTarget(currentPos, direction);
+        const currentPos = filteredIndices.indexOf(currentWsIndex);
+        const targetPos = this._computeFilteredTarget(filteredIndices, currentPos, direction);
 
-        const targetWsIndex = this._filteredIndices[targetPos]!;
+        const targetWsIndex = filteredIndices[targetPos]!;
         if (targetWsIndex !== currentWsIndex) {
             this._switchToFilteredWorkspace(world, targetWsIndex);
         }
         return true;
     }
 
-    private _computeFilteredTarget(currentPos: number, direction: string): number {
+    private _computeFilteredTarget(filteredIndices: number[], currentPos: number, direction: string): number {
         if (direction === 'up') {
             return currentPos <= 0
-                ? this._filteredIndices.length - 1
+                ? filteredIndices.length - 1
                 : currentPos - 1;
         }
-        return currentPos >= this._filteredIndices.length - 1
+        return currentPos >= filteredIndices.length - 1
             ? 0
             : currentPos + 1;
     }
@@ -184,7 +162,6 @@ export class OverviewHandler {
 
             this._dragSubject = null;
             this._preDragWorld = null;
-            this._clearFilter();
 
             const update = exitOverview(world);
             this._deps.setWorld(update.world);
@@ -206,24 +183,23 @@ export class OverviewHandler {
         const world = this._deps.getWorld();
         if (!world) return;
 
-        if (this._cancelRename()) return;
-        if (this._cancelFilter()) return;
+        if (this._cancelRename(world)) return;
+        if (this._cancelFilter(world)) return;
         if (this._cancelDrag()) return;
         this._cancelNormal(world);
     }
 
-    private _cancelRename(): boolean {
-        if (!this._renameActive) return false;
-        this._renameActive = false;
+    private _cancelRename(world: World): boolean {
+        if (!world.overviewInteractionState.renaming) return false;
+        this._deps.setWorld({ ...world, overviewInteractionState: cancelRename(world.overviewInteractionState) });
         this._overviewInputAdapter?.setKeyPassthrough(false);
         this._deps.getCloneAdapter()?.cancelRename?.();
         return true;
     }
 
-    private _cancelFilter(): boolean {
-        if (this._filterText.length === 0) return false;
-        this._filterText = '';
-        this._filteredIndices = [];
+    private _cancelFilter(world: World): boolean {
+        if (world.overviewInteractionState.filterText.length === 0) return false;
+        this._deps.setWorld({ ...world, overviewInteractionState: clearFilter(world.overviewInteractionState) });
         this._applyFilter();
         return true;
     }
@@ -248,13 +224,7 @@ export class OverviewHandler {
     }
 
     private _cancelNormal(world: World): void {
-        if (!this._preOverviewState) return;
-        const update = cancelOverview(
-            world,
-            this._preOverviewState.focusedWindow,
-            this._preOverviewState.viewport.workspaceIndex,
-            this._preOverviewState.viewport.scrollX,
-        );
+        const update = cancelOverview(world);
         this._deps.setWorld(update.world);
         this._exitVisual(update.layout);
     }
@@ -372,15 +342,16 @@ export class OverviewHandler {
     }
 
     private _resolveWorkspaceIndex(world: World, visualSlot: number): number | null {
-        if (this._filteredIndices.length > 0) {
-            return this._resolveFilteredSlot(visualSlot);
+        const filteredIndices = world.overviewInteractionState.filteredIndices;
+        if (filteredIndices.length > 0) {
+            return this._resolveFilteredSlot(filteredIndices, visualSlot);
         }
         return this._resolveUnfilteredSlot(world, visualSlot);
     }
 
-    private _resolveFilteredSlot(visualSlot: number): number | null {
-        if (visualSlot < 0 || visualSlot >= this._filteredIndices.length) return null;
-        return this._filteredIndices[visualSlot]!;
+    private _resolveFilteredSlot(filteredIndices: number[], visualSlot: number): number | null {
+        if (visualSlot < 0 || visualSlot >= filteredIndices.length) return null;
+        return filteredIndices[visualSlot]!;
     }
 
     private _resolveUnfilteredSlot(world: World, visualSlot: number): number | null {
@@ -413,8 +384,10 @@ export class OverviewHandler {
 
     private _handleTextInput(text: string): void {
         try {
-            if (this._renameActive) return;
-            this._filterText += text;
+            const world = this._deps.getWorld();
+            if (!world) return;
+            if (world.overviewInteractionState.renaming) return;
+            this._deps.setWorld({ ...world, overviewInteractionState: appendFilter(world.overviewInteractionState, text) });
             this._applyFilter();
         } catch (e) {
             console.error('[Kestrel] Error handling text input:', e);
@@ -423,9 +396,11 @@ export class OverviewHandler {
 
     private _handleBackspace(): void {
         try {
-            if (this._renameActive) return;
-            if (this._filterText.length === 0) return;
-            this._filterText = this._filterText.slice(0, -1);
+            const world = this._deps.getWorld();
+            if (!world) return;
+            if (world.overviewInteractionState.renaming) return;
+            if (world.overviewInteractionState.filterText.length === 0) return;
+            this._deps.setWorld({ ...world, overviewInteractionState: backspaceFilter(world.overviewInteractionState) });
             this._applyFilter();
         } catch (e) {
             console.error('[Kestrel] Error handling backspace:', e);
@@ -436,7 +411,7 @@ export class OverviewHandler {
         const world = this._deps.getWorld();
         if (!world || !this._overviewTransform) return;
 
-        if (this._filterText.length === 0) {
+        if (world.overviewInteractionState.filterText.length === 0) {
             this._clearFilterView(world);
             return;
         }
@@ -444,7 +419,7 @@ export class OverviewHandler {
     }
 
     private _clearFilterView(world: World): void {
-        this._filteredIndices = [];
+        this._deps.setWorld({ ...world, overviewInteractionState: updateFilteredIndices(world.overviewInteractionState, []) });
         const numWs = this._countNonEmpty(world);
         const transform = this._computeTransform(world, numWs);
         this._overviewTransform = transform;
@@ -466,15 +441,17 @@ export class OverviewHandler {
     }
 
     private _applyFilterMatches(world: World): void {
-        const matches = filterWorkspaces(world, this._filterText);
-        this._filteredIndices = matches.map(m => m.wsIndex);
-        this._deps.getCloneAdapter()?.updateFilterIndicator?.(this._filterText);
+        const filterText = world.overviewInteractionState.filterText;
+        const matches = filterWorkspaces(world, filterText);
+        const indices = matches.map(m => m.wsIndex);
+        this._deps.setWorld({ ...world, overviewInteractionState: updateFilteredIndices(world.overviewInteractionState, indices) });
+        this._deps.getCloneAdapter()?.updateFilterIndicator?.(filterText);
 
-        if (this._filteredIndices.length === 0) {
+        if (indices.length === 0) {
             this._renderEmptyFilterResult(world);
             return;
         }
-        this._applyFilteredLayout(world);
+        this._applyFilteredLayout(world, indices);
     }
 
     private _renderEmptyFilterResult(world: World): void {
@@ -484,24 +461,24 @@ export class OverviewHandler {
         );
     }
 
-    private _applyFilteredLayout(world: World): void {
-        const transform = this._computeTransform(world, this._filteredIndices.length);
+    private _applyFilteredLayout(world: World, filteredIndices: number[]): void {
+        const transform = this._computeTransform(world, filteredIndices.length);
         this._overviewTransform = transform;
-        this._jumpToFirstMatchIfNeeded(world);
-        this._renderFilteredOverview(transform);
+        this._jumpToFirstMatchIfNeeded(world, filteredIndices);
+        this._renderFilteredOverview(transform, filteredIndices);
     }
 
-    private _jumpToFirstMatchIfNeeded(world: World): void {
-        if (this._filteredIndices.includes(world.viewport.workspaceIndex)) return;
-        const update = switchToWorkspace(world, this._filteredIndices[0]!);
+    private _jumpToFirstMatchIfNeeded(world: World, filteredIndices: number[]): void {
+        if (filteredIndices.includes(world.viewport.workspaceIndex)) return;
+        const update = switchToWorkspace(world, filteredIndices[0]!);
         this._deps.setWorld({ ...update.world, overviewActive: true });
     }
 
-    private _renderFilteredOverview(transform: OverviewTransform): void {
+    private _renderFilteredOverview(transform: OverviewTransform, filteredIndices: number[]): void {
         const currentWorld = this._deps.getWorld()!;
         const cloneAdapter = this._deps.getCloneAdapter();
         cloneAdapter?.applyOverviewFilter?.(
-            this._filteredIndices, transform, currentWorld.viewport.workspaceIndex,
+            filteredIndices, transform, currentWorld.viewport.workspaceIndex,
         );
         const layout = computeLayoutForWorkspace(currentWorld, currentWorld.viewport.workspaceIndex);
         cloneAdapter?.updateOverviewFocus(layout, currentWorld.viewport.workspaceIndex, transform);
@@ -518,9 +495,9 @@ export class OverviewHandler {
     private _handleRenameInner(): void {
         const world = this._deps.getWorld();
         if (!world || !this._overviewTransform) return;
-        if (this._renameActive) return;
+        if (world.overviewInteractionState.renaming) return;
 
-        this._renameActive = true;
+        this._deps.setWorld({ ...world, overviewInteractionState: startRename(world.overviewInteractionState) });
         this._overviewInputAdapter?.setKeyPassthrough(true);
         this._startRenameUI(world);
     }
@@ -535,7 +512,10 @@ export class OverviewHandler {
     }
 
     private _onRenameComplete(newName: string | null): void {
-        this._renameActive = false;
+        const world = this._deps.getWorld();
+        if (world) {
+            this._deps.setWorld({ ...world, overviewInteractionState: finishRename(world.overviewInteractionState) });
+        }
         this._overviewInputAdapter?.setKeyPassthrough(false);
         if (newName !== null) this._applyRename(newName);
     }
@@ -548,32 +528,27 @@ export class OverviewHandler {
         this._deps.getCloneAdapter()?.syncWorkspaces(renamed.workspaces);
     }
 
-    private _clearFilter(): void {
-        this._clearFilterText();
-        this._cancelActiveRename();
-    }
-
-    private _clearFilterText(): void {
-        if (this._filterText.length === 0 && this._filteredIndices.length === 0) return;
-        this._filterText = '';
-        this._filteredIndices = [];
-        this._deps.getCloneAdapter()?.updateFilterIndicator?.('');
-    }
-
-    private _cancelActiveRename(): void {
-        if (!this._renameActive) return;
-        this._renameActive = false;
-        this._overviewInputAdapter?.setKeyPassthrough(false);
-        this._deps.getCloneAdapter()?.cancelRename?.();
-    }
-
     private _exitVisual(layout: LayoutState, animate: boolean = true): void {
         this._overviewInputAdapter?.deactivate();
         this._overviewInputAdapter = null;
-        this._clearFilter();
+        this._clearFilterUI();
         this._applyExitLayout(layout, animate);
-        this._preOverviewState = null;
         this._overviewTransform = null;
+    }
+
+    /** Clear filter UI elements without touching domain state (already cleared by exitOverview/cancelOverview) */
+    private _clearFilterUI(): void {
+        this._clearFilterIndicator();
+        this._clearRenameUI();
+    }
+
+    private _clearFilterIndicator(): void {
+        this._deps.getCloneAdapter()?.updateFilterIndicator?.('');
+    }
+
+    private _clearRenameUI(): void {
+        this._deps.getCloneAdapter()?.cancelRename?.();
+        this._overviewInputAdapter?.setKeyPassthrough?.(false);
     }
 
     private _applyExitLayout(layout: LayoutState, animate: boolean): void {
@@ -631,15 +606,11 @@ export class OverviewHandler {
     }
 
     destroy(): void {
-        this._clearFilter();
+        this._clearFilterUI();
         this._overviewInputAdapter?.destroy();
         this._overviewInputAdapter = null;
-        this._preOverviewState = null;
         this._overviewTransform = null;
         this._dragSubject = null;
         this._preDragWorld = null;
-        this._filterText = '';
-        this._filteredIndices = [];
-        this._renameActive = false;
     }
 }

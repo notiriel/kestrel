@@ -4,6 +4,8 @@ import { moveRight, moveLeft, moveDown, moveUp, toggleSize } from '../../src/dom
 import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import type { World } from '../../src/domain/world.js';
+import { createNotificationState } from '../../src/domain/notification.js';
+import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -35,6 +37,8 @@ function makeWorld(windowIds: number[], focusedIdx: number, scrollX = 0): World 
         config,
         monitor,
         overviewActive: false,
+        overviewInteractionState: createOverviewInteractionState(),
+        notificationState: createNotificationState(),
     };
 }
 
@@ -57,6 +61,8 @@ function makeMultiWorld(
         config,
         monitor,
         overviewActive: false,
+        overviewInteractionState: createOverviewInteractionState(),
+        notificationState: createNotificationState(),
     };
 }
 
@@ -231,6 +237,8 @@ describe('toggleSize', () => {
             config,
             monitor,
             overviewActive: false,
+            overviewInteractionState: createOverviewInteractionState(),
+            notificationState: createNotificationState(),
         };
         const update = toggleSize(world);
         const win = update.world.workspaces[0]!.windows.find(w => w.id === wid(1));

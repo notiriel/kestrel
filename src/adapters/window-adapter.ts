@@ -17,6 +17,8 @@ interface TrackedWindow {
     actualY: number;
     /** True when the window has been moved offscreen (not on current workspace) */
     offscreen: boolean;
+    /** True when the window is fullscreen — skip positioning */
+    fullscreen: boolean;
 }
 
 export class WindowAdapter implements WindowPort {
@@ -47,7 +49,7 @@ export class WindowAdapter implements WindowPort {
         this._windows.set(windowId, {
             metaWindow, sizeChangedId, positionChangedId,
             targetX: 0, targetY: 0, targetWidth: 0, targetHeight: 0,
-            actualX: 0, actualY: 0, offscreen: false,
+            actualX: 0, actualY: 0, offscreen: false, fullscreen: false,
         });
 
         // Real window actors are always hidden — the clone layer handles
@@ -87,9 +89,6 @@ export class WindowAdapter implements WindowPort {
         }
     }
 
-    /** Set of window IDs currently fullscreen — skip positioning for these */
-    private _fullscreenWindows: Set<WindowId> = new Set();
-
     setWindowFullscreen(windowId: WindowId, isFullscreen: boolean): void {
         const tracked = this._windows.get(windowId);
         if (isFullscreen) {
@@ -100,17 +99,19 @@ export class WindowAdapter implements WindowPort {
     }
 
     private _enterFullscreen(windowId: WindowId, tracked: TrackedWindow | undefined): void {
-        this._fullscreenWindows.add(windowId);
-        if (tracked?.offscreen) {
+        if (!tracked) return;
+        tracked.fullscreen = true;
+        if (tracked.offscreen) {
             tracked.offscreen = false;
             try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
         }
-        if (tracked) this._setActorOpacity(tracked.metaWindow, 255);
+        this._setActorOpacity(tracked.metaWindow, 255);
     }
 
-    private _exitFullscreen(windowId: WindowId, tracked: TrackedWindow | undefined): void {
-        this._fullscreenWindows.delete(windowId);
-        if (tracked) this._setActorOpacity(tracked.metaWindow, 0);
+    private _exitFullscreen(_windowId: WindowId, tracked: TrackedWindow | undefined): void {
+        if (!tracked) return;
+        tracked.fullscreen = false;
+        this._setActorOpacity(tracked.metaWindow, 0);
     }
 
     applyLayout(layout: LayoutState, nudgeUnsettled: boolean = false): void {
@@ -121,7 +122,7 @@ export class WindowAdapter implements WindowPort {
             const tracked = this._windows.get(wl.windowId);
             if (!tracked) continue;
             // Fullscreen windows are positioned by GNOME — don't fight them
-            if (this._fullscreenWindows.has(wl.windowId)) {
+            if (wl.fullscreen) {
                 this._restoreIfOffscreen(tracked);
                 continue;
             }
@@ -254,7 +255,7 @@ export class WindowAdapter implements WindowPort {
     }
 
     private _shouldSkipMinimize(windowId: WindowId, tracked: TrackedWindow, layoutWindowIds: Set<WindowId>): boolean {
-        return layoutWindowIds.has(windowId) || tracked.offscreen || this._fullscreenWindows.has(windowId);
+        return layoutWindowIds.has(windowId) || tracked.offscreen || tracked.fullscreen;
     }
 
     /**

@@ -12,6 +12,8 @@ import {
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
+import { createNotificationState } from '../../src/domain/notification.js';
+import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -50,6 +52,8 @@ function makeMultiWorld(
         config,
         monitor,
         overviewActive: false,
+        overviewInteractionState: createOverviewInteractionState(),
+        notificationState: createNotificationState(),
     };
 }
 

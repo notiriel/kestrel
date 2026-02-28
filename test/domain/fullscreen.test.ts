@@ -6,6 +6,8 @@ import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/work
 import { createTiledWindow } from '../../src/domain/window.js';
 import { computeLayout } from '../../src/domain/layout.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
+import { createNotificationState } from '../../src/domain/notification.js';
+import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -44,6 +46,11 @@ describe('Fullscreen Step-Out', () => {
             expect(fsLayout!.y).toBe(0);
             expect(fsLayout!.width).toBe(1920);
             expect(fsLayout!.height).toBe(1080);
+            expect(fsLayout!.fullscreen).toBe(true);
+
+            // Non-fullscreen window should have fullscreen=false
+            const normalLayout = layout.windows.find(w => w.windowId === wid(2));
+            expect(normalLayout!.fullscreen).toBe(false);
         });
 
         it('removes fullscreen window from the strip — remaining windows fill the gap', () => {
@@ -137,6 +144,8 @@ describe('Fullscreen Step-Out', () => {
                 config,
                 monitor,
                 overviewActive: false,
+                overviewInteractionState: createOverviewInteractionState(),
+                notificationState: createNotificationState(),
             };
 
             // Make wid(1) fullscreen
@@ -160,6 +169,8 @@ describe('Fullscreen Step-Out', () => {
                 config,
                 monitor,
                 overviewActive: false,
+                overviewInteractionState: createOverviewInteractionState(),
+                notificationState: createNotificationState(),
             };
 
             ({ world } = enterFullscreen(world, wid(2)));

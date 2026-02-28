@@ -123,14 +123,15 @@ export default class KestrelExtension extends Extension {
 
             // Wire WorldHolder callback for panel indicator updates
             this._worldHolder.setOnWorldChanged((w) => {
-                this._panelIndicator?.update(w, this._notificationCoordinator ?? undefined);
+                this._panelIndicator?.update(w);
             });
             // Fire initial update
-            this._panelIndicator.update(this._worldHolder.world!, this._notificationCoordinator ?? undefined);
+            this._panelIndicator.update(this._worldHolder.world!);
 
             // Notification coordinator (status overlay, notification overlay, DBus, focus mode)
             this._notificationCoordinator = new NotificationCoordinator({
                 getWorld: () => this._worldHolder.world,
+                setWorld: (w) => { this._setWorld(w); },
                 extensionPath: this.path,
                 getLayer: () => (this._cloneAdapter as CloneAdapter)?.getLayer?.() ?? null,
                 visitSession: (sessionId) => this._visitSession(sessionId),
@@ -417,9 +418,6 @@ export default class KestrelExtension extends Extension {
     /** Set Claude session status for a window. Called via DBus from hook scripts. */
     setWindowStatus(sessionId: string, status: string): void {
         this._notificationCoordinator?.setWindowStatus(sessionId, status);
-        if (this._worldHolder.world) {
-            this._panelIndicator?.update(this._worldHolder.world, this._notificationCoordinator ?? undefined);
-        }
     }
 
     private _log(msg: string): void {
@@ -445,8 +443,9 @@ export default class KestrelExtension extends Extension {
     }
 
     private _visitSession(sessionId: string): void {
-        const wid = this._notificationCoordinator?.getWindowForSession(sessionId) ?? null;
-        if (!wid || !this._worldHolder.world) return;
+        if (!this._worldHolder.world) return;
+        const wid = this._worldHolder.world.notificationState.sessionWindows.get(sessionId) ?? null;
+        if (!wid) return;
         const oldScrollX = this._worldHolder.world.viewport.scrollX;
         const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
         const update = setFocus(this._worldHolder.world, wid);
@@ -524,11 +523,11 @@ export default class KestrelExtension extends Extension {
     }
 
     private _getWorkspaceClaudeStatus(wsIndex: number): string | null {
-        if (!this._worldHolder.world || !this._notificationCoordinator) return null;
+        if (!this._worldHolder.world) return null;
         const ws = this._worldHolder.world.workspaces[wsIndex];
         if (!ws) return null;
 
-        const statusMap = this._notificationCoordinator.getWindowStatusMap();
+        const statusMap = this._worldHolder.world.notificationState.windowStatuses;
         let best: string | null = null;
         const priority: Record<string, number> = { 'needs-input': 3, 'working': 2, 'done': 1 };
 

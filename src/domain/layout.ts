@@ -31,6 +31,7 @@ function computeWindowPositions(
                 width: totalWidth,
                 height: totalHeight,
                 visible: true,
+                fullscreen: true,
             });
             continue;
         }
@@ -53,6 +54,7 @@ function computeWindowPositions(
             width: windowWidth,
             height: windowHeight,
             visible,
+            fullscreen: false,
         });
         x += windowWidth + gapSize;
     }

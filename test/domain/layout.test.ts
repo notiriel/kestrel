@@ -6,6 +6,8 @@ import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import type { World } from '../../src/domain/world.js';
 import { createViewport } from '../../src/domain/viewport.js';
+import { createNotificationState } from '../../src/domain/notification.js';
+import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -33,6 +35,8 @@ function makeWorld(wsFactory: () => ReturnType<typeof createWorkspace>, override
         config,
         monitor,
         overviewActive: false,
+        overviewInteractionState: createOverviewInteractionState(),
+        notificationState: createNotificationState(),
         ...overrides,
     };
 }
@@ -64,6 +68,7 @@ describe('computeLayout', () => {
         // height = 1050 - (8+3)*2 = 1028
         expect(win.height).toBe(1028);
         expect(win.visible).toBe(true);
+        expect(win.fullscreen).toBe(false);
     });
 
     it('positions two windows side by side with gap', () => {

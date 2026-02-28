@@ -4,6 +4,9 @@ import { createWorld, addWindow, removeWindow, setFocus, restoreWorld, workspace
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
+import { createNotificationState, addNotification, registerSession } from '../../src/domain/notification.js';
+import type { DomainNotification } from '../../src/domain/notification.js';
+import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -230,7 +233,9 @@ describe('World', () => {
                 config,
                 monitor,
                 overviewActive: false,
-            };
+                overviewInteractionState: createOverviewInteractionState(),
+                notificationState: createNotificationState(),
+            } as World;
         }
 
         it('navigates to workspace below when current empties', () => {
@@ -285,7 +290,9 @@ describe('World', () => {
                 config,
                 monitor,
                 overviewActive: false,
-            };
+                overviewInteractionState: createOverviewInteractionState(),
+                notificationState: createNotificationState(),
+            } as World;
             const { world: result } = removeWindow(w, wid(2));
             // Slot 1 on WS2 → D (full-width, spans 1-2)
             expect(result.focusedWindow).toBe(wid(3));
@@ -421,6 +428,71 @@ describe('World', () => {
             w = renameCurrentWorkspace(w, 'Other');
             expect(workspaceNameForWindow(w, wid(1))).toBe('Workspace 1');
             expect(workspaceNameForWindow(w, wid(2))).toBe('Other');
+        });
+    });
+
+    describe('notification domain integration', () => {
+        function makeDomainNotification(overrides: Partial<DomainNotification> = {}): DomainNotification {
+            return {
+                id: 'notif-1',
+                sessionId: 'session-1',
+                type: 'notification',
+                title: 'Agent done',
+                message: 'Task complete',
+                questions: [],
+                status: 'pending',
+                response: null,
+                timestamp: 1000,
+                questionState: {
+                    currentPage: 0,
+                    answers: new Map(),
+                    otherTexts: new Map(),
+                    otherActive: new Map(),
+                },
+                ...overrides,
+            };
+        }
+
+        it('setFocus auto-dismisses notification-type entries for focused window', () => {
+            // Set up: window wid(1) with a session and a notification
+            let w = addWindow(world, wid(1)).world;
+            w = addWindow(w, wid(2)).world;
+            // Register session for wid(1)
+            let ns = registerSession(w.notificationState, 'sess-1', wid(1));
+            // Add a notification for that session
+            ns = addNotification(ns, makeDomainNotification({ id: 'n1', sessionId: 'sess-1' }));
+            w = { ...w, notificationState: ns };
+
+            // Focus is on wid(2). setFocus to wid(1) should dismiss the notification.
+            const { world: result } = setFocus(w, wid(1));
+            expect(result.notificationState.notifications.size).toBe(0);
+        });
+
+        it('setFocus does NOT dismiss pending permission entries', () => {
+            let w = addWindow(world, wid(1)).world;
+            w = addWindow(w, wid(2)).world;
+            let ns = registerSession(w.notificationState, 'sess-1', wid(1));
+            ns = addNotification(ns, makeDomainNotification({
+                id: 'p1', sessionId: 'sess-1', type: 'permission', status: 'pending',
+            }));
+            w = { ...w, notificationState: ns };
+
+            const { world: result } = setFocus(w, wid(1));
+            expect(result.notificationState.notifications.size).toBe(1);
+            expect(result.notificationState.notifications.has('p1')).toBe(true);
+        });
+
+        it('removeWindow cleans up session/status for destroyed window', () => {
+            let w = addWindow(world, wid(1)).world;
+            w = addWindow(w, wid(2)).world;
+            // Register session for wid(1)
+            let ns = registerSession(w.notificationState, 'sess-1', wid(1));
+            ns = { ...ns, windowStatuses: new Map(ns.windowStatuses).set(wid(1), 'working') };
+            w = { ...w, notificationState: ns };
+
+            const { world: result } = removeWindow(w, wid(1));
+            expect(result.notificationState.sessionWindows.has('sess-1')).toBe(false);
+            expect(result.notificationState.windowStatuses.has(wid(1))).toBe(false);
         });
     });
 });

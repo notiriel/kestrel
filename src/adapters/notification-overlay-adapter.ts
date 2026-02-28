@@ -43,7 +43,6 @@ interface NotifEntry {
 export class NotificationOverlayAdapter implements NotificationPort {
     private _container: St.Widget | null = null;
     private _entries: Map<string, NotifEntry> = new Map();
-    private _responses: Map<string, string> = new Map();
     private _stackExpanded: boolean = false;
     private _countBadge: St.Label | null = null;
     private _onVisitSession: ((sessionId: string) => void) | null = null;
@@ -52,6 +51,8 @@ export class NotificationOverlayAdapter implements NotificationPort {
 
     /** Callback invoked when entries are added, removed, or responded to. */
     onEntriesChanged: (() => void) | null = null;
+    /** Callback invoked when a response is given, so coordinator can sync to domain. */
+    onRespond: ((id: string, action: string) => void) | null = null;
 
     init(options?: NotificationInitOptions & { extensionPath?: string }): void {
         this._applyInitOptions(options);
@@ -210,8 +211,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
 
     getResponse(id: string): string | null {
         const entry = this._entries.get(id);
-        if (entry?.response) return entry.response;
-        return this._responses.get(id) ?? null;
+        return entry?.response ?? null;
     }
 
     /** Get question state for an entry (for focus mode). */
@@ -457,7 +457,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
         if (!entry) return;
 
         entry.response = action;
-        this._responses.set(id, action);
+        this.onRespond?.(id, action);
         this._dismissCard(id);
         this.onEntriesChanged?.();
     }

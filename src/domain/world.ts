@@ -24,7 +24,7 @@ import { fuzzyMatch } from './fuzzy-match.js';
 import type { OverviewInteractionState } from './overview-state.js';
 import { createOverviewInteractionState } from './overview-state.js';
 import type { NotificationState } from './notification.js';
-import { createNotificationState } from './notification.js';
+import { createNotificationState, dismissNotificationsForWindow, unregisterWindow } from './notification.js';
 
 export interface World {
     readonly workspaces: readonly Workspace[];
@@ -231,12 +231,19 @@ export function setFocus(world: World, windowId: WindowId): WorldUpdate {
     const found = findWindowInWorld(world, windowId);
     const targetWsIndex = found ? found.wsIndex : world.viewport.workspaceIndex;
 
+    const notificationState = dismissNotificationsForWindow(world.notificationState, windowId);
     const newWorld: World = {
         ...world,
         focusedWindow: windowId,
         viewport: { ...world.viewport, workspaceIndex: targetWsIndex },
+        notificationState,
     };
     return buildUpdate(adjustViewport(newWorld));
+}
+
+/** Replace the notification state in a world. */
+export function updateNotificationState(world: World, ns: NotificationState): World {
+    return { ...world, notificationState: ns };
 }
 
 export function addWindow(world: World, windowId: WindowId, slotSpan: 1 | 2 = 1): WorldUpdate {
@@ -283,6 +290,11 @@ export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
 
     newWorld = pruneEmptyWorkspaces(newWorld);
     newWorld = ensureTrailingEmpty(newWorld);
+
+    // Clean up notification session/status data for the destroyed window
+    const notificationState = unregisterWindow(newWorld.notificationState, windowId);
+    newWorld = { ...newWorld, notificationState };
+
     return buildUpdate(adjustViewport(newWorld));
 }
 

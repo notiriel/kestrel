@@ -1,7 +1,6 @@
 import type { World } from '../domain/world.js';
 import type { PanelIndicatorPort } from '../ports/panel-indicator-port.js';
-import type { WindowId } from '../domain/types.js';
-import type { ClaudeStatus } from './status-overlay-adapter.js';
+import type { ClaudeStatus } from '../domain/notification-types.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -20,7 +19,6 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
     private _statusDot: St.Label | null = null;
     private _switchCallback: ((wsIndex: number) => void) | null = null;
     private _lastWorld: World | null = null;
-    private _lastStatusOverlay: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> } | undefined = undefined;
 
     init(switchCallback: (wsIndex: number) => void): void {
         try {
@@ -52,19 +50,18 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         menu.connect('open-state-changed', (_menu: any, isOpen: boolean) => {
             if (isOpen && this._lastWorld) {
-                this._rebuildMenu(this._lastWorld, this._lastStatusOverlay);
+                this._rebuildMenu(this._lastWorld);
             }
         });
     }
 
-    update(world: World, statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> }): void {
+    update(world: World): void {
         try {
             if (!this._indicator || !this._label) return;
             this._lastWorld = world;
-            this._lastStatusOverlay = statusOverlay;
 
             this._updateLabel(world);
-            this._updateStatusDot(world, statusOverlay);
+            this._updateStatusDot(world);
         } catch (e) {
             console.error('[Kestrel] Error updating panel indicator:', e);
         }
@@ -75,9 +72,9 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         this._label!.text = currentWs?.name ?? `WS ${world.viewport.workspaceIndex + 1}`;
     }
 
-    private _updateStatusDot(world: World, statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> }): void {
+    private _updateStatusDot(world: World): void {
         if (!this._statusDot) return;
-        const currentStatus = this._aggregateStatus(world, world.viewport.workspaceIndex, statusOverlay);
+        const currentStatus = this._aggregateStatus(world, world.viewport.workspaceIndex);
         this._statusDot.text = currentStatus ? (STATUS_ICONS[currentStatus] ?? '') : '';
     }
 
@@ -91,13 +88,12 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
             this._statusDot = null;
             this._switchCallback = null;
             this._lastWorld = null;
-            this._lastStatusOverlay = undefined;
         } catch (e) {
             console.error('[Kestrel] Error destroying panel indicator:', e);
         }
     }
 
-    private _rebuildMenu(world: World, statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> }): void {
+    private _rebuildMenu(world: World): void {
         if (!this._indicator) return;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const menu = (this._indicator as any).menu as InstanceType<typeof PopupMenu.PopupMenu>;
@@ -106,18 +102,17 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         for (let i = 0; i < world.workspaces.length; i++) {
             const ws = world.workspaces[i]!;
             if (ws.windows.length === 0) continue;
-            this._addWorkspaceMenuItem(menu, world, ws, i, statusOverlay);
+            this._addWorkspaceMenuItem(menu, world, ws, i);
         }
     }
 
     private _addWorkspaceMenuItem(
         menu: InstanceType<typeof PopupMenu.PopupMenu>, world: World,
         ws: World['workspaces'][number], wsIndex: number,
-        statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> },
     ): void {
         const isCurrent = wsIndex === world.viewport.workspaceIndex;
         const name = ws.name ?? `WS ${wsIndex + 1}`;
-        const claudeStatus = this._aggregateStatus(world, wsIndex, statusOverlay);
+        const claudeStatus = this._aggregateStatus(world, wsIndex);
         const statusIcon = claudeStatus ? ` ${STATUS_ICONS[claudeStatus] ?? ''}` : '';
         const currentMark = isCurrent ? '\u{25CF} ' : '  ';
         const label = `${currentMark}${name}    ${ws.windows.length}${statusIcon}`;
@@ -133,13 +128,11 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
     private _aggregateStatus(
         world: World,
         wsIndex: number,
-        statusOverlay?: { getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> },
     ): ClaudeStatus | null {
-        if (!statusOverlay) return null;
         const ws = world.workspaces[wsIndex];
         if (!ws) return null;
 
-        const statusMap = statusOverlay.getWindowStatusMap();
+        const statusMap = world.notificationState.windowStatuses;
         const statuses = ws.windows.map(w => statusMap.get(w.id)).filter(Boolean) as ClaudeStatus[];
         return this._highestPriority(statuses);
     }

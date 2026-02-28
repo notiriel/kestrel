@@ -14,12 +14,26 @@ import {
     formatQuestionResponse,
     parseAllowResponse,
     classifyPermissionPayload,
+    registerSession,
+    unregisterWindow,
+    setSessionStatus,
+    clearSession,
+    dismissNotificationsForWindow,
+    shouldSuppressNotification,
+    getWindowForSession,
+    getWindowStatusMap,
+    enterFocusMode,
+    exitFocusMode,
+    navigateFocusMode,
+    removeFromFocusMode,
+    syncFocusModeEntries,
 } from '../../src/domain/notification.js';
 import type {
     NotificationState,
     DomainNotification,
     ParsedQuestion,
 } from '../../src/domain/notification.js';
+import type { WindowId } from '../../src/domain/types.js';
 
 function makeDomainNotification(overrides: Partial<DomainNotification> = {}): DomainNotification {
     return {
@@ -422,6 +436,224 @@ describe('Notification domain model', () => {
             const result = classifyPermissionPayload(payload);
             expect(result.isQuestion).toBe(false);
             expect(result.questions.length).toBe(0);
+        });
+    });
+
+    // --- Session/window management ---
+
+    describe('session and window management', () => {
+        const win1 = 'win-1' as WindowId;
+        const win2 = 'win-2' as WindowId;
+
+        it('registerSession maps session to window and sets initial done status', () => {
+            const newState = registerSession(state, 'sess-1', win1);
+            expect(newState.sessionWindows.get('sess-1')).toBe(win1);
+            expect(newState.windowStatuses.get(win1)).toBe('done');
+        });
+
+        it('registerSession does not overwrite existing status', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionStatus(s, 'sess-1', 'working');
+            // Register another session to the same window
+            s = registerSession(s, 'sess-2', win1);
+            expect(s.windowStatuses.get(win1)).toBe('working');
+        });
+
+        it('unregisterWindow removes all sessions and status for a window', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = registerSession(s, 'sess-2', win1);
+            s = registerSession(s, 'sess-3', win2);
+
+            const result = unregisterWindow(s, win1);
+            expect(result.sessionWindows.has('sess-1')).toBe(false);
+            expect(result.sessionWindows.has('sess-2')).toBe(false);
+            expect(result.sessionWindows.has('sess-3')).toBe(true);
+            expect(result.windowStatuses.has(win1)).toBe(false);
+            expect(result.windowStatuses.has(win2)).toBe(true);
+        });
+
+        it('setSessionStatus updates window status via session lookup', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionStatus(s, 'sess-1', 'working');
+            expect(s.windowStatuses.get(win1)).toBe('working');
+        });
+
+        it('setSessionStatus is no-op for unknown session', () => {
+            const result = setSessionStatus(state, 'unknown', 'working');
+            expect(result).toBe(state);
+        });
+
+        it('clearSession removes session mapping and window status', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionStatus(s, 'sess-1', 'working');
+            const result = clearSession(s, 'sess-1');
+            expect(result.sessionWindows.has('sess-1')).toBe(false);
+            expect(result.windowStatuses.has(win1)).toBe(false);
+        });
+
+        it('clearSession is no-op for unknown session', () => {
+            const result = clearSession(state, 'unknown');
+            expect(result).toBe(state);
+        });
+    });
+
+    describe('dismissNotificationsForWindow', () => {
+        const win1 = 'win-1' as WindowId;
+        const win2 = 'win-2' as WindowId;
+
+        it('dismisses notification-type entries for all sessions of a window', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({
+                id: 'n1', sessionId: 'sess-1', type: 'notification',
+            });
+            s = addNotification(s, notif);
+            const result = dismissNotificationsForWindow(s, win1);
+            expect(result.notifications.size).toBe(0);
+        });
+
+        it('keeps pending permission entries when dismissing for window', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const perm = makeDomainNotification({
+                id: 'p1', sessionId: 'sess-1', type: 'permission', status: 'pending',
+            });
+            const notif = makeDomainNotification({
+                id: 'n1', sessionId: 'sess-1', type: 'notification',
+            });
+            s = addNotification(s, perm);
+            s = addNotification(s, notif);
+            const result = dismissNotificationsForWindow(s, win1);
+            expect(result.notifications.size).toBe(1);
+            expect(result.notifications.has('p1')).toBe(true);
+        });
+
+        it('does not affect notifications for other windows', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = registerSession(s, 'sess-2', win2);
+            const n1 = makeDomainNotification({ id: 'n1', sessionId: 'sess-1', type: 'notification' });
+            const n2 = makeDomainNotification({ id: 'n2', sessionId: 'sess-2', type: 'notification' });
+            s = addNotification(s, n1);
+            s = addNotification(s, n2);
+            const result = dismissNotificationsForWindow(s, win1);
+            expect(result.notifications.size).toBe(1);
+            expect(result.notifications.has('n2')).toBe(true);
+        });
+
+        it('is no-op when no sessions map to the window', () => {
+            const notif = makeDomainNotification({ id: 'n1', type: 'notification' });
+            const s = addNotification(state, notif);
+            const result = dismissNotificationsForWindow(s, win1);
+            expect(result.notifications.size).toBe(1);
+        });
+    });
+
+    describe('shouldSuppressNotification', () => {
+        const win1 = 'win-1' as WindowId;
+        const win2 = 'win-2' as WindowId;
+
+        it('returns true when session window is focused', () => {
+            const s = registerSession(state, 'sess-1', win1);
+            expect(shouldSuppressNotification(s, 'sess-1', win1)).toBe(true);
+        });
+
+        it('returns false when session window is not focused', () => {
+            const s = registerSession(state, 'sess-1', win1);
+            expect(shouldSuppressNotification(s, 'sess-1', win2)).toBe(false);
+        });
+
+        it('returns false when no focused window', () => {
+            const s = registerSession(state, 'sess-1', win1);
+            expect(shouldSuppressNotification(s, 'sess-1', null)).toBe(false);
+        });
+
+        it('returns false for unknown session', () => {
+            expect(shouldSuppressNotification(state, 'unknown', win1)).toBe(false);
+        });
+    });
+
+    describe('getWindowForSession and getWindowStatusMap', () => {
+        const win1 = 'win-1' as WindowId;
+
+        it('getWindowForSession returns window for known session', () => {
+            const s = registerSession(state, 'sess-1', win1);
+            expect(getWindowForSession(s, 'sess-1')).toBe(win1);
+        });
+
+        it('getWindowForSession returns null for unknown session', () => {
+            expect(getWindowForSession(state, 'unknown')).toBeNull();
+        });
+
+        it('getWindowStatusMap returns current statuses', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionStatus(s, 'sess-1', 'working');
+            const map = getWindowStatusMap(s);
+            expect(map.get(win1)).toBe('working');
+        });
+    });
+
+    // --- Focus mode ---
+
+    describe('focus mode', () => {
+        it('enterFocusMode sets active and populates entryIds', () => {
+            const s = enterFocusMode(state, ['a', 'b', 'c']);
+            expect(s.focusMode.active).toBe(true);
+            expect(s.focusMode.entryIds).toEqual(['a', 'b', 'c']);
+            expect(s.focusMode.currentIndex).toBe(0);
+        });
+
+        it('exitFocusMode clears all focus mode state', () => {
+            let s = enterFocusMode(state, ['a', 'b']);
+            s = exitFocusMode(s);
+            expect(s.focusMode.active).toBe(false);
+            expect(s.focusMode.entryIds).toEqual([]);
+            expect(s.focusMode.currentIndex).toBe(0);
+        });
+
+        it('navigateFocusMode wraps forward', () => {
+            let s = enterFocusMode(state, ['a', 'b', 'c']);
+            s = navigateFocusMode(s, 1);
+            expect(s.focusMode.currentIndex).toBe(1);
+            s = navigateFocusMode(s, 1);
+            expect(s.focusMode.currentIndex).toBe(2);
+            s = navigateFocusMode(s, 1);
+            expect(s.focusMode.currentIndex).toBe(0); // wrapped
+        });
+
+        it('navigateFocusMode wraps backward', () => {
+            let s = enterFocusMode(state, ['a', 'b', 'c']);
+            s = navigateFocusMode(s, -1);
+            expect(s.focusMode.currentIndex).toBe(2); // wrapped
+        });
+
+        it('navigateFocusMode is no-op with single entry', () => {
+            let s = enterFocusMode(state, ['a']);
+            s = navigateFocusMode(s, 1);
+            expect(s.focusMode.currentIndex).toBe(0);
+        });
+
+        it('removeFromFocusMode removes entry and adjusts index', () => {
+            let s = enterFocusMode(state, ['a', 'b', 'c']);
+            s = navigateFocusMode(s, 2); // index at 2
+            s = removeFromFocusMode(s, 'c');
+            expect(s.focusMode.entryIds).toEqual(['a', 'b']);
+            expect(s.focusMode.currentIndex).toBe(1); // clamped
+        });
+
+        it('removeFromFocusMode is no-op for unknown entry', () => {
+            const s = enterFocusMode(state, ['a', 'b']);
+            const result = removeFromFocusMode(s, 'unknown');
+            expect(result.focusMode.entryIds).toEqual(['a', 'b']);
+        });
+
+        it('syncFocusModeEntries adds new and removes resolved', () => {
+            let s = enterFocusMode(state, ['a', 'b', 'c']);
+            s = syncFocusModeEntries(s, ['b', 'd']); // a and c resolved, d is new
+            expect(s.focusMode.entryIds).toEqual(['b', 'd']);
+        });
+
+        it('syncFocusModeEntries preserves order of existing entries', () => {
+            let s = enterFocusMode(state, ['a', 'b', 'c']);
+            s = syncFocusModeEntries(s, ['c', 'b', 'a']); // all still pending
+            expect(s.focusMode.entryIds).toEqual(['a', 'b', 'c']); // original order preserved
         });
     });
 });

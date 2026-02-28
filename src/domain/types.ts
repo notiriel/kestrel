@@ -31,6 +31,7 @@ export interface WindowLayout {
     readonly width: number;
     readonly height: number;
     readonly visible: boolean;
+    readonly fullscreen: boolean;
 }
 
 export interface LayoutState {

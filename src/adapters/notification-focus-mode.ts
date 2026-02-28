@@ -1,7 +1,12 @@
 import type { WindowId } from '../domain/types.js';
+import type { World } from '../domain/world.js';
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
 import type { QuestionState } from './notification-adapter-types.js';
 import { QuestionCard } from '../ui-components/question-card.js';
+import {
+    enterFocusMode, exitFocusMode, navigateFocusMode,
+    removeFromFocusMode, syncFocusModeEntries,
+} from '../domain/notification.js';
 import {
     FOCUS_CARD_WIDTH,
     buildFocusModeBackdrop, buildPreviewContainer, buildCardContainer,
@@ -26,6 +31,8 @@ const SLIDE_OFFSET = 60;
 const CLONE_SCALE = 0.8;
 
 interface FocusModeDeps {
+    getWorld(): World | null;
+    setWorld(world: World): void;
     getPendingEntries(): Array<{ id: string; notification: OverlayNotification }>;
     getWindowForSession(sessionId: string): WindowId | null;
     getMetaWindow(windowId: WindowId): Meta.Window | undefined;
@@ -48,7 +55,6 @@ interface FocusModeDeps {
 
 export class NotificationFocusMode {
     private _deps: FocusModeDeps;
-    private _active: boolean = false;
 
     // UI elements
     private _backdrop: St.Widget | null = null;
@@ -60,9 +66,7 @@ export class NotificationFocusMode {
     private _counterLabel: St.Label | null = null;
     private _hintLabel: St.Label | null = null;
 
-    // State
-    private _entryIds: string[] = [];
-    private _currentIndex: number = 0;
+    // UI-only state
     private _grab: { ungrab: () => void } | null = null;
     private _keyPressId: number = 0;
     private _buttonPressId: number = 0;
@@ -76,12 +80,19 @@ export class NotificationFocusMode {
     }
 
     get isActive(): boolean {
-        return this._active;
+        const world = this._deps.getWorld();
+        return world?.notificationState.focusMode.active ?? false;
+    }
+
+    private _updateDomainState(updater: (world: World) => World): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        this._deps.setWorld(updater(world));
     }
 
     toggle(): void {
         try {
-            if (this._active) {
+            if (this.isActive) {
                 this._exit();
                 return;
             }
@@ -97,9 +108,11 @@ export class NotificationFocusMode {
     }
 
     private _enter(entries: Array<{ id: string; notification: OverlayNotification }>): void {
-        this._active = true;
-        this._entryIds = entries.map(e => e.id);
-        this._currentIndex = 0;
+        const entryIds = entries.map(e => e.id);
+        this._updateDomainState(w => ({
+            ...w,
+            notificationState: enterFocusMode(w.notificationState, entryIds),
+        }));
 
         const monitor = this._deps.getMonitor();
         this._buildBackdrop(monitor);
@@ -174,9 +187,17 @@ export class NotificationFocusMode {
         );
     }
 
+    private _getFocusMode() {
+        const world = this._deps.getWorld();
+        return world?.notificationState.focusMode ?? { active: false, entryIds: [], currentIndex: 0 };
+    }
+
     private _exit(): void {
-        if (!this._active) return;
-        this._active = false;
+        if (!this.isActive) return;
+        this._updateDomainState(w => ({
+            ...w,
+            notificationState: exitFocusMode(w.notificationState),
+        }));
 
         this._destroyFocusModeQuestionCard();
         this._cancelAutoAdvanceSync();
@@ -250,8 +271,10 @@ export class NotificationFocusMode {
     private _showEntry(index: number, direction: 'up' | 'down' | 'none'): void {
         if (!this._cardContainer || !this._previewContainer) return;
 
+        const fm = this._getFocusMode();
         const entries = this._deps.getPendingEntries();
-        const entryData = entries.find(e => e.id === this._entryIds[index]);
+        const entryId = fm.entryIds[index];
+        const entryData = entries.find(e => e.id === entryId);
 
         if (!entryData) {
             this._handleStaleEntry(index, direction);
@@ -268,13 +291,20 @@ export class NotificationFocusMode {
     }
 
     private _handleStaleEntry(index: number, direction: 'up' | 'down' | 'none'): void {
-        this._entryIds.splice(index, 1);
-        if (this._entryIds.length === 0) {
+        const fm = this._getFocusMode();
+        const entryId = fm.entryIds[index];
+        if (entryId) {
+            this._updateDomainState(w => ({
+                ...w,
+                notificationState: removeFromFocusMode(w.notificationState, entryId),
+            }));
+        }
+        const updatedFm = this._getFocusMode();
+        if (updatedFm.entryIds.length === 0) {
             this._exit();
             return;
         }
-        this._currentIndex = Math.min(index, this._entryIds.length - 1);
-        this._showEntry(this._currentIndex, direction);
+        this._showEntry(updatedFm.currentIndex, direction);
     }
 
     private _removeOldCard(direction: 'up' | 'down' | 'none'): void {
@@ -490,7 +520,8 @@ export class NotificationFocusMode {
     private _tryDelegateToQuestion(
         symbol: number,
     ): typeof Clutter.EVENT_STOP | null {
-        const entryId = this._entryIds[this._currentIndex];
+        const fm = this._getFocusMode();
+        const entryId = fm.entryIds[fm.currentIndex];
         if (!entryId) return null;
         const entries = this._deps.getPendingEntries();
         const entry = entries.find(e => e.id === entryId);
@@ -629,7 +660,7 @@ export class NotificationFocusMode {
         this._autoAdvanceSyncId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 350, () => {
             this._autoAdvanceSyncId = null;
             try {
-                if (this._active) {
+                if (this.isActive) {
                     this._refreshQuestionCard(entryId);
                 }
             } catch (e) {
@@ -654,19 +685,23 @@ export class NotificationFocusMode {
     }
 
     private _removeCurrentEntry(): void {
-        const entryId = this._entryIds[this._currentIndex];
+        const fm = this._getFocusMode();
+        const entryId = fm.entryIds[fm.currentIndex];
         if (!entryId) return;
 
         this._destroyFocusModeQuestionCard();
 
-        const idx = this._entryIds.indexOf(entryId);
-        if (idx !== -1) this._entryIds.splice(idx, 1);
-        if (this._entryIds.length === 0) {
+        this._updateDomainState(w => ({
+            ...w,
+            notificationState: removeFromFocusMode(w.notificationState, entryId),
+        }));
+
+        const updatedFm = this._getFocusMode();
+        if (updatedFm.entryIds.length === 0) {
             this._exit();
             return;
         }
-        this._currentIndex = Math.min(this._currentIndex, this._entryIds.length - 1);
-        this._showEntry(this._currentIndex, 'down');
+        this._showEntry(updatedFm.currentIndex, 'down');
     }
 
     private _refreshQuestionCard(entryId: string): void {
@@ -695,16 +730,18 @@ export class NotificationFocusMode {
     }
 
     private _navigate(delta: number): void {
-        if (this._entryIds.length <= 1) return;
-
-        const newIndex = ((this._currentIndex + delta) % this._entryIds.length + this._entryIds.length) % this._entryIds.length;
+        this._updateDomainState(w => ({
+            ...w,
+            notificationState: navigateFocusMode(w.notificationState, delta),
+        }));
+        const fm = this._getFocusMode();
         const direction = delta > 0 ? 'down' : 'up';
-        this._currentIndex = newIndex;
-        this._showEntry(this._currentIndex, direction);
+        this._showEntry(fm.currentIndex, direction);
     }
 
     private _handleAction1(): void {
-        const entryId = this._entryIds[this._currentIndex];
+        const fm = this._getFocusMode();
+        const entryId = fm.entryIds[fm.currentIndex];
         if (!entryId) return;
 
         const entries = this._deps.getPendingEntries();
@@ -723,7 +760,8 @@ export class NotificationFocusMode {
     }
 
     private _handleAction2(): void {
-        const entryId = this._entryIds[this._currentIndex];
+        const fm = this._getFocusMode();
+        const entryId = fm.entryIds[fm.currentIndex];
         if (!entryId) return;
 
         const entries = this._deps.getPendingEntries();
@@ -738,7 +776,8 @@ export class NotificationFocusMode {
     }
 
     private _handleAction3(): void {
-        const entryId = this._entryIds[this._currentIndex];
+        const fm = this._getFocusMode();
+        const entryId = fm.entryIds[fm.currentIndex];
         if (!entryId) return;
 
         const entries = this._deps.getPendingEntries();
@@ -755,51 +794,41 @@ export class NotificationFocusMode {
         // Respond via the overlay adapter
         this._deps.respondToEntry(entryId, action);
 
-        // Remove from our list
-        const idx = this._entryIds.indexOf(entryId);
-        if (idx !== -1) {
-            this._entryIds.splice(idx, 1);
-        }
+        // Remove from domain focus mode state
+        this._updateDomainState(w => ({
+            ...w,
+            notificationState: removeFromFocusMode(w.notificationState, entryId),
+        }));
 
         // Auto-exit if empty
-        if (this._entryIds.length === 0) {
+        const fm = this._getFocusMode();
+        if (fm.entryIds.length === 0) {
             this._exit();
             return;
         }
 
         // Auto-advance
-        this._currentIndex = Math.min(this._currentIndex, this._entryIds.length - 1);
-        this._showEntry(this._currentIndex, 'down');
-    }
-
-    private _syncEntryIds(): string[] {
-        const entries = this._deps.getPendingEntries();
-        const currentIds = new Set(entries.map(e => e.id));
-
-        // Add new entries
-        for (const entry of entries) {
-            if (!this._entryIds.includes(entry.id)) {
-                this._entryIds.push(entry.id);
-            }
-        }
-
-        // Remove resolved entries (but not the one we just acted on — performAction handles that)
-        this._entryIds = this._entryIds.filter(id => currentIds.has(id));
-        return this._entryIds;
+        this._showEntry(fm.currentIndex, 'down');
     }
 
     private _onEntriesChanged(): void {
-        if (!this._active) return;
+        if (!this.isActive) return;
 
         try {
-            const synced = this._syncEntryIds();
+            const entries = this._deps.getPendingEntries();
+            const currentPendingIds = entries.map(e => e.id);
 
-            if (synced.length === 0) {
+            this._updateDomainState(w => ({
+                ...w,
+                notificationState: syncFocusModeEntries(w.notificationState, currentPendingIds),
+            }));
+
+            const fm = this._getFocusMode();
+            if (fm.entryIds.length === 0) {
                 this._exit();
                 return;
             }
 
-            this._currentIndex = Math.min(this._currentIndex, synced.length - 1);
             this._updateCounter();
         } catch (e) {
             console.error('[Kestrel] Error handling focus mode entries change:', e);
@@ -808,12 +837,16 @@ export class NotificationFocusMode {
 
     private _updateCounter(): void {
         if (!this._counterLabel) return;
-        this._counterLabel.text = `${this._currentIndex + 1} / ${this._entryIds.length}`;
+        const fm = this._getFocusMode();
+        this._counterLabel.text = `${fm.currentIndex + 1} / ${fm.entryIds.length}`;
     }
 
     destroy(): void {
-        if (!this._active) return;
-        this._active = false;
+        if (!this.isActive) return;
+        this._updateDomainState(w => ({
+            ...w,
+            notificationState: exitFocusMode(w.notificationState),
+        }));
         this._cancelAutoAdvanceSync();
         this._deps.unregisterEntriesChanged();
         this._disconnectInput();

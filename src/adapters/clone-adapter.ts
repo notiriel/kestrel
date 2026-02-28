@@ -57,7 +57,6 @@ export class CloneAdapter implements ClonePort {
     private _monitorHeight: number = 0;
     private _currentWorkspaceId: WorkspaceId | null = null;
     private _lastLayout: LayoutState | null = null;
-    private _overviewActive: boolean = false;
     private _overviewBg: St.Widget | null = null;
     private _filterIndicator: St.BoxLayout | null = null;
     private _filteredPositionMap: Map<number, number> = new Map(); // real wsIndex → visual position
@@ -479,7 +478,6 @@ export class CloneAdapter implements ClonePort {
 
     enterOverview(transform: OverviewTransform, layout: LayoutState, _numWorkspaces: number, onComplete?: () => void): void {
         if (!this._layer || !this._workspaceStrip) return;
-        this._overviewActive = true;
         this._hideSourceActors();
         this._ensureOverviewBg();
         this._layer.set_clip(-1, -1, global.stage.width + 2, this._monitorHeight + 2);
@@ -535,7 +533,6 @@ export class CloneAdapter implements ClonePort {
 
     exitOverview(layout: LayoutState, animate: boolean = true): void {
         if (!this._layer || !this._workspaceStrip) return;
-        this._overviewActive = false;
 
         this._cleanupOverviewState();
 
@@ -580,7 +577,6 @@ export class CloneAdapter implements ClonePort {
     }
 
     updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void {
-        if (!this._overviewActive) return;
         this._animateCloneWrappers(layout, ANIMATION_DURATION, Clutter.AnimationMode.EASE_OUT_QUAD);
         this._updateOverviewFocus(layout, wsIndex, transform);
     }

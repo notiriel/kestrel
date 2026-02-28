@@ -1,8 +1,15 @@
 import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { workspaceNameForWindow } from '../domain/world.js';
+import { workspaceNameForWindow, updateNotificationState } from '../domain/world.js';
 import type { ClaudeStatus } from '../domain/notification-types.js';
-import { classifyPermissionPayload, parseAllowResponse } from '../domain/notification.js';
+import {
+    classifyPermissionPayload, parseAllowResponse,
+    addNotification, respondToNotification, getResponse as domainGetResponse,
+    registerSession, setSessionStatus, clearSession,
+    shouldSuppressNotification, getWindowForSession as domainGetWindowForSession,
+    getWindowStatusMap as domainGetWindowStatusMap,
+} from '../domain/notification.js';
+import type { DomainNotification, NotificationState } from '../domain/notification.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
 import { StatusOverlayAdapter } from './status-overlay-adapter.js';
 import { NotificationOverlayAdapter } from './notification-overlay-adapter.js';
@@ -14,6 +21,7 @@ import GLib from 'gi://GLib';
 
 interface NotificationCoordinatorDeps {
     getWorld(): World | null;
+    setWorld(world: World): void;
     extensionPath: string;
     getLayer(): Clutter.Actor | null;
     visitSession(sessionId: string): void;
@@ -38,12 +46,14 @@ export class NotificationCoordinator {
 
     init(): void {
         this._statusOverlay = new StatusOverlayAdapter();
+        this._statusOverlay.onProbeDetected = (sid, wid) => this.onProbeDetected(sid, wid);
         const layer = this._deps.getLayer();
         if (layer) {
-            this._statusOverlay.init(layer, `${this._deps.extensionPath}/data`);
+            this._statusOverlay.init(layer, `${this._deps.extensionPath}/data`, () => this._deps.getWorld());
         }
 
         this._notificationOverlay = new NotificationOverlayAdapter();
+        this._notificationOverlay.onRespond = (id, action) => this._onOverlayRespond(id, action);
         this._notificationOverlay.init({
             onVisitSession: (sid) => this._deps.visitSession(sid),
             extensionPath: this._deps.extensionPath,
@@ -66,23 +76,33 @@ export class NotificationCoordinator {
     }
 
     private _createFocusMode(): NotificationFocusMode {
-        const o = this._notificationOverlay, s = this._statusOverlay, d = this._deps;
+        const o = this._notificationOverlay, d = this._deps;
         return new NotificationFocusMode({
+            getWorld: () => d.getWorld(), setWorld: (w) => d.setWorld(w),
             getPendingEntries: () => o?.getPendingEntries() ?? [],
-            getWindowForSession: (sid) => s?.getWindowForSession(sid) ?? null,
+            getWindowForSession: (sid) => this.getWindowForSession(sid),
             getMetaWindow: (wid) => d.getMetaWindow(wid) as Meta.Window | undefined,
             respondToEntry: (id, action) => o?.respond(id, action),
             visitSession: (sid) => d.visitSession(sid),
             getMonitor: () => d.getMonitor(), isOverviewActive: () => d.isOverviewActive(),
             registerEntriesChanged: (cb) => { if (o) o.onEntriesChanged = cb; },
             unregisterEntriesChanged: () => { if (o) o.onEntriesChanged = null; },
-            getQuestionState: (id) => o?.getQuestionState(id) ?? null,
-            getQuestionCard: (id) => o?.getQuestionCard(id) ?? null,
-            questionNavigate: (id, delta) => o?.questionNavigate(id, delta),
-            questionSelectOption: (id, qi, oi) => o?.questionSelectOption(id, qi, oi),
-            questionSend: (id) => o?.questionSend(id), questionDismiss: (id) => o?.questionDismiss(id),
-            questionVisit: (id) => o?.questionVisit(id), extensionPath: d.extensionPath,
+            ...this._questionDeps(),
         });
+    }
+
+    private _questionDeps() {
+        const o = this._notificationOverlay, d = this._deps;
+        return {
+            getQuestionState: (id: string) => o?.getQuestionState(id) ?? null,
+            getQuestionCard: (id: string) => o?.getQuestionCard(id) ?? null,
+            questionNavigate: (id: string, delta: number) => o?.questionNavigate(id, delta),
+            questionSelectOption: (id: string, qi: number, oi: number) => o?.questionSelectOption(id, qi, oi),
+            questionSend: (id: string) => o?.questionSend(id),
+            questionDismiss: (id: string) => o?.questionDismiss(id),
+            questionVisit: (id: string) => o?.questionVisit(id),
+            extensionPath: d.extensionPath,
+        };
     }
 
     destroy(): void {
@@ -111,27 +131,50 @@ export class NotificationCoordinator {
 
     // --- DBus handlers ---
 
-    /** Set Claude session status for a window. Returns true if panel update needed. */
+    /** Set Claude session status for a window via domain state. */
     setWindowStatus(sessionId: string, status: string): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+
+        let ns: NotificationState;
+        if (status === 'end') {
+            ns = clearSession(world.notificationState, sessionId);
+        } else {
+            const validStatus = status as ClaudeStatus;
+            if (!['working', 'needs-input', 'done'].includes(validStatus)) {
+                console.log(`[Kestrel] setWindowStatus: unknown status ${status}`);
+                return;
+            }
+            ns = setSessionStatus(world.notificationState, sessionId, validStatus);
+        }
+        this._deps.setWorld(updateNotificationState(world, ns));
+
+        // Also update the status overlay visuals
         this._statusOverlay?.setWindowStatus(sessionId, status);
     }
 
     handlePermissionRequest(jsonPayload: string): string {
         try {
             const payload = JSON.parse(jsonPayload);
-            payload.workspace_name = this._workspaceNameForSession(String(payload.session_id ?? ''));
+            const sessionId = String(payload.session_id ?? '');
+            payload.workspace_name = this._workspaceNameForSession(sessionId);
             const id = `notif-${GLib.uuid_string_random()}`;
 
             const classification = classifyPermissionPayload(payload);
-            if (classification.isQuestion) {
-                this._showAsQuestion(id, payload, classification.questions);
-            } else {
-                this._notificationOverlay?.showPermission(id, payload);
-            }
-
+            const type = classification.isQuestion ? 'question' : 'permission';
+            this._addToDomainState(id, sessionId, payload, type);
+            this._showPermissionUI(id, payload, classification);
             return JSON.stringify({ id });
         } catch (e) {
             return `{"error":"${String(e)}"}`;
+        }
+    }
+
+    private _showPermissionUI(id: string, payload: Record<string, unknown>, classification: ReturnType<typeof classifyPermissionPayload>): void {
+        if (classification.isQuestion) {
+            this._showAsQuestion(id, payload, classification.questions);
+        } else {
+            this._notificationOverlay?.showPermission(id, payload);
         }
     }
 
@@ -146,8 +189,12 @@ export class NotificationCoordinator {
     handleNotification(jsonPayload: string): string {
         try {
             const payload = JSON.parse(jsonPayload);
-            payload.workspace_name = this._workspaceNameForSession(String(payload.session_id ?? ''));
+            const sessionId = String(payload.session_id ?? '');
+            payload.workspace_name = this._workspaceNameForSession(sessionId);
             const id = `notif-${GLib.uuid_string_random()}`;
+
+            if (this._shouldSuppressForFocused(sessionId)) return JSON.stringify({ id });
+            this._addToDomainState(id, sessionId, payload, 'notification');
             this._notificationOverlay?.showNotification(id, payload);
             return JSON.stringify({ id });
         } catch (e) {
@@ -155,15 +202,41 @@ export class NotificationCoordinator {
         }
     }
 
+    private _shouldSuppressForFocused(sessionId: string): boolean {
+        const world = this._deps.getWorld();
+        return !!world && shouldSuppressNotification(world.notificationState, sessionId, world.focusedWindow);
+    }
+
+    private _addToDomainState(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question'): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        const domainNotif = this._buildDomainNotification(id, sessionId, payload, type);
+        const ns = addNotification(world.notificationState, domainNotif);
+        this._deps.setWorld(updateNotificationState(world, ns));
+    }
+
     getNotificationResponse(id: string): string {
         try {
-            const response = this._notificationOverlay?.getResponse(id);
+            const response = this._resolveResponse(id);
             if (!response) return '{"pending":true}';
-
             return JSON.stringify(parseAllowResponse(response));
         } catch (e) {
             return `{"error":"${String(e)}"}`;
         }
+    }
+
+    /** Sync response from overlay adapter into domain state. */
+    private _onOverlayRespond(id: string, action: string): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        const ns = respondToNotification(world.notificationState, id, action);
+        this._deps.setWorld(updateNotificationState(world, ns));
+    }
+
+    private _resolveResponse(id: string): string | null {
+        const world = this._deps.getWorld();
+        if (!world) return null;
+        return domainGetResponse(world.notificationState, id);
     }
 
     // --- Keybinding ---
@@ -185,20 +258,44 @@ export class NotificationCoordinator {
     // --- Panel indicator support ---
 
     getWindowStatusMap(): ReadonlyMap<WindowId, ClaudeStatus> {
-        return this._statusOverlay?.getWindowStatusMap() ?? new Map();
+        const world = this._deps.getWorld();
+        if (!world) return new Map();
+        return domainGetWindowStatusMap(world.notificationState);
     }
 
     getWindowForSession(sessionId: string): WindowId | null {
-        return this._statusOverlay?.getWindowForSession(sessionId) ?? null;
+        const world = this._deps.getWorld();
+        if (!world) return null;
+        return domainGetWindowForSession(world.notificationState, sessionId);
     }
 
     // --- Private helpers ---
 
+    /** Handle probe detection from status overlay — register session in domain. */
+    onProbeDetected(sessionId: string, windowId: WindowId): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        const ns = registerSession(world.notificationState, sessionId, windowId);
+        this._deps.setWorld(updateNotificationState(world, ns));
+    }
+
     private _workspaceNameForSession(sessionId: string): string | null {
         const world = this._deps.getWorld();
-        if (!world || !this._statusOverlay) return null;
-        const windowId = this._statusOverlay.getWindowForSession(sessionId);
+        if (!world) return null;
+        const windowId = domainGetWindowForSession(world.notificationState, sessionId);
         if (!windowId) return null;
         return workspaceNameForWindow(world, windowId);
+    }
+
+    /** Build a domain notification from a payload. */
+    private _buildDomainNotification(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question'): DomainNotification {
+        const opt = (k: string) => payload[k] ? String(payload[k]) : undefined;
+        const defaultTitle = type === 'permission' ? 'Permission Request' : 'Notification';
+        return {
+            id, sessionId, type, questions: [], status: 'pending', response: null, timestamp: Date.now(),
+            workspaceName: opt('workspace_name'), title: String(payload.title ?? defaultTitle),
+            message: String(payload.message ?? ''), command: opt('command'), toolName: opt('tool_name'),
+            questionState: { currentPage: 0, answers: new Map(), otherTexts: new Map(), otherActive: new Map() },
+        };
     }
 }

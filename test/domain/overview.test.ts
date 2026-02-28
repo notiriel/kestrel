@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
-import { enterOverview, exitOverview } from '../../src/domain/overview.js';
+import { enterOverview, exitOverview, cancelOverview } from '../../src/domain/overview.js';
 import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import type { World } from '../../src/domain/world.js';
+import { createNotificationState } from '../../src/domain/notification.js';
+import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -35,6 +37,8 @@ function makeWorld(windowIds: number[], focusedIdx: number): World {
         config,
         monitor,
         overviewActive: false,
+        overviewInteractionState: createOverviewInteractionState(),
+        notificationState: createNotificationState(),
     };
 }
 
@@ -51,6 +55,22 @@ describe('enterOverview', () => {
         expect(update.world.focusedWindow).toBe(wid(2));
         expect(update.world.viewport.workspaceIndex).toBe(0);
     });
+
+    it('saves pre-overview state into overviewInteractionState', () => {
+        const world = {
+            ...makeWorld([1, 2], 1),
+            viewport: { workspaceIndex: 0, scrollX: 42, widthPx: monitor.totalWidth },
+        };
+        const update = enterOverview(world);
+        const ois = update.world.overviewInteractionState;
+        expect(ois.active).toBe(true);
+        expect(ois.savedFocusedWindow).toBe(wid(2));
+        expect(ois.savedWorkspaceIndex).toBe(0);
+        expect(ois.savedScrollX).toBe(42);
+        expect(ois.filterText).toBe('');
+        expect(ois.filteredIndices).toEqual([]);
+        expect(ois.renaming).toBe(false);
+    });
 });
 
 describe('exitOverview', () => {
@@ -66,6 +86,16 @@ describe('exitOverview', () => {
         expect(update.world.focusedWindow).toBe(wid(2));
     });
 
+    it('clears overviewInteractionState', () => {
+        const world = { ...makeWorld([1, 2], 0), overviewActive: true };
+        const update = exitOverview(world);
+        const ois = update.world.overviewInteractionState;
+        expect(ois.active).toBe(false);
+        expect(ois.savedFocusedWindow).toBeNull();
+        expect(ois.savedWorkspaceIndex).toBe(0);
+        expect(ois.savedScrollX).toBe(0);
+    });
+
     it('adjusts viewport to focused window', () => {
         // 3 windows, focus on win-3 (off-screen right at scrollX=0)
         let ws = createWorkspace(wsId(0));
@@ -79,9 +109,39 @@ describe('exitOverview', () => {
             config,
             monitor,
             overviewActive: true,
+            overviewInteractionState: createOverviewInteractionState(),
+            notificationState: createNotificationState(),
         };
         const update = exitOverview(world);
         // win-3 is off-screen at scrollX=0, so viewport should scroll to show it
         expect(update.world.viewport.scrollX).toBeGreaterThan(0);
+    });
+});
+
+describe('cancelOverview', () => {
+    it('restores pre-overview focus and viewport from interaction state', () => {
+        const world = makeWorld([1, 2, 3], 0);
+        // Enter overview first to populate interaction state
+        const entered = enterOverview(world);
+        // Simulate navigating to a different window/workspace during overview
+        const navigated: World = {
+            ...entered.world,
+            focusedWindow: wid(3),
+            viewport: { ...entered.world.viewport, workspaceIndex: 0, scrollX: 500 },
+        };
+        const update = cancelOverview(navigated);
+        expect(update.world.overviewActive).toBe(false);
+        expect(update.world.focusedWindow).toBe(wid(1)); // restored
+        expect(update.world.viewport.scrollX).toBe(0); // restored
+        expect(update.world.viewport.workspaceIndex).toBe(0); // restored
+    });
+
+    it('clears overviewInteractionState', () => {
+        const world = makeWorld([1, 2], 0);
+        const entered = enterOverview(world);
+        const update = cancelOverview(entered.world);
+        const ois = update.world.overviewInteractionState;
+        expect(ois.active).toBe(false);
+        expect(ois.savedFocusedWindow).toBeNull();
     });
 });
