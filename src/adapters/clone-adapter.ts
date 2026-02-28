@@ -477,13 +477,13 @@ export class CloneAdapter implements ClonePort {
         });
     }
 
-    enterOverview(transform: OverviewTransform, layout: LayoutState, _numWorkspaces: number): void {
+    enterOverview(transform: OverviewTransform, layout: LayoutState, _numWorkspaces: number, onComplete?: () => void): void {
         if (!this._layer || !this._workspaceStrip) return;
         this._overviewActive = true;
         this._hideSourceActors();
         this._ensureOverviewBg();
         this._layer.set_clip(-1, -1, global.stage.width + 2, this._monitorHeight + 2);
-        this._animateEnterStrip(transform);
+        this._animateEnterStrip(transform, onComplete);
         this._showWorkspaceLabels();
         this._updateOverviewFocus(layout, layout.workspaceIndex, transform);
     }
@@ -499,7 +499,7 @@ export class CloneAdapter implements ClonePort {
             this._overviewBg = new St.Widget({
                 name: 'kestrel-overview-bg',
                 style: `background-color: ${OVERVIEW_BG_COLOR};`,
-                reactive: false,
+                reactive: true,
                 x: 0,
                 y: 0,
                 width: this._layer!.width,
@@ -510,7 +510,7 @@ export class CloneAdapter implements ClonePort {
         this._overviewBg.visible = true;
     }
 
-    private _animateEnterStrip(transform: OverviewTransform): void {
+    private _animateEnterStrip(transform: OverviewTransform, onComplete?: () => void): void {
         (this._workspaceStrip! as unknown as Easeable).ease({
             scale_x: transform.scale,
             scale_y: transform.scale,
@@ -518,6 +518,7 @@ export class CloneAdapter implements ClonePort {
             y: transform.offsetY,
             duration: ANIMATION_DURATION,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete,
         });
     }
 
@@ -580,6 +581,7 @@ export class CloneAdapter implements ClonePort {
 
     updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void {
         if (!this._overviewActive) return;
+        this._animateCloneWrappers(layout, ANIMATION_DURATION, Clutter.AnimationMode.EASE_OUT_QUAD);
         this._updateOverviewFocus(layout, wsIndex, transform);
     }
 

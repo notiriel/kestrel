@@ -19,8 +19,8 @@ export class ShellAdapter implements ShellPort {
 
     interceptWmAnimations(): void {
         this._wmDestroyId = this._connectWmSignal('destroy', 'completed_destroy');
-        this._wmMinimizeId = this._connectWmSignal('minimize', 'completed_minimize');
-        this._wmUnminimizeId = this._connectWmSignal('unminimize', 'completed_unminimize');
+        this._wmMinimizeId = this._connectMinimize();
+        this._wmUnminimizeId = this._connectUnminimize();
     }
 
     private _connectWmSignal(signal: string, completedMethod: string): number {
@@ -34,6 +34,59 @@ export class ShellAdapter implements ShellPort {
                 }
             },
         );
+    }
+
+    /**
+     * Intercept minimize: cancel GNOME Shell's default animation which
+     * resets actor opacity to 255 in _minimizeWindowDone, then complete
+     * the minimize immediately.
+     */
+    private _connectMinimize(): number {
+        return global.window_manager.connect('minimize',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (shellWm: any, actor: Meta.WindowActor) => {
+                try {
+                    this._cancelGnomeAnimation(actor, '_minimizing');
+                    shellWm.completed_minimize(actor);
+                } catch (e) {
+                    console.error('[Kestrel] Error completing minimize:', e);
+                }
+            },
+        );
+    }
+
+    /**
+     * Intercept unminimize: cancel GNOME Shell's default animation which
+     * resets actor opacity to 255 in _unminimizeWindowDone, then complete
+     * the unminimize immediately.
+     */
+    private _connectUnminimize(): number {
+        return global.window_manager.connect('unminimize',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (shellWm: any, actor: Meta.WindowActor) => {
+                try {
+                    this._cancelGnomeAnimation(actor, '_unminimizing');
+                    shellWm.completed_unminimize(actor);
+                } catch (e) {
+                    console.error('[Kestrel] Error completing unminimize:', e);
+                }
+            },
+        );
+    }
+
+    /**
+     * Remove actor from GNOME Shell WindowManager's animation tracking set
+     * and stop its transitions so the animation's onStopped callback never
+     * fires (which would reset opacity to 255).
+     */
+    private _cancelGnomeAnimation(actor: Meta.WindowActor, trackingSetName: string): void {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const trackingSet = (Main.wm as any)[trackingSetName] as Set<Meta.WindowActor> | undefined;
+            if (trackingSet?.delete(actor)) {
+                actor.remove_all_transitions();
+            }
+        } catch { /* tracking set not available */ }
     }
 
     destroy(): void {

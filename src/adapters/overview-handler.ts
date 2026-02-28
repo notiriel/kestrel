@@ -81,8 +81,9 @@ export class OverviewHandler {
     }
 
     private _notifyEnter(transform: OverviewTransform, layout: LayoutState, numWs: number): void {
-        this._deps.getCloneAdapter()?.enterOverview(transform, layout, numWs);
-        this._deps.notifyOverviewEnter?.(transform);
+        this._deps.getCloneAdapter()?.enterOverview(transform, layout, numWs, () => {
+            this._deps.notifyOverviewEnter?.(transform);
+        });
         this._deps.onOverviewEnter?.();
     }
 
@@ -349,7 +350,6 @@ export class OverviewHandler {
         try {
             this._dragSubject = null;
             this._preDragWorld = null;
-            this.handleConfirm(false);
         } catch (e) {
             console.error('[Kestrel] Error handling drag end:', e);
         }

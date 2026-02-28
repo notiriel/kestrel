@@ -137,6 +137,12 @@ export class WindowAdapter implements WindowPort {
         try { tracked.metaWindow.unminimize(); } catch { /* already gone */ }
     }
 
+    private _ensureUnmaximized(tracked: TrackedWindow): void {
+        if (tracked.metaWindow.maximized_horizontally || tracked.metaWindow.maximized_vertically) {
+            tracked.metaWindow.unmaximize(Meta.MaximizeFlags.BOTH);
+        }
+    }
+
     private _positionWindow(
         tracked: TrackedWindow,
         wl: LayoutState['windows'][number],
@@ -144,6 +150,10 @@ export class WindowAdapter implements WindowPort {
         nudgeUnsettled: boolean,
     ): void {
         try {
+            // Mutter ignores move_resize_frame() on maximized windows —
+            // force unmaximize before positioning as a safety net.
+            this._ensureUnmaximized(tracked);
+
             // Subtract scrollX so real windows match their visual clone positions
             const screenX = wl.x - layout.scrollX;
             // Layout Y is workArea-relative; add workAreaY to convert to stage coords
