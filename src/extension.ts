@@ -5,7 +5,9 @@ import { createWorld, setFocus, updateMonitor, updateConfig, wsIdAt, renameCurre
 import { diffScene, computeScene } from './domain/scene.js';
 import type { SceneModel, CloneScene, RealWindowScene, FocusIndicatorScene, WorkspaceStripScene } from './domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from './domain/navigation.js';
-import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from './domain/window-operations.js';
+import { moveLeft, moveRight, moveDown, moveUp, toggleSize, toggleStack } from './domain/window-operations.js';
+import { forceWorkspaceUp, forceWorkspaceDown } from './domain/navigation.js';
+import { allWindows } from './domain/workspace.js';
 import type { ClonePort } from './ports/clone-port.js';
 import type { WindowPort } from './ports/window-port.js';
 import type { FocusPort } from './ports/focus-port.js';
@@ -94,7 +96,7 @@ export default class KestrelExtension extends Extension {
 
             // 2. Init monitor adapter and read monitors
             this._monitorAdapter = new MonitorAdapter();
-            const monitor = this._monitorAdapter.readPrimaryMonitor();
+            const monitor = this._monitorAdapter.readPrimaryMonitor(config.columnCount);
 
             // 3. Create domain world
             this._worldHolder.setWorld(createWorld(config, monitor));
@@ -265,6 +267,9 @@ export default class KestrelExtension extends Extension {
                         console.error('[Kestrel] Error closing window:', e);
                     }
                 },
+                onJoinStack: () => this._navigationHandler!.handleSimpleCommand(toggleStack, 'joinStack'),
+                onForceWorkspaceUp: () => this._navigationHandler!.handleVerticalFocus(forceWorkspaceUp, 'forceWorkspaceUp'),
+                onForceWorkspaceDown: () => this._navigationHandler!.handleVerticalFocus(forceWorkspaceDown, 'forceWorkspaceDown'),
             });
 
             // 7b. Activate mouse scroll handler
@@ -276,7 +281,7 @@ export default class KestrelExtension extends Extension {
             });
 
             // 8. Connect monitor changes
-            this._monitorAdapter.connectMonitorsChanged((info: MonitorInfo) => {
+            this._monitorAdapter.connectMonitorsChanged(config.columnCount, (info: MonitorInfo) => {
                 this._handleMonitorChange(info);
             });
 
@@ -437,6 +442,22 @@ export default class KestrelExtension extends Extension {
         this._log(`[Kestrel] setting changed: ${key}`);
 
         const config = this._statePersistence.readConfig();
+
+        // If columnCount changed, recompute monitor info (slotWidth depends on it)
+        if (config.columnCount !== this._worldHolder.world.config.columnCount) {
+            const monitor = this._monitorAdapter?.readPrimaryMonitor(config.columnCount);
+            if (monitor) {
+                const update = updateMonitor(
+                    { ...this._worldHolder.world, config },
+                    monitor,
+                );
+                this._setWorld(update.world);
+                this._cloneAdapter?.updateConfig?.(config);
+                this._applyScene(update.scene, true);
+                return;
+            }
+        }
+
         const update = updateConfig(this._worldHolder.world, config);
         this._setWorld(update.world);
 
@@ -470,7 +491,10 @@ export default class KestrelExtension extends Extension {
                 workspaces: this._worldHolder.world.workspaces.map(ws => ({
                     id: ws.id,
                     name: ws.name,
-                    windows: ws.windows.map(w => ({ id: w.id, slotSpan: w.slotSpan })),
+                    columns: ws.columns.map(col => ({
+                        slotSpan: col.slotSpan,
+                        windows: col.windows.map(w => ({ id: w.id })),
+                    })),
                 })),
                 viewport: this._worldHolder.world.viewport,
             },
@@ -591,7 +615,7 @@ export default class KestrelExtension extends Extension {
                 .map((ws, i) => ({
                     index: i,
                     name: ws.name,
-                    windowCount: ws.windows.length,
+                    windowCount: allWindows(ws).length,
                     isCurrent: i === this._worldHolder.world!.viewport.workspaceIndex,
                     claudeStatus: this._getWorkspaceClaudeStatus(i),
                 }))
@@ -611,7 +635,7 @@ export default class KestrelExtension extends Extension {
         let best: string | null = null;
         const priority: Record<string, number> = { 'needs-input': 3, 'working': 2, 'done': 1 };
 
-        for (const win of ws.windows) {
+        for (const win of allWindows(ws)) {
             const status = statusMap.get(win.id);
             if (status && (priority[status] ?? 0) > (priority[best ?? ''] ?? 0)) {
                 best = status;

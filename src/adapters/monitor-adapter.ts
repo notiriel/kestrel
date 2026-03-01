@@ -5,17 +5,17 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 export class MonitorAdapter implements MonitorPort {
     private _signalId: number | null = null;
 
-    readPrimaryMonitor(): MonitorInfo {
+    readPrimaryMonitor(columnCount: number): MonitorInfo {
         const monitors = Main.layoutManager.monitors;
         if (!monitors || monitors.length === 0) {
-            return { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
+            return { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: Math.floor(1920 / columnCount), workAreaY: 0, stageOffsetX: 0 };
         }
 
         const count = monitors.length;
         const { stageOffsetX, totalWidth, minHeight } = this._computeMonitorBounds(monitors);
         const workAreaY = this._computeWorkAreaY();
         const totalHeight = minHeight - workAreaY;
-        const slotWidth = Math.floor(totalWidth / (count * 2));
+        const slotWidth = Math.floor(totalWidth / columnCount);
 
         return { count, totalWidth, totalHeight, slotWidth, workAreaY, stageOffsetX };
     }
@@ -54,9 +54,9 @@ export class MonitorAdapter implements MonitorPort {
         return 0;
     }
 
-    connectMonitorsChanged(callback: (info: MonitorInfo) => void): void {
+    connectMonitorsChanged(columnCount: number, callback: (info: MonitorInfo) => void): void {
         this._signalId = Main.layoutManager.connect('monitors-changed', () => {
-            callback(this.readPrimaryMonitor());
+            callback(this.readPrimaryMonitor(columnCount));
         });
     }
 

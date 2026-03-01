@@ -10,12 +10,12 @@ import {
     restoreWorld,
 } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
-import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
+import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -41,7 +41,7 @@ function makeMultiWorld(
     const workspaces = workspaceWindows.map((wsData, i) => {
         let ws = createWorkspace(wsId(i), wsData.name ?? null);
         for (const id of wsData.ids) {
-            ws = wsAddWindow(ws, createTiledWindow(wid(id)));
+            ws = addColumn(ws, createColumn(createTiledWindow(wid(id))));
         }
         return ws;
     });
@@ -184,8 +184,8 @@ describe('Workspace Naming', () => {
             const result = restoreWorld(
                 config, monitor,
                 [
-                    { windows: [createTiledWindow(wid(1))], name: 'Frontend' },
-                    { windows: [createTiledWindow(wid(2))], name: 'Backend' },
+                    { columns: [createColumn(createTiledWindow(wid(1)))], name: 'Frontend' },
+                    { columns: [createColumn(createTiledWindow(wid(2)))], name: 'Backend' },
                 ],
                 0, 0, wid(1),
             );
@@ -197,7 +197,7 @@ describe('Workspace Naming', () => {
             const result = restoreWorld(
                 config, monitor,
                 [
-                    { windows: [createTiledWindow(wid(1))], name: null },
+                    { columns: [createColumn(createTiledWindow(wid(1)))], name: null },
                 ],
                 0, 0, wid(1),
             );

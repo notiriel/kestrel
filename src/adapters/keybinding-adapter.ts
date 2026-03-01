@@ -89,24 +89,28 @@ export class KeybindingAdapter implements KeybindingPort {
     }
 
     private _registerBindings(settings: Gio.Settings, callbacks: KeybindingCallbacks): void {
-        const bindings: Array<[string, () => void]> = [
-            ['focus-right', callbacks.onFocusRight],
-            ['focus-left', callbacks.onFocusLeft],
-            ['focus-down', callbacks.onFocusDown],
-            ['focus-up', callbacks.onFocusUp],
-            ['move-left', callbacks.onMoveLeft],
-            ['move-right', callbacks.onMoveRight],
-            ['move-down', callbacks.onMoveDown],
-            ['move-up', callbacks.onMoveUp],
-            ['toggle-size', callbacks.onToggleSize],
-            ['kestrel-toggle-overview', callbacks.onToggleOverview],
-            ['new-window', callbacks.onNewWindow],
-            ['toggle-notifications', callbacks.onToggleNotifications],
-            ['toggle-help', callbacks.onToggleHelp],
-            ['close-window', callbacks.onCloseWindow],
-        ];
+        this._addBindings(settings, this._coreBindings(callbacks));
+        this._addBindings(settings, this._stackBindings(callbacks));
+    }
 
-        this._addBindings(settings, bindings);
+    private _coreBindings(cb: KeybindingCallbacks): Array<[string, () => void]> {
+        return [
+            ['focus-right', cb.onFocusRight], ['focus-left', cb.onFocusLeft],
+            ['focus-down', cb.onFocusDown], ['focus-up', cb.onFocusUp],
+            ['move-left', cb.onMoveLeft], ['move-right', cb.onMoveRight],
+            ['move-down', cb.onMoveDown], ['move-up', cb.onMoveUp],
+            ['toggle-size', cb.onToggleSize], ['kestrel-toggle-overview', cb.onToggleOverview],
+            ['new-window', cb.onNewWindow], ['toggle-notifications', cb.onToggleNotifications],
+            ['toggle-help', cb.onToggleHelp], ['close-window', cb.onCloseWindow],
+        ];
+    }
+
+    private _stackBindings(cb: KeybindingCallbacks): Array<[string, () => void]> {
+        return [
+            ['join-stack', cb.onJoinStack],
+            ['force-workspace-up', cb.onForceWorkspaceUp],
+            ['force-workspace-down', cb.onForceWorkspaceDown],
+        ];
     }
 
     private _addBindings(settings: Gio.Settings, bindings: Array<[string, () => void]>): void {

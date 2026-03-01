@@ -3,6 +3,7 @@ import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
 import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt } from '../domain/world.js';
 import { computeScene } from '../domain/scene.js';
+import { allWindows } from '../domain/workspace.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { FocusPort } from '../ports/focus-port.js';
@@ -43,7 +44,7 @@ export class WindowLifecycleHandler {
             this._deps.watchWindow(windowId, rawMetaWindow);
 
             const metaWindow = safeWindow(rawMetaWindow);
-            const existsInDomain = world.workspaces.some(ws => ws.windows.some(w => w.id === windowId));
+            const existsInDomain = world.workspaces.some(ws => allWindows(ws).some(w => w.id === windowId));
 
             if (existsInDomain) {
                 this._restoreExistingWindow(world, windowId, metaWindow);
@@ -76,7 +77,13 @@ export class WindowLifecycleHandler {
         if (wasMaximized) metaWindow.unmaximize(Meta.MaximizeFlags.BOTH);
 
         const oldScrollX = world.viewport.scrollX;
-        let update = addWindow(world, windowId, wasMaximized ? 2 : 1);
+        let update = addWindow(world, windowId);
+
+        // Widen to 2-slot if the window was maximized
+        if (wasMaximized) {
+            update = widenWindow(update.world, windowId);
+        }
+
         this._deps.setWorld(update.world);
 
         update = this._handleInitialFullscreen(update, windowId, metaWindow);

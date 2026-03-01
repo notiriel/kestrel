@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
 import { createWorld, addWindow, enterFullscreen, exitFullscreen, buildUpdate } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
-import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
+import { createWorkspace, addColumn, createColumn, allWindows } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -35,18 +35,15 @@ describe('Fullscreen Step-Out', () => {
 
             const { world: w, scene } = enterFullscreen(world, wid(1));
 
-            // Window should be marked fullscreen in domain
-            const win = w.workspaces[0]!.windows.find(w => w.id === wid(1));
+            const win = allWindows(w.workspaces[0]!).find(w => w.id === wid(1));
             expect(win!.fullscreen).toBe(true);
 
-            // Scene clones should give fullscreen window full monitor size
             const fsClone = scene.clones.find(c => c.windowId === wid(1));
             expect(fsClone!.x).toBe(0);
             expect(fsClone!.y).toBe(0);
             expect(fsClone!.width).toBe(1920);
             expect(fsClone!.height).toBe(1080);
 
-            // Non-fullscreen window should have different position
             const normalClone = scene.clones.find(c => c.windowId === wid(2));
             expect(normalClone).toBeDefined();
         });
@@ -59,13 +56,11 @@ describe('Fullscreen Step-Out', () => {
 
             const { scene } = enterFullscreen(world, wid(1));
 
-            // wid(2) should now be at the position wid(1) used to be (edgeGap)
             const w2Clone = scene.clones.find(c => c.windowId === wid(2));
-            expect(w2Clone!.x).toBe(8); // edgeGap
+            expect(w2Clone!.x).toBe(8);
 
-            // wid(3) should follow wid(2)
             const w3Clone = scene.clones.find(c => c.windowId === wid(3));
-            expect(w3Clone!.x).toBe(968); // 8 + 952 + 8
+            expect(w3Clone!.x).toBe(968);
         });
 
         it('focuses the fullscreen window', () => {
@@ -85,17 +80,13 @@ describe('Fullscreen Step-Out', () => {
             ({ world } = addWindow(world, wid(2)));
             ({ world } = addWindow(world, wid(3)));
 
-            // Enter fullscreen on wid(2)
             ({ world } = enterFullscreen(world, wid(2)));
 
-            // Exit fullscreen
             const { world: w, scene } = exitFullscreen(world, wid(2));
 
-            // wid(2) should be back to non-fullscreen
-            const win = w.workspaces[0]!.windows.find(w => w.id === wid(2));
+            const win = allWindows(w.workspaces[0]!).find(w => w.id === wid(2));
             expect(win!.fullscreen).toBe(false);
 
-            // Strip should be restored: A at edgeGap, B after A, C after B
             const w1Clone = scene.clones.find(c => c.windowId === wid(1));
             const w2Clone = scene.clones.find(c => c.windowId === wid(2));
             const w3Clone = scene.clones.find(c => c.windowId === wid(3));
@@ -113,7 +104,7 @@ describe('Fullscreen Step-Out', () => {
             ({ world } = enterFullscreen(world, wid(1)));
 
             const { world: w } = focusRight(world);
-            expect(w.focusedWindow).toBe(wid(1)); // unchanged
+            expect(w.focusedWindow).toBe(wid(1));
         });
 
         it('focusLeft is a no-op when focused window is fullscreen', () => {
@@ -123,16 +114,15 @@ describe('Fullscreen Step-Out', () => {
             ({ world } = enterFullscreen(world, wid(2)));
 
             const { world: w } = focusLeft(world);
-            expect(w.focusedWindow).toBe(wid(2)); // unchanged
+            expect(w.focusedWindow).toBe(wid(2));
         });
 
         it('focusDown still works when focused window is fullscreen', () => {
-            // Build a multi-workspace world
-            const ws0 = wsAddWindow(
-                wsAddWindow(createWorkspace(wsId(0)), createTiledWindow(wid(1))),
-                createTiledWindow(wid(2)),
-            );
-            const ws1 = wsAddWindow(createWorkspace(wsId(1)), createTiledWindow(wid(3)));
+            let ws0 = createWorkspace(wsId(0));
+            ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(1))));
+            ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(2))));
+            let ws1 = createWorkspace(wsId(1));
+            ws1 = addColumn(ws1, createColumn(createTiledWindow(wid(3))));
             const trailing = createWorkspace(wsId(2));
 
             let world: World = {
@@ -146,18 +136,18 @@ describe('Fullscreen Step-Out', () => {
                 notificationState: createNotificationState(),
             };
 
-            // Make wid(1) fullscreen
             ({ world } = enterFullscreen(world, wid(1)));
 
-            // focusDown should still switch workspaces
             const { world: w } = focusDown(world);
             expect(w.viewport.workspaceIndex).toBe(1);
             expect(w.focusedWindow).toBe(wid(3));
         });
 
         it('focusUp still works when focused window is fullscreen', () => {
-            const ws0 = wsAddWindow(createWorkspace(wsId(0)), createTiledWindow(wid(1)));
-            const ws1 = wsAddWindow(createWorkspace(wsId(1)), createTiledWindow(wid(2)));
+            let ws0 = createWorkspace(wsId(0));
+            ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(1))));
+            let ws1 = createWorkspace(wsId(1));
+            ws1 = addColumn(ws1, createColumn(createTiledWindow(wid(2))));
             const trailing = createWorkspace(wsId(2));
 
             let world: World = {
@@ -203,11 +193,9 @@ describe('Fullscreen Step-Out', () => {
 
             const { scene } = buildUpdate(world);
 
-            // wid(2) should be at edgeGap (first strip position)
             const w2 = scene.clones.find(c => c.windowId === wid(2));
             expect(w2!.x).toBe(8);
 
-            // wid(3) follows wid(2) — no gap reserved for the fullscreen window
             const w3 = scene.clones.find(c => c.windowId === wid(3));
             expect(w3!.x).toBe(968);
         });

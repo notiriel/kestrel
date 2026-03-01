@@ -82,6 +82,27 @@
       <summary>Close window</summary>
       <description>Close the currently focused window</description>
     </key>
+    <key name="join-stack" type="as">
+      <default>['&lt;Super&gt;j']</default>
+      <summary>Toggle stack/unstack</summary>
+      <description>Stack the focused window with its left neighbor column, or unstack if already stacked</description>
+    </key>
+    <key name="force-workspace-up" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;Up']</default>
+      <summary>Force workspace up</summary>
+      <description>Always switch to workspace above, even from middle of a stack</description>
+    </key>
+    <key name="force-workspace-down" type="as">
+      <default>['&lt;Super&gt;&lt;Alt&gt;Down']</default>
+      <summary>Force workspace down</summary>
+      <description>Always switch to workspace below, even from middle of a stack</description>
+    </key>
+<key name="column-count" type="i">
+      <default>2</default>
+      <range min="1" max="6"/>
+      <summary>Number of columns per viewport</summary>
+      <description>How many columns fill the viewport width. slotWidth = totalWidth / columnCount</description>
+    </key>
 <key name="focus-border-width" type="i">
       <default>3</default>
       <summary>Focus border width</summary>

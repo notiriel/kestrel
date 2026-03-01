@@ -16,7 +16,7 @@ import { createWorld, addWindow } from '../../src/domain/world.js';
 import type { WindowId } from '../../src/domain/types.js';
 import type { World } from '../../src/domain/world.js';
 
-const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
+const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
 const MONITOR = { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
 
 function mockMetaWindow(overrides: any = {}) {

@@ -32,41 +32,62 @@ export function computeWindowPositions(
     const windows: WindowPosition[] = [];
     let x = edgeGap;
 
-    for (const win of ws.windows) {
-        if (win.fullscreen) {
+    for (const col of ws.columns) {
+        const columnWidth = col.slotSpan * slotWidth - gapSize;
+        const stackCount = col.windows.length;
+        let hasFullscreen = false;
+
+        for (let i = 0; i < stackCount; i++) {
+            const win = col.windows[i]!;
+
+            if (win.fullscreen) {
+                hasFullscreen = true;
+                windows.push({
+                    windowId: win.id,
+                    x: 0,
+                    y: 0,
+                    width: totalWidth,
+                    height: totalHeight,
+                    visible: true,
+                    fullscreen: true,
+                });
+                continue;
+            }
+
+            // Use integer heights to avoid fractional pixels.
+            // Distribute the remainder to the last window.
+            const totalStackSpace = windowHeight - (stackCount - 1) * gapSize;
+            const baseHeight = Math.floor(totalStackSpace / stackCount);
+            const isLast = i === stackCount - 1;
+            const stackHeight = isLast
+                ? totalStackSpace - baseHeight * (stackCount - 1)
+                : baseHeight;
+            const winY = windowY + i * (baseHeight + gapSize);
+
+            let visible: boolean;
+            if (viewport) {
+                const rightEdge = x + columnWidth;
+                visible = rightEdge > viewport.scrollX &&
+                    x < viewport.scrollX + viewport.widthPx;
+            } else {
+                visible = true;
+            }
+
             windows.push({
                 windowId: win.id,
-                x: 0,
-                y: 0,
-                width: totalWidth,
-                height: totalHeight,
-                visible: true,
-                fullscreen: true,
+                x,
+                y: winY,
+                width: columnWidth,
+                height: stackHeight,
+                visible,
+                fullscreen: false,
             });
-            continue;
         }
 
-        const windowWidth = win.slotSpan * slotWidth - gapSize;
-
-        let visible: boolean;
-        if (viewport) {
-            const rightEdge = x + windowWidth;
-            visible = rightEdge > viewport.scrollX &&
-                x < viewport.scrollX + viewport.widthPx;
-        } else {
-            visible = true;
+        // Don't advance x for fullscreen columns — they're taken out of the strip
+        if (!hasFullscreen) {
+            x += columnWidth + gapSize;
         }
-
-        windows.push({
-            windowId: win.id,
-            x,
-            y: windowY,
-            width: windowWidth,
-            height: windowHeight,
-            visible,
-            fullscreen: false,
-        });
-        x += windowWidth + gapSize;
     }
 
     return windows;

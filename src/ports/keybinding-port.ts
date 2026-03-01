@@ -15,6 +15,9 @@ export interface KeybindingCallbacks {
     onToggleNotifications: () => void;
     onToggleHelp: () => void;
     onCloseWindow: () => void;
+    onJoinStack: () => void;
+    onForceWorkspaceUp: () => void;
+    onForceWorkspaceDown: () => void;
 }
 
 export interface KeybindingPort {

@@ -96,14 +96,14 @@ Pure TypeScript with no `gi://` imports. Fully testable with Vitest.
 
 | File | Purpose |
 |------|---------|
-| `types.ts` | Branded types (`WindowId`, `WorkspaceId`), core interfaces (`World`, `WorldUpdate`, `KestrelConfig`, `MonitorInfo`) |
+| `types.ts` | Branded types (`WindowId`, `WorkspaceId`), core interfaces (`World`, `WorldUpdate`, `KestrelConfig` (includes `columnCount`), `MonitorInfo`) |
 | `world.ts` | Aggregate root. Functions: `createWorld`, `addWindow`, `removeWindow`, `setFocus`, `buildUpdate`, `updateMonitor`, `updateConfig`, `enterFullscreen`, `exitFullscreen`, `widenWindow`, `switchToWorkspace`, `filterWorkspaces`, `restoreWorld`, `adjustViewport`, `ensureTrailingEmpty`, `pruneEmptyWorkspaces`, `renameCurrentWorkspace` |
-| `scene.ts` | `computeScene(world)` pure function producing `SceneModel` from `World`. Also `diffScene()` for diagnostics. Types: `CloneScene`, `RealWindowScene`, `FocusIndicatorScene`, `WorkspaceContainerScene`, `WorkspaceStripScene` |
-| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — turns workspace + config + monitor into pixel positions (internal to scene computation and viewport adjustment) |
-| `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp` — pure functions taking `World`, returning `WorldUpdate` |
-| `window-operations.ts` | `moveRight`, `moveLeft`, `moveDown`, `moveUp`, `toggleSize` |
-| `workspace.ts` | `Workspace` type and operations: `createWorkspace`, `addWindow`, `removeWindow`, `windowAfter`, `windowBefore`, `slotIndexOf`, `windowAtSlot`, `swapNeighbor`, `insertWindowAt`, `replaceWindow` |
-| `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (slotSpan, fullscreen state) |
+| `scene.ts` | `computeScene(world)` pure function producing `SceneModel` from `World`. Iterates columns and computes per-window positions including stacked window y/height within columns. Also `diffScene()` for diagnostics. Types: `CloneScene`, `RealWindowScene`, `FocusIndicatorScene`, `WorkspaceContainerScene`, `WorkspaceStripScene` |
+| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — iterates columns and computes pixel positions, splitting height equally for stacked windows within a column (internal to scene computation and viewport adjustment) |
+| `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp`, `forceWorkspaceUp`, `forceWorkspaceDown` — pure functions taking `World`, returning `WorldUpdate`. Vertical focus is overloaded: navigates within stack first, then switches workspace |
+| `window-operations.ts` | `moveRight`, `moveLeft`, `moveDown`, `moveUp`, `toggleSize`, `toggleStack` |
+| `workspace.ts` | `Workspace` type and `Column` type. Column operations: `addColumn`, `removeWindowFromColumn`, `columnNeighbor`, `swapColumns`, `slotIndexOf`, `columnAtSlot`, `insertColumnAt`, `replaceWindowInColumn`, `columnOf`, `positionInColumn`, `stackWindowLeft`, `unstackWindow`, `reorderInColumn` |
+| `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (fullscreen state) |
 | `viewport.ts` | `Viewport` type: `createViewport`, tracks current workspace index, scrollX, widthPx |
 | `overview.ts` | `enterOverview`, `exitOverview`, `cancelOverview` |
 | `overview-state.ts` | `OverviewInteractionState` (filter text, rename state, saved focus/viewport), `OverviewTransform`, filter/rename/navigation functions, `computeOverviewTransform`, `overviewHitTest` |
@@ -276,13 +276,17 @@ interface Viewport {
 
 interface TiledWindow {
     readonly id: WindowId;
-    readonly slotSpan: 1 | 2;
     readonly fullscreen: boolean;
+}
+
+interface Column {
+    readonly windows: readonly TiledWindow[];
+    readonly slotSpan: number;  // horizontal width in slots (1 to columnCount)
 }
 
 interface Workspace {
     readonly id: WorkspaceId;
-    readonly windows: readonly TiledWindow[];
+    readonly columns: readonly Column[];
     readonly name: string | null;
 }
 ```
@@ -549,6 +553,7 @@ Tests and bug reports use a compact notation for describing world state:
 ```
 <>  viewport (what's visible on screen)
 []  focus indicator (which window has focus)
+/   stacked windows in the same column (e.g. A/B means A above B)
 ```
 
 Example — two workspaces, B focused on WS1:
@@ -561,7 +566,17 @@ D E
 
 Reading: WS0 has window A. WS1 (current viewport) has windows B and C. The viewport shows B and C, with B focused. WS2 has windows D and E.
 
-Each line is a workspace. Windows are separated by spaces. `<>` marks the viewport boundaries. `[]` marks the focused window. A window name alone (like `A`) means it is offscreen.
+Example with stacking — B and C stacked in one column on WS1:
+
+```
+A
+<[B/C] D>
+E
+```
+
+Reading: WS0 has A. WS1 (current viewport) has a column containing B and C (B focused, above C), and D in its own column. WS2 has E.
+
+Each line is a workspace. Windows are separated by spaces. `<>` marks the viewport boundaries. `[]` marks the focused window. `/` separates stacked windows within a column. A window name alone (like `A`) means it is offscreen.
 
 ## 10. Glossary
 
@@ -570,8 +585,9 @@ Each line is a workspace. Windows are separated by spaces. `<>` marks the viewpo
 | World | Complete domain state: all workspaces, windows, focus, viewport, config, overview, notifications |
 | WorldUpdate | Return type of domain operations: `{ world, scene }` — new state + scene model |
 | SceneModel | Domain-computed physical state: positions for every clone, real window, focus indicator, workspace strip |
-| Workspace | Virtual container of windows (Kestrel concept, not GNOME workspaces) |
-| Slot | Half-monitor-width unit. A window occupies 1 or 2 slots |
+| Workspace | Virtual container of columns (Kestrel concept, not GNOME workspaces) |
+| Column | Vertical group of one or more stacked windows sharing the same horizontal slot(s). Has `slotSpan` and `windows[]` |
+| Slot | `monitorWidth / columnCount` unit. A column occupies 1 to `columnCount` slots |
 | Viewport | 2D camera showing a portion of the workspace. Width = monitor pixels. Scrolls to fit focused window |
 | Clone | `Clutter.Clone` of a `Meta.WindowActor`, positioned on custom layer for scrolling |
 | Clone wrapper | `Clutter.Actor` parent of a clone, sized to layout target, clips overflow |

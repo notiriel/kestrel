@@ -1,4 +1,5 @@
 import type { World } from '../domain/world.js';
+import { allWindows } from '../domain/workspace.js';
 import type { PanelIndicatorPort } from '../ports/panel-indicator-port.js';
 import type { ClaudeStatus } from '../domain/notification-types.js';
 import { STATUS_ICONS, buildIndicatorBox } from '../ui-components/panel-indicator-builders.js';
@@ -93,7 +94,7 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
 
         for (let i = 0; i < world.workspaces.length; i++) {
             const ws = world.workspaces[i]!;
-            if (ws.windows.length === 0) continue;
+            if (ws.columns.length === 0) continue;
             this._addWorkspaceMenuItem(menu, world, ws, i);
         }
     }
@@ -107,7 +108,7 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         const claudeStatus = this._aggregateStatus(world, wsIndex);
         const statusIcon = claudeStatus ? ` ${STATUS_ICONS[claudeStatus] ?? ''}` : '';
         const currentMark = isCurrent ? '\u{25CF} ' : '  ';
-        const label = `${currentMark}${name}    ${ws.windows.length}${statusIcon}`;
+        const label = `${currentMark}${name}    ${allWindows(ws).length}${statusIcon}`;
 
         const item = new PopupMenu.PopupMenuItem(label);
         item.connect('activate', () => {
@@ -125,7 +126,7 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
         if (!ws) return null;
 
         const statusMap = world.notificationState.windowStatuses;
-        const statuses = ws.windows.map(w => statusMap.get(w.id)).filter(Boolean) as ClaudeStatus[];
+        const statuses = allWindows(ws).map(w => statusMap.get(w.id)).filter(Boolean) as ClaudeStatus[];
         return this._highestPriority(statuses);
     }
 

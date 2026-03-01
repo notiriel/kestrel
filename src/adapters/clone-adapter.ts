@@ -300,9 +300,12 @@ export class CloneAdapter implements ClonePort {
     }
 
     /**
-     * Wrapper size: use layout target if set, otherwise fall back to frame size.
+     * Wrapper size: use the smaller of layout target and actual frame size.
+     * This prevents dead space inside the wrapper when the window is smaller
+     * than the layout allocation (e.g. terminals snapping to character cell grid).
      */
     private _wrapperSize(layoutDim: number, frameDim: number): number {
+        if (layoutDim > 0 && frameDim > 0) return Math.min(layoutDim, frameDim);
         return layoutDim > 0 ? layoutDim : frameDim;
     }
 
@@ -409,8 +412,34 @@ export class CloneAdapter implements ClonePort {
             return;
         }
 
+        // Shrink to actual frame size when window is smaller than layout
+        // allocation (e.g. terminals snap to character cell grid).
+        const { width, height } = this._adjustedFocusDims(scene, fi);
+
         this._focusIndicator.visible = true;
-        easeOrSet(this._focusIndicator, { x: fi.x, y: fi.y, width: fi.width, height: fi.height, opacity: 255 }, duration, easeMode);
+        easeOrSet(this._focusIndicator, { x: fi.x, y: fi.y, width, height, opacity: 255 }, duration, easeMode);
+    }
+
+    private _adjustedFocusDims(
+        scene: SceneModel, fi: { width: number; height: number },
+    ): { width: number; height: number } {
+        const entry = this._focusedCloneEntry(scene);
+        if (!entry) return fi;
+
+        const rects = this._getFrameAndBuffer(entry);
+        if (!rects) return fi;
+
+        const bw = this._focusBorderWidth;
+        return {
+            width: Math.min(entry.layoutWidth, rects.frame.width) + bw * 2,
+            height: Math.min(entry.layoutHeight, rects.frame.height) + bw * 2,
+        };
+    }
+
+    private _focusedCloneEntry(scene: SceneModel): CloneEntry | null {
+        if (!scene.focusedWindowId) return null;
+        const entry = this._clones.get(scene.focusedWindowId);
+        return (entry && !entry.sourceDestroyed) ? entry : null;
     }
 
     /**

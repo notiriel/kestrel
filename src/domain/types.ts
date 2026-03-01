@@ -11,6 +11,7 @@ export interface KestrelConfig {
     readonly focusBorderColor: string;
     readonly focusBorderRadius: number;
     readonly focusBgColor: string;
+    readonly columnCount: number;
 }
 
 export interface MonitorInfo {

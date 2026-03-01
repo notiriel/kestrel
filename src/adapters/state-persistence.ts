@@ -1,12 +1,24 @@
 import type { WindowId, KestrelConfig, MonitorInfo } from '../domain/types.js';
-import type { World, RestoreWorkspaceData } from '../domain/world.js';
+import type { World, RestoreWorkspaceData, RestoreColumnData } from '../domain/world.js';
 import type { StatePersistencePort } from '../ports/state-persistence-port.js';
 import { restoreWorld } from '../domain/world.js';
 import { createTiledWindow } from '../domain/window.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
 
-interface SavedWorkspace {
+/** Version 3 saved format: column-based */
+interface SavedColumn {
+    windowIds: string[];
+    slotSpan: number;
+}
+
+interface SavedWorkspaceV3 {
+    columns: SavedColumn[];
+    name: string | null;
+}
+
+/** Version 1/2 saved format: flat windows */
+interface SavedWorkspaceV1V2 {
     windowIds: string[];
     slotSpans: number[];
     name: string | null;
@@ -14,7 +26,7 @@ interface SavedWorkspace {
 
 interface SavedState {
     version: number;
-    workspaces: SavedWorkspace[];
+    workspaces: (SavedWorkspaceV3 | SavedWorkspaceV1V2)[];
     focusedWindow: string | null;
     viewportWorkspaceIndex: number;
     viewportScrollX: number;
@@ -35,16 +47,19 @@ export class StatePersistence implements StatePersistencePort {
             focusBorderColor: this._settings.get_string('focus-border-color'),
             focusBorderRadius: this._settings.get_int('focus-border-radius'),
             focusBgColor: this._settings.get_string('focus-background-color'),
+            columnCount: this._settings.get_int('column-count'),
         };
     }
 
     save(world: World): void {
         try {
             const state = {
-                version: 2,
+                version: 3,
                 workspaces: world.workspaces.map(ws => ({
-                    windowIds: ws.windows.map(w => w.id),
-                    slotSpans: ws.windows.map(w => w.slotSpan),
+                    columns: ws.columns.map(col => ({
+                        windowIds: col.windows.map(w => w.id),
+                        slotSpan: col.slotSpan,
+                    })),
                     name: ws.name,
                 })),
                 focusedWindow: world.focusedWindow,
@@ -89,7 +104,7 @@ export class StatePersistence implements StatePersistencePort {
         this._settings.set_string('saved-state', '');
 
         const state = JSON.parse(json) as SavedState;
-        if (state.version !== 1 && state.version !== 2) return null;
+        if (state.version !== 1 && state.version !== 2 && state.version !== 3) return null;
 
         return state;
     }
@@ -108,18 +123,39 @@ export class StatePersistence implements StatePersistencePort {
     }
 
     private _buildWorkspaceData(state: SavedState, existingWindowIds: Set<string>): RestoreWorkspaceData[] {
-        return state.workspaces.map(savedWs => ({
-            windows: this._filterExistingWindows(savedWs, existingWindowIds),
-            name: savedWs.name ?? null,
-        }));
+        return state.workspaces.map(savedWs => {
+            if (state.version === 3) {
+                return this._buildV3WorkspaceData(savedWs as SavedWorkspaceV3, existingWindowIds);
+            }
+            // Migrate v1/v2: each window becomes a single-window column
+            return this._migrateV1V2WorkspaceData(savedWs as SavedWorkspaceV1V2, existingWindowIds);
+        });
     }
 
-    private _filterExistingWindows(
-        savedWs: SavedWorkspace, existingWindowIds: Set<string>,
-    ): ReturnType<typeof createTiledWindow>[] {
-        return savedWs.windowIds
-            .map((idStr, i) => ({ id: idStr as WindowId, slotSpan: (savedWs.slotSpans[i] ?? 1) as 1 | 2 }))
+    private _buildV3WorkspaceData(savedWs: SavedWorkspaceV3, existingWindowIds: Set<string>): RestoreWorkspaceData {
+        const columns: RestoreColumnData[] = [];
+        for (const savedCol of savedWs.columns) {
+            const windows = savedCol.windowIds
+                .filter(id => existingWindowIds.has(id))
+                .map(id => createTiledWindow(id as WindowId));
+            if (windows.length > 0) {
+                columns.push({ windows, slotSpan: savedCol.slotSpan });
+            }
+        }
+        return { columns, name: savedWs.name ?? null };
+    }
+
+    private _migrateV1V2WorkspaceData(savedWs: SavedWorkspaceV1V2, existingWindowIds: Set<string>): RestoreWorkspaceData {
+        const columns: RestoreColumnData[] = savedWs.windowIds
+            .map((idStr, i) => ({
+                id: idStr,
+                slotSpan: (savedWs.slotSpans[i] ?? 1),
+            }))
             .filter(({ id }) => existingWindowIds.has(id))
-            .map(({ id, slotSpan }) => createTiledWindow(id, slotSpan));
+            .map(({ id, slotSpan }) => ({
+                windows: [createTiledWindow(id as WindowId)],
+                slotSpan,
+            }));
+        return { columns, name: savedWs.name ?? null };
     }
 }

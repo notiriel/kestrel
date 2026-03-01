@@ -71,7 +71,7 @@ export class OverviewHandler {
     }
 
     private _countNonEmpty(world: World): number {
-        return world.workspaces.filter(ws => ws.windows.length > 0).length || 1;
+        return world.workspaces.filter(ws => ws.columns.length > 0).length || 1;
     }
 
     private _notifyEnter(transform: OverviewTransform, scene: SceneModel, numWs: number): void {
@@ -358,7 +358,7 @@ export class OverviewHandler {
     }
 
     private _resolveUnfilteredSlot(world: World, visualSlot: number): number | null {
-        const count = world.workspaces.filter(ws => ws.windows.length > 0).length;
+        const count = world.workspaces.filter(ws => ws.columns.length > 0).length;
         if (visualSlot < 0 || visualSlot >= count) return null;
         return visualSlot;
     }
@@ -598,18 +598,18 @@ export class OverviewHandler {
     private _computeMaxWorkspaceWidth(world: World): number {
         let maxWsWidth = world.monitor.totalWidth;
         for (const ws of world.workspaces) {
-            if (ws.windows.length === 0) continue;
+            if (ws.columns.length === 0) continue;
             const w = this._computeWorkspaceWidth(world, ws);
             if (w > maxWsWidth) maxWsWidth = w;
         }
         return maxWsWidth;
     }
 
-    private _computeWorkspaceWidth(world: World, ws: { windows: readonly { slotSpan: number }[] }): number {
+    private _computeWorkspaceWidth(world: World, ws: { columns: readonly { slotSpan: number }[] }): number {
         const { gapSize, edgeGap } = world.config;
         let width = edgeGap;
-        for (const win of ws.windows) {
-            width += win.slotSpan * world.monitor.slotWidth - gapSize + gapSize;
+        for (const col of ws.columns) {
+            width += col.slotSpan * world.monitor.slotWidth - gapSize + gapSize;
         }
         return width + edgeGap - gapSize;
     }

@@ -3,14 +3,14 @@ import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../sr
 import { computeWindowPositions } from '../../src/domain/layout.js';
 import { computeScene, diffScene } from '../../src/domain/scene.js';
 import type { SceneModel } from '../../src/domain/scene.js';
-import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
+import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import type { World } from '../../src/domain/world.js';
 import { createViewport } from '../../src/domain/viewport.js';
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -45,7 +45,7 @@ function makeWorld(workspaces: ReturnType<typeof createWorkspace>[], overrides: 
 describe('computeScene', () => {
     it('single window: clone matches layout, real window offset by workAreaY', () => {
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
         const world = makeWorld([ws], { focusedWindow: wid(1) });
         const scene = computeScene(world);
 
@@ -57,7 +57,6 @@ describe('computeScene', () => {
         const positions = computeWindowPositions(ws, config, monitor, world.viewport);
         const wp = positions[0]!;
 
-        // Clone matches layout directly
         expect(clone.x).toBe(wp.x);
         expect(clone.y).toBe(wp.y);
         expect(clone.width).toBe(wp.width);
@@ -65,7 +64,6 @@ describe('computeScene', () => {
         expect(clone.visible).toBe(true);
         expect(clone.workspaceId).toBe(wsId(0));
 
-        // Real window: x same (scrollX=0), y offset by workAreaY
         expect(real.x).toBe(wp.x);
         expect(real.y).toBe(wp.y + monitor.workAreaY);
         expect(real.width).toBe(wp.width);
@@ -76,8 +74,8 @@ describe('computeScene', () => {
 
     it('real window x matches clone x when scrollX is 0', () => {
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
-        ws = addWindow(ws, createTiledWindow(wid(2)));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(2))));
         const world = makeWorld([ws], { focusedWindow: wid(1) });
         const scene = computeScene(world);
 
@@ -88,9 +86,9 @@ describe('computeScene', () => {
 
     it('scrolled viewport: clone stays workspace-relative, real window shifts', () => {
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
-        ws = addWindow(ws, createTiledWindow(wid(2)));
-        ws = addWindow(ws, createTiledWindow(wid(3)));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(2))));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(3))));
         const scrollX = 500;
         const world = makeWorld([ws], {
             viewport: { workspaceIndex: 0, scrollX, widthPx: 1920 },
@@ -99,12 +97,10 @@ describe('computeScene', () => {
         const scene = computeScene(world);
         const positions = computeWindowPositions(ws, config, monitor, world.viewport);
 
-        // Clones use layout coordinates (workspace-relative)
         for (let i = 0; i < scene.clones.length; i++) {
             expect(scene.clones[i]!.x).toBe(positions[i]!.x);
         }
 
-        // Real windows shifted by scrollX
         for (let i = 0; i < scene.realWindows.length; i++) {
             expect(scene.realWindows[i]!.x).toBe(positions[i]!.x - scrollX);
         }
@@ -112,11 +108,10 @@ describe('computeScene', () => {
 
     it('off-workspace windows are minimized', () => {
         let ws0 = createWorkspace(wsId(0));
-        ws0 = addWindow(ws0, createTiledWindow(wid(1)));
+        ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(1))));
         let ws1 = createWorkspace(wsId(1));
-        ws1 = addWindow(ws1, createTiledWindow(wid(2)));
+        ws1 = addColumn(ws1, createColumn(createTiledWindow(wid(2))));
 
-        // Viewing ws0
         const world = makeWorld([ws0, ws1], {
             viewport: { workspaceIndex: 0, scrollX: 0, widthPx: 1920 },
             focusedWindow: wid(1),
@@ -126,15 +121,13 @@ describe('computeScene', () => {
         const rw1 = scene.realWindows.find(r => r.windowId === wid(1))!;
         const rw2 = scene.realWindows.find(r => r.windowId === wid(2))!;
 
-        expect(rw1.minimized).toBe(false); // on current workspace
-        expect(rw2.minimized).toBe(true);  // on other workspace
+        expect(rw1.minimized).toBe(false);
+        expect(rw2.minimized).toBe(true);
     });
 
     it('fullscreen window has opacity 255', () => {
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
-        // Manually make the window fullscreen
-        ws = { ...ws, windows: ws.windows.map(w => ({ ...w, fullscreen: true })) };
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1), true)));
         const world = makeWorld([ws], { focusedWindow: wid(1) });
         const scene = computeScene(world);
 
@@ -145,8 +138,8 @@ describe('computeScene', () => {
 
     it('focus indicator wraps focused window', () => {
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
-        ws = addWindow(ws, createTiledWindow(wid(2)));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(2))));
         const world = makeWorld([ws], { focusedWindow: wid(2) });
         const scene = computeScene(world);
 
@@ -164,8 +157,8 @@ describe('computeScene', () => {
 
     it('no focused window: focus indicator not visible', () => {
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
-        const world = makeWorld([ws]); // no focusedWindow
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
+        const world = makeWorld([ws]);
         const scene = computeScene(world);
 
         expect(scene.focusIndicator.visible).toBe(false);
@@ -173,12 +166,11 @@ describe('computeScene', () => {
 
     it('workspace strip offset equals negative wsIndex times monitor height', () => {
         let ws0 = createWorkspace(wsId(0));
-        ws0 = addWindow(ws0, createTiledWindow(wid(1)));
+        ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(1))));
         let ws1 = createWorkspace(wsId(1));
-        ws1 = addWindow(ws1, createTiledWindow(wid(2)));
+        ws1 = addColumn(ws1, createColumn(createTiledWindow(wid(2))));
         const ws2 = createWorkspace(wsId(2));
 
-        // Viewing ws1
         const world = makeWorld([ws0, ws1, ws2], {
             viewport: { workspaceIndex: 1, scrollX: 0, widthPx: 1920 },
             focusedWindow: wid(2),
@@ -190,9 +182,9 @@ describe('computeScene', () => {
 
     it('multi-workspace containers: each y equals index times monitor height', () => {
         let ws0 = createWorkspace(wsId(0));
-        ws0 = addWindow(ws0, createTiledWindow(wid(1)));
+        ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(1))));
         let ws1 = createWorkspace(wsId(1));
-        ws1 = addWindow(ws1, createTiledWindow(wid(2)));
+        ws1 = addColumn(ws1, createColumn(createTiledWindow(wid(2))));
         const ws2 = createWorkspace(wsId(2));
 
         const world = makeWorld([ws0, ws1, ws2], {
@@ -210,8 +202,8 @@ describe('computeScene', () => {
 
     it('empty workspace produces no clones or real windows', () => {
         let ws0 = createWorkspace(wsId(0));
-        ws0 = addWindow(ws0, createTiledWindow(wid(1)));
-        const ws1 = createWorkspace(wsId(1)); // empty
+        ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(1))));
+        const ws1 = createWorkspace(wsId(1));
 
         const world = makeWorld([ws0, ws1], {
             viewport: { workspaceIndex: 0, scrollX: 0, widthPx: 1920 },
@@ -219,18 +211,16 @@ describe('computeScene', () => {
         });
         const scene = computeScene(world);
 
-        // Only ws0's window appears
         expect(scene.clones).toHaveLength(1);
         expect(scene.realWindows).toHaveLength(1);
         expect(scene.clones[0]!.workspaceId).toBe(wsId(0));
 
-        // But ws1 still has a container in the strip
         expect(scene.workspaceStrip.workspaces).toHaveLength(2);
     });
 
     it('clone visible field included in scene', () => {
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
         const world = makeWorld([ws], { focusedWindow: wid(1) });
         const scene = computeScene(world);
 
@@ -239,9 +229,9 @@ describe('computeScene', () => {
 
     it('current workspace scrollX applied to its container', () => {
         let ws0 = createWorkspace(wsId(0));
-        ws0 = addWindow(ws0, createTiledWindow(wid(1)));
+        ws0 = addColumn(ws0, createColumn(createTiledWindow(wid(1))));
         let ws1 = createWorkspace(wsId(1));
-        ws1 = addWindow(ws1, createTiledWindow(wid(2)));
+        ws1 = addColumn(ws1, createColumn(createTiledWindow(wid(2))));
 
         const scrollX = 200;
         const world = makeWorld([ws0, ws1], {
@@ -250,9 +240,7 @@ describe('computeScene', () => {
         });
         const scene = computeScene(world);
 
-        // Current workspace gets its scrollX
         expect(scene.workspaceStrip.workspaces[0]!.scrollX).toBe(scrollX);
-        // Other workspace gets 0
         expect(scene.workspaceStrip.workspaces[1]!.scrollX).toBe(0);
     });
 });

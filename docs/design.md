@@ -39,11 +39,12 @@ Kestrel workspaces are **virtual** -- all windows live on a single GNOME workspa
 
 Windows are arranged left to right within their workspace.
 
-- **Default width:** Half the monitor width (1 slot).
-- **Full width:** Toggled with Super+F. A full-width window occupies the entire monitor width (2 slots).
-- **Placement:** New windows are appended to the right end of the current workspace.
+- **Default width:** One column (`monitorWidth / columnCount`), occupying 1 slot.
+- **Full width:** Toggled with Super+F. A full-width column spans `columnCount` slots (the entire viewport width).
+- **Stacking:** Multiple windows can share a column, splitting the height equally. Use `Super+J` to stack/unstack. In the textual notation, `/` separates stacked windows: `A/B` means A above B in the same column.
+- **Placement:** New windows are appended as a new single-window column to the right end of the current workspace.
 - **Focus:** New windows receive focus immediately.
-- **Minimum size:** If a window refuses to resize to half-width, it is automatically promoted to full-width.
+- **Minimum size:** If a window refuses to resize to column width, it is automatically promoted to full-width.
 
 ## Window Closing
 
@@ -61,10 +62,10 @@ After:    A   B   [D]   E           (D gets focus, fills the gap)
 
 ## Slot Model
 
-Every workspace has a logical slot grid. One slot equals half the monitor width. This grid determines how windows are positioned and how vertical navigation targets windows.
+Every workspace has a logical slot grid. One slot equals `monitorWidth / columnCount` pixels (default `columnCount` is 2, configurable 1--6 via GSettings). This grid determines how windows are positioned and how vertical navigation targets windows.
 
-- Half-width window = 1 slot
-- Full-width window = 2 slots
+- Default-width window = 1 slot (one column)
+- Full-width window = `columnCount` slots (fills the entire viewport)
 - Slot index of a window = the first slot it occupies (its left edge), 1-based
 
 ```
@@ -77,6 +78,25 @@ Indices:   s=1    s=2      s=3         s=5
 ```
 
 Window A occupies slot 1 (index 1). Window B occupies slot 2 (index 2). Window C is full-width and occupies slots 3--4 (index 3). Window D occupies slot 5 (index 5).
+
+### Columns and Stacking
+
+Windows are organized into **columns**. Each column occupies one or more slots and contains one or more vertically stacked windows. A column with a single window behaves identically to the traditional flat model.
+
+When a column contains multiple windows, they share the column's height equally (minus gaps between them). Stacking is always an explicit user action via `Super+J`.
+
+```
+Column with 1 window:         Column with 3 stacked windows:
+┌──────────────┐              ┌──────────────┐
+│              │              │      A       │
+│      A       │              ├──────────────┤
+│              │              │      B       │
+│              │              ├──────────────┤
+└──────────────┘              │      C       │
+                              └──────────────┘
+```
+
+New windows always create a new single-window column. Stacking is built up incrementally with `Super+J`.
 
 ## Focus
 
@@ -130,15 +150,18 @@ All keybindings are configurable via GSettings. These are the defaults:
 
 | Keybinding | Action |
 |---|---|
-| Super+Right | Focus next window |
-| Super+Left | Focus previous window |
-| Super+Down | Switch to workspace below |
-| Super+Up | Switch to workspace above |
-| Super+F | Toggle focused window half/full width |
-| Super+Shift+Right | Move focused window right (swap) |
-| Super+Shift+Left | Move focused window left (swap) |
-| Super+Shift+Down | Move focused window to workspace below |
-| Super+Shift+Up | Move focused window to workspace above |
+| Super+Right | Focus next column |
+| Super+Left | Focus previous column |
+| Super+Down | Focus down: within stack first, then switch to workspace below |
+| Super+Up | Focus up: within stack first, then switch to workspace above |
+| Super+Alt+Down | Force switch to workspace below (bypasses stack navigation) |
+| Super+Alt+Up | Force switch to workspace above (bypasses stack navigation) |
+| Super+F | Toggle focused column between 1-slot and full-viewport width (`columnCount` slots) |
+| Super+J | Toggle stack/unstack (join focused window with left neighbor column, or pop out) |
+| Super+Shift+Right | Move focused column right (swap) |
+| Super+Shift+Left | Move focused column left (swap) |
+| Super+Shift+Down | Move down: reorder within stack first, then move to workspace below |
+| Super+Shift+Up | Move up: reorder within stack first, then move to workspace above |
 | Super+Minus | Toggle overview mode |
 | Super+N | Open new window of focused app |
 | Super+BackSpace | Close focused window |
@@ -231,23 +254,25 @@ WS 1:    │  D   │ [B]  │  E   │  F   │  G │   B inserted before E (s
 
 ## Window Resizing: Super+F
 
-Toggles the focused window between half-width (1 slot) and full-width (2 slots). This does not displace neighbors -- the strip simply grows or shrinks.
+Toggles the focused column between 1-slot width and full-viewport width (`columnCount` slots). This does not displace neighbors -- the strip simply grows or shrinks.
+
+For the default 2-column setup, this behaves identically to the previous half/full toggle. For 3+ columns, Super+F makes a column span the full viewport rather than just doubling.
 
 ```
-Before:   A   [B]   C   D           (B is half-width)
+Before:   A   [B]   C   D           (B is 1-slot)
 
 Super+F:
 
-After:    A   [  B  ]   C   D       (B is now full-width, strip is wider)
+After:    A   [  B  ]   C   D       (B now spans columnCount slots, strip is wider)
 
 Super+F again:
 
-After:    A   [B]   C   D           (B returns to half-width)
+After:    A   [B]   C   D           (B returns to 1-slot)
 ```
 
 ## Maximize and Fullscreen
 
-**Maximize:** Kestrel intercepts the maximize action and converts it to a width toggle. A maximized window becomes full-width (2 slots), equivalent to Super+F on a half-width window. The window remains in the tiling strip.
+**Maximize:** Kestrel intercepts the maximize action and converts it to a width toggle. A maximized window becomes full-viewport-width (`columnCount` slots), equivalent to Super+F on a 1-slot column. The window remains in the tiling strip.
 
 **Fullscreen:** The window steps out of the tiling strip and covers the monitor edge to edge with no gaps or panel.
 
@@ -359,6 +384,7 @@ All settings are configurable via GSettings under the schema `org.gnome.shell.ex
 
 | Setting | Default | Key |
 |---|---|---|
+| Columns per viewport | 2 | `column-count` |
 | Gap between windows | 8px | `gap-size` |
 | Gap at screen edges | 8px | `edge-gap` |
 

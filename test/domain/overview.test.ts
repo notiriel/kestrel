@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
 import { enterOverview, exitOverview, cancelOverview } from '../../src/domain/overview.js';
-import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
+import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
 import type { World } from '../../src/domain/world.js';
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -28,7 +28,7 @@ function wsId(n: number): WorkspaceId {
 function makeWorld(windowIds: number[], focusedIdx: number): World {
     let ws = createWorkspace(wsId(0));
     for (const id of windowIds) {
-        ws = addWindow(ws, createTiledWindow(wid(id)));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(id))));
     }
     return {
         workspaces: [ws],
@@ -99,9 +99,9 @@ describe('exitOverview', () => {
     it('adjusts viewport to focused window', () => {
         // 3 windows, focus on win-3 (off-screen right at scrollX=0)
         let ws = createWorkspace(wsId(0));
-        ws = addWindow(ws, createTiledWindow(wid(1)));
-        ws = addWindow(ws, createTiledWindow(wid(2)));
-        ws = addWindow(ws, createTiledWindow(wid(3)));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(2))));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(3))));
         const world: World = {
             workspaces: [ws],
             viewport: { workspaceIndex: 0, scrollX: 0, widthPx: monitor.totalWidth },

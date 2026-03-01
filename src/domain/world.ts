@@ -10,13 +10,21 @@ import { createTiledWindow } from './window.js';
 import type { Workspace } from './workspace.js';
 import {
     createWorkspace,
-    addWindow as wsAddWindow,
+    createColumn,
+    addColumn as wsAddColumn,
     removeWindow as wsRemoveWindow,
     replaceWindow as wsReplaceWindow,
-    windowAfter,
-    windowBefore,
+    replaceColumnSlotSpan,
+    columnAfter,
+    columnBefore,
+    columnOf,
     slotIndexOf,
-    windowAtSlot,
+    columnAtSlot,
+    findWindowInWorkspace,
+    hasWindows,
+    firstWindow,
+    lastWindow,
+    allWindows,
 } from './workspace.js';
 import { createViewport, type Viewport } from './viewport.js';
 import { computeFocusedWindowPosition } from './layout.js';
@@ -77,11 +85,15 @@ export function updateMonitor(world: World, monitor: MonitorInfo): WorldUpdate {
     return buildUpdate(adjustViewport(newWorld));
 }
 
-/** Find a window across all workspaces. Returns workspace index and window, or null. */
-function findWindowInWorld(world: World, windowId: WindowId): { wsIndex: number; window: TiledWindow } | null {
+/** Find a window across all workspaces. Returns workspace index, column index, and window. */
+function findWindowInWorld(world: World, windowId: WindowId): { wsIndex: number; colIndex: number; window: TiledWindow } | null {
     for (let i = 0; i < world.workspaces.length; i++) {
-        const win = world.workspaces[i]!.windows.find(w => w.id === windowId);
-        if (win) return { wsIndex: i, window: win };
+        const ws = world.workspaces[i]!;
+        const found = columnOf(ws, windowId);
+        if (found) {
+            const win = findWindowInWorkspace(ws, windowId);
+            if (win) return { wsIndex: i, colIndex: found.columnIndex, window: win };
+        }
     }
     return null;
 }
@@ -121,7 +133,7 @@ export function buildUpdate(world: World): WorldUpdate {
 /** Ensure there is always exactly one empty workspace at the bottom. */
 export function ensureTrailingEmpty(world: World): World {
     const last = world.workspaces[world.workspaces.length - 1];
-    if (!last || last.windows.length > 0) {
+    if (!last || hasWindows(last)) {
         return {
             ...world,
             workspaces: [...world.workspaces, createWorkspace(nextWorkspaceId())],
@@ -140,7 +152,7 @@ export function pruneEmptyWorkspaces(world: World): World {
         const ws = world.workspaces[i]!;
         const isLast = i === world.workspaces.length - 1;
         // Keep non-empty workspaces and the trailing empty one
-        if (ws.windows.length > 0 || isLast) {
+        if (hasWindows(ws) || isLast) {
             workspaces.push(ws);
         } else {
             // Track if we removed a workspace before the current viewport
@@ -161,9 +173,9 @@ export function pruneEmptyWorkspaces(world: World): World {
     let focusedWindow = world.focusedWindow;
     const currentWs = workspaces[newWsIndex];
     if (currentWs && focusedWindow) {
-        const exists = currentWs.windows.some(w => w.id === focusedWindow);
+        const exists = allWindows(currentWs).some(w => w.id === focusedWindow);
         if (!exists) {
-            focusedWindow = currentWs.windows[0]?.id ?? null;
+            focusedWindow = firstWindow(currentWs)?.id ?? null;
         }
     }
 
@@ -243,10 +255,11 @@ export function updateNotificationState(world: World, ns: NotificationState): Wo
     return { ...world, notificationState: ns };
 }
 
-export function addWindow(world: World, windowId: WindowId, slotSpan: 1 | 2 = 1): WorldUpdate {
+export function addWindow(world: World, windowId: WindowId): WorldUpdate {
     const ws = currentWorkspace(world);
-    const tiledWindow = createTiledWindow(windowId, slotSpan);
-    const newWs = wsAddWindow(ws, tiledWindow);
+    const tiledWindow = createTiledWindow(windowId);
+    const column = createColumn(tiledWindow);
+    const newWs = wsAddColumn(ws, column);
     let newWorld = replaceCurrentWorkspace(
         { ...world, focusedWindow: windowId },
         newWs,
@@ -267,9 +280,20 @@ export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
     // Determine new focus before removing
     let newFocus: WindowId | null = null;
     if (world.focusedWindow === windowId) {
-        const after = windowAfter(ws, windowId);
-        const before = windowBefore(ws, windowId);
-        newFocus = after?.id ?? before?.id ?? null;
+        // Try within same column first (for stacked windows)
+        const colInfo = columnOf(ws, windowId);
+        if (colInfo && colInfo.column.windows.length > 1) {
+            const pos = colInfo.column.windows.findIndex(w => w.id === windowId);
+            const below = colInfo.column.windows[pos + 1];
+            const above = colInfo.column.windows[pos - 1];
+            newFocus = below?.id ?? above?.id ?? null;
+        }
+        // Then try adjacent columns
+        if (!newFocus) {
+            const after = columnAfter(ws, windowId);
+            const before = columnBefore(ws, windowId);
+            newFocus = after?.id ?? before?.id ?? null;
+        }
     } else {
         newFocus = world.focusedWindow;
     }
@@ -281,7 +305,7 @@ export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
     let newWorld: World = { ...world, workspaces, focusedWindow: newFocus };
 
     // If current workspace just emptied, navigate to an adjacent populated workspace
-    if (isCurrentWorkspace && newWs.windows.length === 0 && newFocus === null) {
+    if (isCurrentWorkspace && !hasWindows(newWs) && newFocus === null) {
         newWorld = navigateFromEmptyWorkspace(newWorld, removedSlot);
     }
 
@@ -332,9 +356,11 @@ function navigateFromEmptyWorkspace(world: World, sourceSlot: number): World {
     const searchDirection = (start: number, end: number, step: number): World | null => {
         for (let i = start; step > 0 ? i < end : i >= end; i += step) {
             const ws = world.workspaces[i]!;
-            if (ws.windows.length > 0) {
-                const target = windowAtSlot(ws, sourceSlot)
-                    ?? ws.windows[ws.windows.length - 1];
+            if (hasWindows(ws)) {
+                const targetCol = columnAtSlot(ws, sourceSlot);
+                const target = targetCol
+                    ? targetCol.windows[0]
+                    : lastWindow(ws);
                 return {
                     ...world,
                     viewport: { ...world.viewport, workspaceIndex: i, scrollX: 0 },
@@ -352,17 +378,18 @@ function navigateFromEmptyWorkspace(world: World, sourceSlot: number): World {
 }
 
 /**
- * Set a window's slotSpan to 2 (maximize → wide tile).
- * Finds the window across all workspaces.
+ * Set a column's slotSpan to the given value.
+ * Finds the column containing the window across all workspaces.
  */
 export function widenWindow(world: World, windowId: WindowId): WorldUpdate {
     const found = findWindowInWorld(world, windowId);
     if (!found) return buildUpdate(world);
 
-    const { wsIndex, window: win } = found;
-    if (win.slotSpan === 2) return buildUpdate(world); // already wide
-    const newWin = { ...win, slotSpan: 2 as const };
-    const newWs = wsReplaceWindow(world.workspaces[wsIndex]!, windowId, newWin);
+    const { wsIndex, colIndex } = found;
+    const ws = world.workspaces[wsIndex]!;
+    const col = ws.columns[colIndex]!;
+    if (col.slotSpan === 2) return buildUpdate(world); // already wide
+    const newWs = replaceColumnSlotSpan(ws, colIndex, 2);
     const workspaces = world.workspaces.map((w, idx) => idx === wsIndex ? newWs : w);
     const newWorld: World = { ...world, workspaces };
     return buildUpdate(adjustViewport(newWorld));
@@ -411,7 +438,7 @@ export function findWorkspaceByName(world: World, query: string): number {
 export function switchToWorkspace(world: World, wsIndex: number): WorldUpdate {
     if (wsIndex < 0 || wsIndex >= world.workspaces.length) return buildUpdate(world);
     const targetWs = world.workspaces[wsIndex]!;
-    const newFocus = targetWs.windows[0]?.id ?? null;
+    const newFocus = firstWindow(targetWs)?.id ?? null;
     const newWorld: World = {
         ...world,
         viewport: { ...world.viewport, workspaceIndex: wsIndex, scrollX: 0 },
@@ -420,14 +447,19 @@ export function switchToWorkspace(world: World, wsIndex: number): WorldUpdate {
     return buildUpdate(adjustViewport(newWorld));
 }
 
-export interface RestoreWorkspaceData {
+export interface RestoreColumnData {
     readonly windows: readonly TiledWindow[];
+    readonly slotSpan: number;
+}
+
+export interface RestoreWorkspaceData {
+    readonly columns: readonly RestoreColumnData[];
     readonly name: string | null;
 }
 
 /**
  * Restore a world from saved state (e.g. after screen lock disable/enable cycle).
- * Creates workspaces with pre-populated windows, restores viewport and focus.
+ * Creates workspaces with pre-populated columns, restores viewport and focus.
  */
 export function restoreWorld(
     config: KestrelConfig,
@@ -439,12 +471,12 @@ export function restoreWorld(
 ): World {
     const workspaces: Workspace[] = workspaceData.map((data) => {
         const ws = createWorkspace(nextWorkspaceId(), data.name);
-        return { ...ws, windows: data.windows };
+        return { ...ws, columns: data.columns.map(c => ({ windows: c.windows, slotSpan: c.slotSpan })) };
     });
 
     // Validate focus — ensure the focused window actually exists
     if (focusedWindow) {
-        const exists = workspaces.some(ws => ws.windows.some(w => w.id === focusedWindow));
+        const exists = workspaces.some(ws => allWindows(ws).some(w => w.id === focusedWindow));
         if (!exists) focusedWindow = null;
     }
 

@@ -50,9 +50,9 @@ const mockInstances: Record<string, any> = {};
 vi.mock('../../src/adapters/monitor-adapter.js', () => ({
     MonitorAdapter: vi.fn().mockImplementation(() => {
         const inst = {
-            readPrimaryMonitor: vi.fn().mockReturnValue({
+            readPrimaryMonitor: vi.fn().mockImplementation((_columnCount: number) => ({
                 count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0,
-            }),
+            })),
             connectMonitorsChanged: vi.fn(),
             destroy: vi.fn(),
         };
@@ -125,7 +125,7 @@ vi.mock('../../src/adapters/conflict-detector.js', () => ({
 function makeStatePersistenceMock(tryRestoreResult: any = null) {
     return () => {
         const inst = {
-            readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' }),
+            readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 }),
             save: vi.fn(),
             tryRestore: vi.fn().mockReturnValue(tryRestoreResult),
         };
@@ -213,7 +213,7 @@ describe('KestrelExtension', () => {
 
         it('initializes clone adapter with monitor geometry', () => {
             ext.enable();
-            expect(mockInstances.clone.init).toHaveBeenCalledWith(0, 1080, { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' });
+            expect(mockInstances.clone.init).toHaveBeenCalledWith(0, 1080, { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 });
             expect(mockInstances.clone.syncWorkspaces).toHaveBeenCalled();
         });
 
@@ -242,7 +242,7 @@ describe('KestrelExtension', () => {
 
         it('connects monitor change listener', () => {
             ext.enable();
-            expect(mockInstances.monitor.connectMonitorsChanged).toHaveBeenCalledWith(expect.any(Function));
+            expect(mockInstances.monitor.connectMonitorsChanged).toHaveBeenCalledWith(2, expect.any(Function));
         });
 
         it('connects window events', () => {
@@ -287,7 +287,7 @@ describe('KestrelExtension', () => {
 
     describe('state restore on enable()', () => {
         it('applies restored world when tryRestore returns state', () => {
-            const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
+            const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
             const monitor = { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
             let restored = createWorld(config, monitor);
             restored = addWindow(restored, 'w-1' as WindowId).world;
@@ -318,7 +318,7 @@ describe('KestrelExtension', () => {
             // Capture callbacks registered during enable()
             windowCallbacks = mockInstances.windowEvent.connect.mock.calls[0][0];
             focusCallback = mockInstances.focus.connectFocusChanged.mock.calls[0][0];
-            monitorCallback = mockInstances.monitor.connectMonitorsChanged.mock.calls[0][0];
+            monitorCallback = mockInstances.monitor.connectMonitorsChanged.mock.calls[0][1];
         });
 
         function mockMetaWindow(overrides: any = {}) {
@@ -507,7 +507,7 @@ describe('KestrelExtension', () => {
             ext.enable();
             windowCallbacks = mockInstances.windowEvent.connect.mock.calls[0][0];
             focusCallback = mockInstances.focus.connectFocusChanged.mock.calls[0][0];
-            monitorCallback = mockInstances.monitor.connectMonitorsChanged.mock.calls[0][0];
+            monitorCallback = mockInstances.monitor.connectMonitorsChanged.mock.calls[0][1];
             ext.disable();
         });
 
@@ -545,7 +545,7 @@ describe('KestrelExtension', () => {
             ext.enable();
             windowCallbacks = mockInstances.windowEvent.connect.mock.calls[0][0];
             focusCallback = mockInstances.focus.connectFocusChanged.mock.calls[0][0];
-            monitorCallback = mockInstances.monitor.connectMonitorsChanged.mock.calls[0][0];
+            monitorCallback = mockInstances.monitor.connectMonitorsChanged.mock.calls[0][1];
         });
 
         it('windowReady catches errors', () => {

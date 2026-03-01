@@ -186,13 +186,22 @@ Path: `/org/gnome/shell/extensions/kestrel@kestrel.github.com/`
 | `close-window` | string array | `['<Super>BackSpace']` |
 | `toggle-notifications` | string array | `['<Super>period']` |
 | `toggle-help` | string array | `['<Super>apostrophe']` |
+| `join-stack` | string array | `['<Super>j']` |
+| `force-workspace-up` | string array | `['<Super><Alt>Up']` |
+| `force-workspace-down` | string array | `['<Super><Alt>Down']` |
+
+### Layout Configuration
+
+| Key | Type | Default |
+|-----|------|---------|
+| `column-count` | int | 2 (range 1--6) |
+| `gap-size` | int | 8 |
+| `edge-gap` | int | 8 |
 
 ### Visual Configuration
 
 | Key | Type | Default |
 |-----|------|---------|
-| `gap-size` | int | 8 |
-| `edge-gap` | int | 8 |
 | `focus-border-width` | int | 3 |
 | `focus-border-color` | string | `rgba(125,214,164,0.8)` |
 | `focus-background-color` | string | `rgba(125,214,164,0.05)` |
