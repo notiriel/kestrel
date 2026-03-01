@@ -209,7 +209,6 @@ export class CloneAdapter implements ClonePort {
         return metaWindow.connect('size-changed', () => {
             try {
                 this._allocateClone(windowId);
-                this._refreshFocusIndicatorForWindow(windowId);
             } catch (e) {
                 console.error('[Kestrel] Error in size-changed handler:', e);
             }
@@ -412,42 +411,14 @@ export class CloneAdapter implements ClonePort {
             return;
         }
 
-        // Shrink to actual frame size when window is smaller than layout
-        // allocation (e.g. terminals snap to character cell grid).
-        const { width, height } = this._adjustedFocusDims(scene, fi);
-
         this._focusIndicator.visible = true;
-        easeOrSet(this._focusIndicator, { x: fi.x, y: fi.y, width, height, opacity: 255 }, duration, easeMode);
-    }
-
-    private _adjustedFocusDims(
-        scene: SceneModel, fi: { width: number; height: number },
-    ): { width: number; height: number } {
-        const entry = this._focusedCloneEntry(scene);
-        if (!entry) return fi;
-
-        const rects = this._getFrameAndBuffer(entry);
-        if (!rects) return fi;
-
-        const bw = this._focusBorderWidth;
-        return {
-            width: Math.min(entry.layoutWidth, rects.frame.width) + bw * 2,
-            height: Math.min(entry.layoutHeight, rects.frame.height) + bw * 2,
-        };
+        easeOrSet(this._focusIndicator, { x: fi.x, y: fi.y, width: fi.width, height: fi.height, opacity: 255 }, duration, easeMode);
     }
 
     private _focusedCloneEntry(scene: SceneModel): CloneEntry | null {
         if (!scene.focusedWindowId) return null;
         const entry = this._clones.get(scene.focusedWindowId);
         return (entry && !entry.sourceDestroyed) ? entry : null;
-    }
-
-    /**
-     * Refresh the focus indicator if the given window is currently focused.
-     */
-    private _refreshFocusIndicatorForWindow(windowId: WindowId): void {
-        if (!this._lastScene || this._lastScene.focusedWindowId !== windowId) return;
-        this._updateFocusIndicator(this._lastScene, 0, Clutter.AnimationMode.EASE_OUT_QUAD);
     }
 
     setScroll(scrollX: number): void {
