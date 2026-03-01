@@ -146,6 +146,7 @@ dev: install enable
 	@echo ""
 	@echo "Restart GNOME Shell to load changes"
 	@echo "  Wayland: log out and back in"
+	@echo "  X11:     Alt+F2 -> r -> Enter"
 
 .PHONY: build test coverage lint install enable disable status dev
 

@@ -53,7 +53,7 @@ Kestrel arranges your windows in a horizontal strip you scroll through — a com
 
 ## Requirements
 
-- GNOME Shell 45+ (Wayland)
+- GNOME Shell 45+ (Wayland or X11)
 - Node.js 18+ and npm (for building)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (optional, for agent integration features)
 
@@ -67,7 +67,7 @@ make install    # Build + deploy to GNOME extensions dir
 make enable     # Enable extension + Claude Code plugin + disable conflicting extensions
 ```
 
-Then **restart your session** (log out and back in on Wayland).
+Then **restart your session** (log out and back in on Wayland, or Alt+F2 → `r` → Enter on X11).
 
 Check installation status:
 

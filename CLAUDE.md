@@ -19,7 +19,7 @@ npx vitest run test/domain/world.test.ts  # Run a single test file
 
 **IMPORTANT: Always run `make install` after making code changes.** This deploys to the GNOME extensions directory so changes take effect on next session restart. Do not skip this step or wait to be reminded.
 
-After `make install`, a Wayland session restart (log out/in) is required to pick up JS changes.
+After `make install`, a session restart is required to pick up JS changes (log out/in on Wayland, or Alt+F2 → `r` → Enter on X11).
 
 View extension logs: `journalctl /usr/bin/gnome-shell --since "5 minutes ago" --no-pager`
 
@@ -145,7 +145,7 @@ B is focused. WS2 has D, E.
 | File | Purpose |
 |------|---------|
 | `world-holder.ts` | Holds current `World` state, fires panel update on change |
-| `settlement-retry.ts` | Exponential-backoff layout retry for async Wayland configures |
+| `settlement-retry.ts` | Exponential-backoff layout retry for async window configures (primarily Wayland) |
 | `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
 | `safe-window.ts` | Safe extraction of window information |
@@ -208,7 +208,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 
 ## Key Design Decisions
 
-- **Clone-based rendering**: Real `WindowActor`s can't be reparented from `global.window_group` on Wayland. `Clutter.Clone` allows free positioning on a custom layer for horizontal scrolling.
+- **Clone-based rendering**: Real `WindowActor`s can't be reparented from `global.window_group`. `Clutter.Clone` allows free positioning on a custom layer for horizontal scrolling. Works on both Wayland and X11.
 - **Single GNOME workspace**: All windows on one GNOME workspace; Kestrel workspaces are virtual (domain-managed) to avoid GNOME workspace animation conflicts.
 - **Scene model**: `computeScene()` produces a complete physical-state snapshot (`SceneModel`) from domain state. Keeps rendering logic testable without GNOME. Adapters consume the scene model rather than computing positions themselves.
 - **Target-state model**: Domain computes only final positions, not transitions. Adapters handle animation (`Clutter.ease`) separately.
@@ -251,7 +251,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 ## Debugging
 
 - When the user reports a bug, first determine the minimal reproduction path (e.g., keyboard shortcut vs DBus trigger). If one path works and another doesn't, the bug is in the differing code path — do NOT investigate shared infrastructure.
-- When debugging GNOME Shell/Mutter/Wayland issues: Chromium and CSD windows have async timing behaviors where size-changed signals can undo layout changes. Always check for signal handler interference before assuming layout logic bugs.
+- When debugging GNOME Shell/Mutter issues: Chromium and CSD windows have async timing behaviors (especially on Wayland) where size-changed signals can undo layout changes. Always check for signal handler interference before assuming layout logic bugs.
 - **DBus addressing**: The extension exports its DBus object at `/io/kestrel/Extension` on the GNOME Shell session bus connection. It does NOT own a well-known bus name, so you must use `org.gnome.Shell` as the destination:
   ```bash
   # Correct — use org.gnome.Shell as destination
@@ -270,7 +270,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
     --method org.gnome.Shell.Eval 'JSON.stringify(global._kestrel.debugState())'
   ```
   Note: Shell.Eval output is GVariant-escaped — the JSON is wrapped in multiple quoting layers.
-- **Deployed vs source**: DBus methods and `global._kestrel` properties reflect the deployed code, not the current source. After `make install`, a Wayland session restart is required for JS changes to take effect. Use `gdbus introspect --session --dest org.gnome.Shell --object-path /io/kestrel/Extension` to verify which methods are available on the running instance.
+- **Deployed vs source**: DBus methods and `global._kestrel` properties reflect the deployed code, not the current source. After `make install`, a session restart is required for JS changes to take effect (log out/in on Wayland, or Alt+F2 → `r` → Enter on X11). Use `gdbus introspect --session --dest org.gnome.Shell --object-path /io/kestrel/Extension` to verify which methods are available on the running instance.
 
 ## Clutter / Mutter / St API Reference
 

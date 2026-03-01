@@ -178,7 +178,7 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 | File | Purpose |
 |------|---------|
 | `world-holder.ts` | Holds current `World` state, fires panel update on change |
-| `settlement-retry.ts` | Exponential-backoff layout retry for async Wayland configures. Delays: `[100, 150, 200, 300, 400, 500, 750, 1000]` ms |
+| `settlement-retry.ts` | Exponential-backoff layout retry for async window configures (primarily Wayland). Delays: `[100, 150, 200, 300, 400, 500, 750, 1000]` ms |
 | `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
 | `safe-window.ts` | Safe extraction of window information |
@@ -357,7 +357,7 @@ All windows live on one GNOME workspace. Kestrel workspaces are virtual, managed
 
 ### Clone-Based Rendering
 
-Real `Meta.WindowActor`s cannot be reparented from `global.window_group` on Wayland. `Clutter.Clone` allows free positioning on a custom Clutter layer for horizontal scrolling, overview zoom, and workspace strip rendering.
+`Meta.WindowActor`s cannot be reparented from `global.window_group`. `Clutter.Clone` allows free positioning on a custom Clutter layer for horizontal scrolling, overview zoom, and workspace strip rendering. This approach works on both Wayland and X11.
 
 The layer hierarchy:
 
@@ -388,7 +388,7 @@ Domain operations compute only final positions, not transitions. Adapters handle
 
 ### Focused-Window Alignment
 
-Wayland constraint: Mutter's `constrain_partially_onscreen` prevents real windows from being positioned entirely outside the monitor workarea. The solution is to ensure `scrollX` always positions the focused window within monitor bounds. Non-focused windows may end up at incorrect real positions, but this is acceptable — the first click on a misaligned window focuses it (via passive GNOME click-to-focus), which adjusts scrollX to align it. The second click then lands correctly.
+Mutter's `constrain_partially_onscreen` prevents real windows from being positioned entirely outside the monitor workarea (on both Wayland and X11). The solution is to ensure `scrollX` always positions the focused window within monitor bounds. Non-focused windows may end up at incorrect real positions, but this is acceptable — the first click on a misaligned window focuses it (via passive GNOME click-to-focus), which adjusts scrollX to align it. The second click then lands correctly.
 
 ## 7. State Machines
 
@@ -591,7 +591,7 @@ Each line is a workspace. Windows are separated by spaces. `<>` marks the viewpo
 | Viewport | 2D camera showing a portion of the workspace. Width = monitor pixels. Scrolls to fit focused window |
 | Clone | `Clutter.Clone` of a `Meta.WindowActor`, positioned on custom layer for scrolling |
 | Clone wrapper | `Clutter.Actor` parent of a clone, sized to layout target, clips overflow |
-| Settlement | State where all real windows match their target positions (Wayland configures complete) |
+| Settlement | State where all real windows match their target positions (async configures complete, primarily Wayland) |
 | Settlement retry | Exponential-backoff loop re-applying layout until windows settle |
 | Reconciliation guard | Prevents concurrent/overlapping signal-driven operations |
 | Overview transform | Scale + offset that zooms out workspace strip to show all workspaces |

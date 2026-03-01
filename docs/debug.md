@@ -154,20 +154,20 @@ gsettings set org.gnome.shell disable-user-extensions false
 
 ## 11. Deployed vs Source
 
-DBus methods and `global._kestrel` properties reflect the **deployed** code, not the current source. After `make install`, a Wayland session restart (log out/in) is required for JS changes to take effect.
+DBus methods and `global._kestrel` properties reflect the **deployed** code, not the current source. After `make install`, a session restart is required for JS changes to take effect (log out/in on Wayland, or Alt+F2 → `r` → Enter on X11).
 
 Workflow:
 
 1. Edit source
 2. `make install` (builds, tests, deploys)
-3. Log out and back in (Wayland session restart)
+3. Restart session (log out/in on Wayland, or Alt+F2 → `r` → Enter on X11)
 4. Verify via journal logs or DBus introspection
 
 ## 12. Common Issues
 
 **CSD / oversized window timing:** Chromium and CSD windows have async timing where `size-changed` signals can undo layout changes. Check for signal handler interference before assuming layout logic bugs.
 
-**Wayland async configures:** `move_resize_frame()` on Wayland is async — the window may not reach the target size immediately. The settlement retry system handles this with exponential backoff (100ms to 1000ms, 8 retries).
+**Async configures:** `move_resize_frame()` is async on Wayland — the window may not reach the target size immediately. The settlement retry system handles this with exponential backoff (100ms to 1000ms, 8 retries). On X11, positioning is typically synchronous so settlement completes on the first check.
 
 **Signal handler interference:** When debugging layout bugs, check if `_onSizeChanged` or `_onPositionChanged` handlers in `window-adapter.ts` are re-triggering layout corrections that fight with the intended layout.
 

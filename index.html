@@ -962,7 +962,7 @@
       <div class="step-number">Step 01 &mdash; Requirements</div>
       <h3>Check your environment</h3>
       <ul class="req-list">
-        <li>GNOME Shell 45+ on Wayland</li>
+        <li>GNOME Shell 45+ (Wayland or X11)</li>
         <li>Node.js 18+ and npm</li>
         <li><a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> (optional, for agent integration)</li>
       </ul>
@@ -980,8 +980,8 @@
 
     <div class="install-step">
       <div class="step-number">Step 03 &mdash; Restart</div>
-      <h3>Restart your Wayland session</h3>
-      <p>Log out and back in. Kestrel activates on the next session start. Verify with:</p>
+      <h3>Restart your session</h3>
+      <p>Log out and back in (Wayland), or Alt+F2 → <code>r</code> → Enter (X11). Kestrel activates on the next session start. Verify with:</p>
 <pre class="code-block"><span class="cmd">make status</span></pre>
     </div>
   </div>

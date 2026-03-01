@@ -231,7 +231,7 @@ From `src/metadata.json`:
 
 1. Edit source in `src/`
 2. Run `make install` (builds, tests, lints, deploys)
-3. Log out and back in (Wayland session restart required for JS changes)
+3. Restart session (log out/in on Wayland, or Alt+F2 → `r` → Enter on X11)
 4. Verify via journal logs: `journalctl /usr/bin/gnome-shell --since "5 minutes ago" --no-pager`
 5. Debug via DBus if needed (see `docs/debug.md`)
 
