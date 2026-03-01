@@ -1,7 +1,6 @@
 import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import { findWorkspaceIdForWindow } from '../domain/world.js';
-import { computeLayoutForWorkspace } from '../domain/layout.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 
@@ -12,7 +11,7 @@ export interface NavigationDeps {
     focusWindow(windowId: WindowId | null): void;
     getCloneAdapter(): (CloneLifecyclePort & CloneRenderPort) | null;
     getWindowAdapter(): WindowPort | null;
-    applyLayout(layout: WorldUpdate['layout'], animate: boolean): void;
+    applyScene(scene: WorldUpdate['scene'], animate: boolean): void;
 }
 
 function getActiveWsId(world: World): WorkspaceId | null {
@@ -36,7 +35,7 @@ export class NavigationHandler {
             const update = domainFn(world);
             this._deps.setWorld(update.world);
 
-            this._deps.applyLayout(update.layout, true);
+            this._deps.applyScene(update.scene, true);
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
             console.error(`[Kestrel] Error handling ${label}:`, e);
@@ -57,7 +56,7 @@ export class NavigationHandler {
             this._deps.setWorld(update.world);
 
             this._syncScrollOnSwitch(oldScrollX, oldWsId, update.world);
-            this._deps.applyLayout(update.layout, true);
+            this._deps.applyScene(update.scene, true);
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
             console.error(`[Kestrel] Error handling ${label}:`, e);
@@ -78,8 +77,7 @@ export class NavigationHandler {
             this._reparentCloneIfMoved(world.focusedWindow, sourceWsId, update);
             this._syncWorkspaces(update);
             this._syncScrollOnSwitch(world.viewport.scrollX, sourceWsId, update.world);
-            this._deps.applyLayout(update.layout, true);
-            this._layoutSourceWorkspace(update, sourceWsId);
+            this._deps.applyScene(update.scene, true);
             this._deps.focusWindow(update.world.focusedWindow);
         } catch (e) {
             console.error(`[Kestrel] Error handling ${label}:`, e);
@@ -110,21 +108,6 @@ export class NavigationHandler {
         if (!targetWsId || targetWsId === sourceWsId) return;
         const clone = this._deps.getCloneAdapter();
         if (clone) clone.moveCloneToWorkspace(windowId, targetWsId);
-    }
-
-    /** Recompute and apply layout for the source workspace after a move */
-    private _layoutSourceWorkspace(update: WorldUpdate, sourceWsId: WorkspaceId | null): void {
-        if (!sourceWsId) return;
-        const idx = update.world.workspaces.findIndex(ws => ws.id === sourceWsId);
-        if (idx < 0) return;
-        const layout = computeLayoutForWorkspace(update.world, idx);
-        const clone = this._deps.getCloneAdapter();
-        if (clone) {
-            clone.applyLayout(
-                { ...layout, workspaceIndex: update.world.viewport.workspaceIndex },
-                true,
-            );
-        }
     }
 
 }

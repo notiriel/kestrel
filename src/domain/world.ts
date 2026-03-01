@@ -19,7 +19,8 @@ import {
     windowAtSlot,
 } from './workspace.js';
 import { createViewport, type Viewport } from './viewport.js';
-import { computeLayout } from './layout.js';
+import { computeLayout, computeLayoutForWorkspace } from './layout.js';
+import { computeScene } from './scene.js';
 import { fuzzyMatch } from './fuzzy-match.js';
 import type { OverviewInteractionState } from './overview-state.js';
 import { createOverviewInteractionState } from './overview-state.js';
@@ -114,8 +115,12 @@ export function replaceCurrentWorkspace(world: World, ws: Workspace): World {
 }
 
 export function buildUpdate(world: World): WorldUpdate {
-    const layout = computeLayout(world);
-    return { world, layout };
+    const layouts = world.workspaces.map((_, i) =>
+        i === world.viewport.workspaceIndex
+            ? computeLayout(world)
+            : computeLayoutForWorkspace(world, i),
+    );
+    return { world, scene: computeScene(world, layouts) };
 }
 
 /** Ensure there is always exactly one empty workspace at the bottom. */

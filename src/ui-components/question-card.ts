@@ -10,7 +10,7 @@ import {
     type ParsedOption,
     type ParsedQuestion,
 } from '../domain/notification.js';
-import type { NotificationCardDelegate, VisitableCardOptions, QuestionState } from '../adapters/notification-adapter-types.js';
+import type { NotificationCardDelegate, VisitableCardOptions, QuestionState } from './notification-adapter-types.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';

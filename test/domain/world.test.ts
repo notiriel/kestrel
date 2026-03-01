@@ -75,7 +75,7 @@ describe('World', () => {
             // Win3: x=1928, width=952 (right=2880) — off-screen at scrollX=0
             const { world: w1 } = addWindow(world, wid(1));
             const { world: w2 } = addWindow(w1, wid(2));
-            const { world: w3, layout: l3 } = addWindow(w2, wid(3));
+            const { world: w3, scene: s3 } = addWindow(w2, wid(3));
 
             // Focus should be on win-3
             expect(w3.focusedWindow).toBe(wid(3));
@@ -84,21 +84,22 @@ describe('World', () => {
             // win-3 right edge is 2880, so scrollX = 2880 + 8 (edgeGap) - 1920 = 968
             expect(w3.viewport.scrollX).toBe(968);
 
-            // Layout should reflect the scroll
-            expect(l3.scrollX).toBe(968);
+            // Scene's workspace strip should reflect the scroll
+            const currentWs = s3.workspaceStrip.workspaces.find(ws => ws.scrollX !== 0);
+            expect(currentWs?.scrollX).toBe(968);
 
-            // Win-3 should be visible in the layout
-            const win3Layout = l3.windows.find(w => w.windowId === wid(3));
-            expect(win3Layout).toBeDefined();
-            expect(win3Layout!.visible).toBe(true);
+            // Win-3 should be visible in the scene clones
+            const win3Clone = s3.clones.find(c => c.windowId === wid(3));
+            expect(win3Clone).toBeDefined();
+            expect(win3Clone!.visible).toBe(true);
 
             // Win-1 should now be off-screen (right=960, scrollX=968 → not visible)
-            const win1Layout = l3.windows.find(w => w.windowId === wid(1));
-            expect(win1Layout!.visible).toBe(false);
+            const win1Clone = s3.clones.find(c => c.windowId === wid(1));
+            expect(win1Clone!.visible).toBe(false);
 
             // Win-2 should still be visible (x=968, right=1920, viewport=968..2888)
-            const win2Layout = l3.windows.find(w => w.windowId === wid(2));
-            expect(win2Layout!.visible).toBe(true);
+            const win2Clone = s3.clones.find(c => c.windowId === wid(2));
+            expect(win2Clone!.visible).toBe(true);
         });
 
         it('does not scroll when new window fits in viewport alongside existing', () => {
@@ -106,14 +107,14 @@ describe('World', () => {
             const { world: w1 } = addWindow(world, wid(1));
             expect(w1.viewport.scrollX).toBe(0);
 
-            const { world: w2, layout: l2 } = addWindow(w1, wid(2));
+            const { world: w2, scene: s2 } = addWindow(w1, wid(2));
             // Win-2 right edge (1920) fits in viewport (1920px) — no scroll needed
             expect(w2.viewport.scrollX).toBe(0);
             expect(w2.focusedWindow).toBe(wid(2));
 
-            // Both windows should be visible
-            const win1 = l2.windows.find(w => w.windowId === wid(1));
-            const win2 = l2.windows.find(w => w.windowId === wid(2));
+            // Both windows should be visible in the scene clones
+            const win1 = s2.clones.find(c => c.windowId === wid(1));
+            const win2 = s2.clones.find(c => c.windowId === wid(2));
             expect(win1!.visible).toBe(true);
             expect(win2!.visible).toBe(true);
         });

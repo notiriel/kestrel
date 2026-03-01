@@ -49,6 +49,7 @@ export interface WorkspaceStripScene {
 }
 
 export interface SceneModel {
+    readonly focusedWindowId: WindowId | null;
     readonly clones: readonly CloneScene[];
     readonly realWindows: readonly RealWindowScene[];
     readonly focusIndicator: FocusIndicatorScene;
@@ -137,7 +138,7 @@ export function computeScene(world: World, layouts: readonly LayoutState[]): Sce
         workspaces: workspaceContainers,
     };
 
-    return { clones, realWindows, focusIndicator, workspaceStrip };
+    return { focusedWindowId: world.focusedWindow, clones, realWindows, focusIndicator, workspaceStrip };
 }
 
 /**

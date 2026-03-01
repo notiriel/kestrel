@@ -1,4 +1,5 @@
-import type { WindowId, LayoutState } from '../domain/types.js';
+import type { WindowId } from '../domain/types.js';
+import type { SceneModel, RealWindowScene } from '../domain/scene.js';
 import type { WindowPort } from '../ports/window-port.js';
 import { safeDisconnect } from './signal-utils.js';
 import Meta from 'gi://Meta';
@@ -114,22 +115,26 @@ export class WindowAdapter implements WindowPort {
         this._setActorOpacity(tracked.metaWindow, 0);
     }
 
-    applyLayout(layout: LayoutState, nudgeUnsettled: boolean = false): void {
-        // Collect window IDs present in this layout (current workspace)
-        const layoutWindowIds = new Set(layout.windows.map(wl => wl.windowId));
+    applyScene(scene: SceneModel, nudgeUnsettled: boolean = false): void {
+        const onscreenWindowIds = new Set<WindowId>();
 
-        for (const wl of layout.windows) {
-            const tracked = this._windows.get(wl.windowId);
-            if (!tracked) continue;
-            // Fullscreen windows are positioned by GNOME — don't fight them
-            if (wl.fullscreen) {
-                this._restoreIfOffscreen(tracked);
-                continue;
-            }
-            this._positionWindow(tracked, wl, layout, nudgeUnsettled);
+        for (const rw of scene.realWindows) {
+            if (rw.minimized) continue;
+            onscreenWindowIds.add(rw.windowId);
+            this._applyRealWindow(rw, nudgeUnsettled);
         }
 
-        this._minimizeOffWorkspaceWindows(layoutWindowIds);
+        this._minimizeOffWorkspaceWindows(onscreenWindowIds);
+    }
+
+    private _applyRealWindow(rw: RealWindowScene, nudgeUnsettled: boolean): void {
+        const tracked = this._windows.get(rw.windowId);
+        if (!tracked) return;
+        if (tracked.fullscreen) {
+            this._restoreIfOffscreen(tracked);
+            return;
+        }
+        this._positionWindowFromScene(tracked, rw, nudgeUnsettled);
     }
 
     private _restoreIfOffscreen(tracked: TrackedWindow): void {
@@ -144,10 +149,9 @@ export class WindowAdapter implements WindowPort {
         }
     }
 
-    private _positionWindow(
+    private _positionWindowFromScene(
         tracked: TrackedWindow,
-        wl: LayoutState['windows'][number],
-        layout: LayoutState,
+        rw: RealWindowScene,
         nudgeUnsettled: boolean,
     ): void {
         try {
@@ -155,14 +159,10 @@ export class WindowAdapter implements WindowPort {
             // force unmaximize before positioning as a safety net.
             this._ensureUnmaximized(tracked);
 
-            // Subtract scrollX so real windows match their visual clone positions
-            const screenX = wl.x - layout.scrollX;
-            // Layout Y is workArea-relative; add workAreaY to convert to stage coords
-            const screenY = wl.y + this._workAreaY;
-
-            this._updateTarget(tracked, screenX, screenY, wl.width, wl.height);
+            // RealWindowScene has pre-computed screen coordinates
+            this._updateTarget(tracked, rw.x, rw.y, rw.width, rw.height);
             this._restoreFromOffscreen(tracked);
-            this._applyMoveResize(tracked, screenX, screenY, wl.width, wl.height, nudgeUnsettled);
+            this._applyMoveResize(tracked, rw.x, rw.y, rw.width, rw.height, nudgeUnsettled);
         } catch (e) {
             console.debug('[Kestrel] move_resize_frame skipped (dead window?):', e);
         }

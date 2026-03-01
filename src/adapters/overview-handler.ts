@@ -1,11 +1,11 @@
-import type { WindowId, LayoutState, WorldUpdate } from '../domain/types.js';
+import type { WindowId, WorldUpdate } from '../domain/types.js';
+import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
-import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace } from '../domain/world.js';
+import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace, buildUpdate } from '../domain/world.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
 import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
 import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename } from '../domain/overview-state.js';
-import { computeLayoutForWorkspace } from '../domain/layout.js';
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { OverviewInputAdapter } from './overview-input-adapter.js';
@@ -64,7 +64,7 @@ export class OverviewHandler {
 
         const numWs = this._countNonEmpty(update.world);
         this._overviewTransform = this._computeTransform(update.world, numWs);
-        this._notifyEnter(this._overviewTransform, update.layout, numWs);
+        this._notifyEnter(this._overviewTransform, update.scene, numWs);
 
         this._activateOverviewInput();
     }
@@ -73,8 +73,8 @@ export class OverviewHandler {
         return world.workspaces.filter(ws => ws.windows.length > 0).length || 1;
     }
 
-    private _notifyEnter(transform: OverviewTransform, layout: LayoutState, numWs: number): void {
-        this._deps.getCloneAdapter()?.enterOverview(transform, layout, numWs, () => {
+    private _notifyEnter(transform: OverviewTransform, scene: SceneModel, numWs: number): void {
+        this._deps.getCloneAdapter()?.enterOverview(transform, scene, numWs, () => {
             this._deps.notifyOverviewEnter?.(transform);
         });
         this._deps.onOverviewEnter?.();
@@ -149,9 +149,9 @@ export class OverviewHandler {
         const overviewWorld = { ...update.world, overviewActive: true };
         this._deps.setWorld(overviewWorld);
 
-        const layout = computeLayoutForWorkspace(overviewWorld, targetWsIndex);
+        const scene = buildUpdate(overviewWorld).scene;
         this._deps.getCloneAdapter()?.updateOverviewFocus(
-            layout, targetWsIndex, this._overviewTransform!,
+            scene, targetWsIndex, this._overviewTransform!,
         );
     }
 
@@ -165,7 +165,7 @@ export class OverviewHandler {
 
             const update = exitOverview(world);
             this._deps.setWorld(update.world);
-            this._exitVisual(update.layout, animate);
+            this._exitVisual(update.scene, animate);
         } catch (e) {
             console.error('[Kestrel] Error handling overview confirm:', e);
         }
@@ -217,16 +217,16 @@ export class OverviewHandler {
     private _renderDragRevert(revertWorld: World): void {
         if (!this._overviewTransform) return;
         const wsIndex = revertWorld.viewport.workspaceIndex;
-        const layout = computeLayoutForWorkspace(revertWorld, wsIndex);
+        const scene = buildUpdate(revertWorld).scene;
         this._deps.getCloneAdapter()?.updateOverviewFocus(
-            layout, wsIndex, this._overviewTransform,
+            scene, wsIndex, this._overviewTransform,
         );
     }
 
     private _cancelNormal(world: World): void {
         const update = cancelOverview(world);
         this._deps.setWorld(update.world);
-        this._exitVisual(update.layout);
+        this._exitVisual(update.scene);
     }
 
     private _handleClick(x: number, y: number): void {
@@ -287,18 +287,20 @@ export class OverviewHandler {
 
     private _checkDragSwap(world: World, reverseX: number): void {
         const wsIndex = world.viewport.workspaceIndex;
-        const wsLayout = computeLayoutForWorkspace(world, wsIndex);
-        const subjectLayout = wsLayout.windows.find(w => w.windowId === this._dragSubject);
-        if (!subjectLayout) return;
+        const wsId = world.workspaces[wsIndex]?.id;
+        if (!wsId) return;
+        const scene = buildUpdate(world).scene;
+        const wsClones = scene.clones.filter(c => c.workspaceId === wsId);
+        const subjectIdx = wsClones.findIndex(c => c.windowId === this._dragSubject);
+        if (subjectIdx < 0) return;
 
-        const idx = wsLayout.windows.indexOf(subjectLayout);
-        if (this._checkSwapRight(world, wsLayout, idx, reverseX)) return;
-        this._checkSwapLeft(world, wsLayout, idx, reverseX);
+        if (this._checkSwapRight(world, wsClones, subjectIdx, reverseX)) return;
+        this._checkSwapLeft(world, wsClones, subjectIdx, reverseX);
     }
 
-    private _checkSwapRight(world: World, wsLayout: LayoutState, idx: number, reverseX: number): boolean {
-        if (idx >= wsLayout.windows.length - 1) return false;
-        const neighbor = wsLayout.windows[idx + 1];
+    private _checkSwapRight(world: World, wsClones: readonly { x: number; width: number }[], idx: number, reverseX: number): boolean {
+        if (idx >= wsClones.length - 1) return false;
+        const neighbor = wsClones[idx + 1]!;
         if (reverseX <= neighbor.x + neighbor.width / 2) return false;
         const update = moveRight(world);
         this._deps.setWorld(update.world);
@@ -306,9 +308,9 @@ export class OverviewHandler {
         return true;
     }
 
-    private _checkSwapLeft(world: World, wsLayout: LayoutState, idx: number, reverseX: number): boolean {
+    private _checkSwapLeft(world: World, wsClones: readonly { x: number; width: number }[], idx: number, reverseX: number): boolean {
         if (idx <= 0) return false;
-        const neighbor = wsLayout.windows[idx - 1];
+        const neighbor = wsClones[idx - 1]!;
         if (reverseX >= neighbor.x + neighbor.width / 2) return false;
         const update = moveLeft(world);
         this._deps.setWorld(update.world);
@@ -361,11 +363,17 @@ export class OverviewHandler {
     }
 
     private _hitTestWindows(world: World, wsIndex: number, rx: number, localY: number): WindowId | null {
-        const wsLayout = computeLayoutForWorkspace(world, wsIndex);
-        for (const win of wsLayout.windows) {
-            if (this._isInsideWindow(win, rx, localY)) return win.windowId;
+        const wsClones = this._getClonesForWorkspace(world, wsIndex);
+        for (const clone of wsClones) {
+            if (this._isInsideWindow(clone, rx, localY)) return clone.windowId;
         }
         return null;
+    }
+
+    private _getClonesForWorkspace(world: World, wsIndex: number): SceneModel['clones'] {
+        const wsId = world.workspaces[wsIndex]?.id;
+        if (!wsId) return [];
+        return buildUpdate(world).scene.clones.filter(c => c.workspaceId === wsId);
     }
 
     private _isInsideWindow(win: { x: number; y: number; width: number; height: number }, rx: number, localY: number): boolean {
@@ -376,7 +384,7 @@ export class OverviewHandler {
     private _renderOverviewUpdate(update: WorldUpdate): void {
         if (!this._overviewTransform) return;
         this._deps.getCloneAdapter()?.updateOverviewFocus(
-            update.layout,
+            update.scene,
             update.world.viewport.workspaceIndex,
             this._overviewTransform,
         );
@@ -434,9 +442,9 @@ export class OverviewHandler {
     }
 
     private _updateFocusForWorkspace(world: World, transform: OverviewTransform): void {
-        const layout = computeLayoutForWorkspace(world, world.viewport.workspaceIndex);
+        const scene = buildUpdate(world).scene;
         this._deps.getCloneAdapter()?.updateOverviewFocus(
-            layout, world.viewport.workspaceIndex, transform,
+            scene, world.viewport.workspaceIndex, transform,
         );
     }
 
@@ -480,8 +488,8 @@ export class OverviewHandler {
         cloneAdapter?.applyOverviewFilter?.(
             filteredIndices, transform, currentWorld.viewport.workspaceIndex,
         );
-        const layout = computeLayoutForWorkspace(currentWorld, currentWorld.viewport.workspaceIndex);
-        cloneAdapter?.updateOverviewFocus(layout, currentWorld.viewport.workspaceIndex, transform);
+        const scene = buildUpdate(currentWorld).scene;
+        cloneAdapter?.updateOverviewFocus(scene, currentWorld.viewport.workspaceIndex, transform);
     }
 
     private _handleRename(): void {
@@ -528,11 +536,11 @@ export class OverviewHandler {
         this._deps.getCloneAdapter()?.syncWorkspaces(renamed.workspaces);
     }
 
-    private _exitVisual(layout: LayoutState, animate: boolean = true): void {
+    private _exitVisual(scene: SceneModel, animate: boolean = true): void {
         this._overviewInputAdapter?.deactivate();
         this._overviewInputAdapter = null;
         this._clearFilterUI();
-        this._applyExitLayout(layout, animate);
+        this._applyExitScene(scene, animate);
         this._overviewTransform = null;
     }
 
@@ -551,16 +559,16 @@ export class OverviewHandler {
         this._overviewInputAdapter?.setKeyPassthrough?.(false);
     }
 
-    private _applyExitLayout(layout: LayoutState, animate: boolean): void {
-        this._applyExitClone(layout, animate);
+    private _applyExitScene(scene: SceneModel, animate: boolean): void {
+        this._applyExitClone(scene, animate);
         this._notifyExit();
-        this._deps.getWindowAdapter()?.applyLayout(layout);
+        this._deps.getWindowAdapter()?.applyScene(scene);
         this._deps.focusWindow(this._deps.getWorld()!.focusedWindow);
     }
 
-    private _applyExitClone(layout: LayoutState, animate: boolean): void {
-        this._deps.getCloneAdapter()?.exitOverview(layout, animate);
-        this._deps.getCloneAdapter()?.applyLayout(layout, animate);
+    private _applyExitClone(scene: SceneModel, animate: boolean): void {
+        this._deps.getCloneAdapter()?.exitOverview(scene, animate);
+        this._deps.getCloneAdapter()?.applyScene(scene, animate);
     }
 
     private _notifyExit(): void {

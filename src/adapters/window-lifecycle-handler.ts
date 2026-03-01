@@ -1,7 +1,7 @@
-import type { WindowId, WorkspaceId, LayoutState, WorldUpdate } from '../domain/types.js';
+import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/types.js';
+import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
-import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt } from '../domain/world.js';
-import { computeLayout } from '../domain/layout.js';
+import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, buildUpdate } from '../domain/world.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { FocusPort } from '../ports/focus-port.js';
@@ -12,7 +12,7 @@ export interface WindowLifecycleDeps {
     getWorld(): World | null;
     setWorld(world: World): void;
     checkGuard(label: string): boolean;
-    applyLayout(layout: LayoutState, animate: boolean): void;
+    applyScene(scene: SceneModel, animate: boolean): void;
     applyUpdateWithScroll(update: WorldUpdate, animate: boolean,
                           oldScrollX: number, oldWsId: WorkspaceId | null): void;
     focusWindow(windowId: WindowId | null): void;
@@ -61,8 +61,8 @@ export class WindowLifecycleHandler {
         const restoredWsId = findWorkspaceIdForWindow(world, windowId)!;
         this._trackInAdapters(windowId, metaWindow, restoredWsId);
 
-        const layout = computeLayout(world);
-        this._deps.applyLayout(layout, false);
+        const scene = buildUpdate(world).scene;
+        this._deps.applyScene(scene, false);
         this._deps.focusWindow(world.focusedWindow);
         this._deps.startSettlement();
     }
@@ -99,15 +99,23 @@ export class WindowLifecycleHandler {
 
     private _applyNewWindowLayout(update: WorldUpdate, oldScrollX: number): void {
         this._deps.getCloneAdapter()?.syncWorkspaces(update.world.workspaces);
-        this._deps.applyLayout(update.layout, false);
-
-        if (update.layout.scrollX !== oldScrollX) {
-            this._deps.getCloneAdapter()?.setScroll(oldScrollX);
-            this._deps.getCloneAdapter()?.animateViewport(update.layout.scrollX);
-        }
-
+        this._deps.applyScene(update.scene, false);
+        this._animateScrollIfChanged(update, oldScrollX);
         this._deps.focusWindow(update.world.focusedWindow);
         this._deps.startSettlement();
+    }
+
+    private _animateScrollIfChanged(update: WorldUpdate, oldScrollX: number): void {
+        const currentWsScroll = this._getCurrentScroll(update);
+        if (currentWsScroll === oldScrollX) return;
+        this._deps.getCloneAdapter()?.setScroll(oldScrollX);
+        this._deps.getCloneAdapter()?.animateViewport(currentWsScroll);
+    }
+
+    private _getCurrentScroll(update: WorldUpdate): number {
+        return update.scene.workspaceStrip.workspaces.find(
+            ws => ws.scrollX !== 0,
+        )?.scrollX ?? 0;
     }
 
     handleWindowDestroyed(windowId: WindowId): void {
@@ -159,7 +167,7 @@ export class WindowLifecycleHandler {
         this._deps.getCloneAdapter()?.setWindowFullscreen(windowId, isFullscreen);
         this._deps.getWindowAdapter()?.setWindowFullscreen(windowId, isFullscreen);
 
-        this._deps.applyLayout(update.layout, true);
+        this._deps.applyScene(update.scene, true);
         this._deps.focusWindow(update.world.focusedWindow);
     }
 
@@ -175,7 +183,7 @@ export class WindowLifecycleHandler {
             const update = widenWindow(world, windowId);
             this._deps.setWorld(update.world);
 
-            this._deps.applyLayout(update.layout, true);
+            this._deps.applyScene(update.scene, true);
             this._deps.focusWindow(update.world.focusedWindow);
             this._deps.startSettlement();
         } catch (e) {

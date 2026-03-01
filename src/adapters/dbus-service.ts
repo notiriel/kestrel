@@ -30,6 +30,9 @@ const INTERFACE_XML = `
       <arg name="name"     direction="in"  type="s"/>
       <arg name="response" direction="out" type="s"/>
     </method>
+    <method name="GetDiagnostics">
+      <arg name="response" direction="out" type="s"/>
+    </method>
   </interface>
 </node>`;
 
@@ -43,6 +46,7 @@ interface KestrelDBusCallbacks {
     listWorkspaces(): string;
     switchToWorkspaceByName(name: string): string;
     renameCurrentWorkspace(name: string): string;
+    getDiagnostics(): string;
 }
 
 function safeDbusHandler(fn: (...args: string[]) => string): (...args: string[]) => string {
@@ -70,6 +74,7 @@ export class KestrelDBusService {
             ListWorkspaces: safeDbusHandler(callbacks.listWorkspaces),
             SwitchToWorkspaceByName: safeDbusHandler(callbacks.switchToWorkspaceByName),
             RenameCurrentWorkspace: safeDbusHandler(callbacks.renameCurrentWorkspace),
+            GetDiagnostics: safeDbusHandler(callbacks.getDiagnostics),
         };
 
         this._dbus = Gio.DBusExportedObject.wrapJSObject(INTERFACE_XML, handler);

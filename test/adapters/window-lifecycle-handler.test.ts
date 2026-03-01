@@ -36,20 +36,20 @@ function createMockDeps(world: World): { deps: WindowLifecycleDeps; mocks: Recor
     const mocks = {
         setWorld: vi.fn((w: World) => { currentWorld = w; }),
         checkGuard: vi.fn().mockReturnValue(true),
-        applyLayout: vi.fn(),
+        applyScene: vi.fn(),
         applyUpdateWithScroll: vi.fn(),
         focusWindow: vi.fn(),
         log: vi.fn(),
         cloneAdapter: {
             init: vi.fn(), updateWorkArea: vi.fn(), syncWorkspaces: vi.fn(),
             addClone: vi.fn(), removeClone: vi.fn(), moveCloneToWorkspace: vi.fn(),
-            setWindowFullscreen: vi.fn(), applyLayout: vi.fn(), setScroll: vi.fn(),
+            setWindowFullscreen: vi.fn(), applyScene: vi.fn(), setScroll: vi.fn(),
             setScrollForWorkspace: vi.fn(), animateViewport: vi.fn(), destroy: vi.fn(),
         },
         windowAdapter: {
             setWorkAreaY: vi.fn(), setMonitorBounds: vi.fn(),
             track: vi.fn(), untrack: vi.fn(), setWindowFullscreen: vi.fn(),
-            applyLayout: vi.fn(), hasUnsettledWindows: vi.fn().mockReturnValue(false), destroy: vi.fn(),
+            applyScene: vi.fn(), hasUnsettledWindows: vi.fn().mockReturnValue(false), destroy: vi.fn(),
         },
         focusAdapter: {
             track: vi.fn(), untrack: vi.fn(), focus: vi.fn(), focusInternal: vi.fn(),
@@ -65,7 +65,7 @@ function createMockDeps(world: World): { deps: WindowLifecycleDeps; mocks: Recor
         getWorld: () => currentWorld,
         setWorld: mocks.setWorld,
         checkGuard: mocks.checkGuard,
-        applyLayout: mocks.applyLayout,
+        applyScene: mocks.applyScene,
         applyUpdateWithScroll: mocks.applyUpdateWithScroll,
         focusWindow: mocks.focusWindow,
         log: mocks.log,
@@ -93,7 +93,7 @@ describe('WindowLifecycleHandler', () => {
             expect(mocks.focusAdapter.track).toHaveBeenCalledWith('w-1', expect.anything());
             expect(mocks.cloneAdapter.addClone).toHaveBeenCalled();
             expect(mocks.setWorld).toHaveBeenCalled();
-            expect(mocks.applyLayout).toHaveBeenCalled();
+            expect(mocks.applyScene).toHaveBeenCalled();
             expect(mocks.focusWindow).toHaveBeenCalledWith('w-1');
             expect(mocks.startSettlement).toHaveBeenCalled();
         });
@@ -119,7 +119,7 @@ describe('WindowLifecycleHandler', () => {
 
             expect(mocks.windowAdapter.track).toHaveBeenCalledWith('w-99', expect.anything());
             expect(mocks.cloneAdapter.addClone).toHaveBeenCalled();
-            expect(mocks.applyLayout).toHaveBeenCalledWith(expect.anything(), false);
+            expect(mocks.applyScene).toHaveBeenCalledWith(expect.anything(), false);
             expect(mocks.startSettlement).toHaveBeenCalled();
         });
 
@@ -218,7 +218,7 @@ describe('WindowLifecycleHandler', () => {
             expect(mocks.cloneAdapter.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
             expect(mocks.windowAdapter.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
             expect(mocks.setWorld).toHaveBeenCalled();
-            expect(mocks.applyLayout).toHaveBeenCalled();
+            expect(mocks.applyScene).toHaveBeenCalled();
             expect(mocks.focusWindow).toHaveBeenCalled();
         });
 
@@ -261,7 +261,7 @@ describe('WindowLifecycleHandler', () => {
             expect(mocks.focusAdapter.getMetaWindow).toHaveBeenCalledWith('w-1');
             expect(metaWindow.unmaximize).toHaveBeenCalledWith(3);
             expect(mocks.setWorld).toHaveBeenCalled();
-            expect(mocks.applyLayout).toHaveBeenCalled();
+            expect(mocks.applyScene).toHaveBeenCalled();
             expect(mocks.focusWindow).toHaveBeenCalled();
             expect(mocks.startSettlement).toHaveBeenCalled();
         });

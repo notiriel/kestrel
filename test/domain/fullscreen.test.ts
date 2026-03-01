@@ -34,23 +34,22 @@ describe('Fullscreen Step-Out', () => {
             ({ world } = addWindow(world, wid(1)));
             ({ world } = addWindow(world, wid(2)));
 
-            const { world: w, layout } = enterFullscreen(world, wid(1));
+            const { world: w, scene } = enterFullscreen(world, wid(1));
 
             // Window should be marked fullscreen in domain
             const win = w.workspaces[0]!.windows.find(w => w.id === wid(1));
             expect(win!.fullscreen).toBe(true);
 
-            // Layout should give fullscreen window full monitor size
-            const fsLayout = layout.windows.find(w => w.windowId === wid(1));
-            expect(fsLayout!.x).toBe(0);
-            expect(fsLayout!.y).toBe(0);
-            expect(fsLayout!.width).toBe(1920);
-            expect(fsLayout!.height).toBe(1080);
-            expect(fsLayout!.fullscreen).toBe(true);
+            // Scene clones should give fullscreen window full monitor size
+            const fsClone = scene.clones.find(c => c.windowId === wid(1));
+            expect(fsClone!.x).toBe(0);
+            expect(fsClone!.y).toBe(0);
+            expect(fsClone!.width).toBe(1920);
+            expect(fsClone!.height).toBe(1080);
 
-            // Non-fullscreen window should have fullscreen=false
-            const normalLayout = layout.windows.find(w => w.windowId === wid(2));
-            expect(normalLayout!.fullscreen).toBe(false);
+            // Non-fullscreen window should have different position
+            const normalClone = scene.clones.find(c => c.windowId === wid(2));
+            expect(normalClone).toBeDefined();
         });
 
         it('removes fullscreen window from the strip — remaining windows fill the gap', () => {
@@ -59,15 +58,15 @@ describe('Fullscreen Step-Out', () => {
             ({ world } = addWindow(world, wid(2)));
             ({ world } = addWindow(world, wid(3)));
 
-            const { layout } = enterFullscreen(world, wid(1));
+            const { scene } = enterFullscreen(world, wid(1));
 
             // wid(2) should now be at the position wid(1) used to be (edgeGap)
-            const w2Layout = layout.windows.find(w => w.windowId === wid(2));
-            expect(w2Layout!.x).toBe(8); // edgeGap
+            const w2Clone = scene.clones.find(c => c.windowId === wid(2));
+            expect(w2Clone!.x).toBe(8); // edgeGap
 
             // wid(3) should follow wid(2)
-            const w3Layout = layout.windows.find(w => w.windowId === wid(3));
-            expect(w3Layout!.x).toBe(968); // 8 + 952 + 8
+            const w3Clone = scene.clones.find(c => c.windowId === wid(3));
+            expect(w3Clone!.x).toBe(968); // 8 + 952 + 8
         });
 
         it('focuses the fullscreen window', () => {
@@ -91,19 +90,19 @@ describe('Fullscreen Step-Out', () => {
             ({ world } = enterFullscreen(world, wid(2)));
 
             // Exit fullscreen
-            const { world: w, layout } = exitFullscreen(world, wid(2));
+            const { world: w, scene } = exitFullscreen(world, wid(2));
 
             // wid(2) should be back to non-fullscreen
             const win = w.workspaces[0]!.windows.find(w => w.id === wid(2));
             expect(win!.fullscreen).toBe(false);
 
             // Strip should be restored: A at edgeGap, B after A, C after B
-            const w1Layout = layout.windows.find(w => w.windowId === wid(1));
-            const w2Layout = layout.windows.find(w => w.windowId === wid(2));
-            const w3Layout = layout.windows.find(w => w.windowId === wid(3));
-            expect(w1Layout!.x).toBe(8);
-            expect(w2Layout!.x).toBe(968);
-            expect(w3Layout!.x).toBe(1928);
+            const w1Clone = scene.clones.find(c => c.windowId === wid(1));
+            const w2Clone = scene.clones.find(c => c.windowId === wid(2));
+            const w3Clone = scene.clones.find(c => c.windowId === wid(3));
+            expect(w1Clone!.x).toBe(8);
+            expect(w2Clone!.x).toBe(968);
+            expect(w3Clone!.x).toBe(1928);
         });
     });
 

@@ -1,9 +1,9 @@
 import type { OverlayNotification } from '../domain/notification-types.js';
-import type { NotificationCardDelegate, CardOptions } from '../adapters/notification-adapter-types.js';
+import type { NotificationCardDelegate, CardOptions } from './notification-adapter-types.js';
 import Clutter from 'gi://Clutter';
 import type St from 'gi://St';
 import GLib from 'gi://GLib';
-import { buildCardSkeleton } from '../adapters/card-base.js';
+import { buildCardSkeleton } from './card-builders.js';
 import { buildCommandBlock, buildPermissionButtons, buildProgressBar } from './card-builders.js';
 
 interface Easeable {

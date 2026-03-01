@@ -40,7 +40,7 @@ function createDeps(world: World | null = null) {
         focusWindow: vi.fn(),
         getCloneAdapter: vi.fn(() => clonePort),
         getWindowAdapter: vi.fn(() => null),
-        applyLayout: vi.fn(),
+        applyScene: vi.fn(),
         mocks: null as any,
     };
 
@@ -67,8 +67,8 @@ describe('NavigationHandler', () => {
             const updatedWorld = (deps.setWorld as ReturnType<typeof vi.fn>).mock.calls[0]![0] as World;
             expect(updatedWorld.focusedWindow).toBe(wid(1));
 
-            expect(deps.applyLayout).toHaveBeenCalledOnce();
-            expect((deps.applyLayout as ReturnType<typeof vi.fn>).mock.calls[0]![1]).toBe(true); // animated
+            expect(deps.applyScene).toHaveBeenCalledOnce();
+            expect((deps.applyScene as ReturnType<typeof vi.fn>).mock.calls[0]![1]).toBe(true); // animated
 
             expect(deps.focusWindow).toHaveBeenCalledWith(wid(1));
         });
@@ -80,7 +80,7 @@ describe('NavigationHandler', () => {
             handler.handleSimpleCommand(focusLeft, 'focus-left');
 
             expect(deps.setWorld).not.toHaveBeenCalled();
-            expect(deps.applyLayout).not.toHaveBeenCalled();
+            expect(deps.applyScene).not.toHaveBeenCalled();
             expect(deps.focusWindow).not.toHaveBeenCalled();
         });
 
@@ -172,7 +172,7 @@ describe('NavigationHandler', () => {
             expect(windowId).toBe(wid(2));
 
             expect(deps.mocks.clonePort.syncWorkspaces).toHaveBeenCalled();
-            expect(deps.applyLayout).toHaveBeenCalled();
+            expect(deps.applyScene).toHaveBeenCalled();
             expect(deps.focusWindow).toHaveBeenCalled();
         });
 

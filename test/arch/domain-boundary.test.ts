@@ -45,21 +45,21 @@ describe('domain boundary: extension', () => {
         expect(matches).toEqual([]);
     });
 
-    it('only uses buildUpdate in _debugState', () => {
+    it('only uses buildUpdate in _debugState and _getDiagnostics', () => {
         const src = extensionSource();
         const lines = src.split('\n');
         const violations: string[] = [];
 
-        let inDebugState = false;
+        let inAllowed = false;
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i]!;
-            // Track when we enter/leave _debugState method
-            if (line.includes('_debugState(')) inDebugState = true;
-            if (inDebugState && line.match(/^\s{4}\}/)) inDebugState = false;
+            // Track when we enter/leave allowed methods (read-only introspection)
+            if (line.includes('_debugState(') || line.includes('_getDiagnostics(')) inAllowed = true;
+            if (inAllowed && line.match(/^\s{4}\}/)) inAllowed = false;
 
-            // Skip import lines and debugState body
+            // Skip import lines and allowed method bodies
             if (line.match(/^\s*import\b/)) continue;
-            if (inDebugState) continue;
+            if (inAllowed) continue;
 
             if (line.includes('buildUpdate')) {
                 violations.push(`line ${i + 1}: ${line.trim()}`);

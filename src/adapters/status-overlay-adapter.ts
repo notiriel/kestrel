@@ -2,19 +2,13 @@ import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
 import { safeDisconnect } from './signal-utils.js';
+import { STATUS_COLORS, STATUS_ICON_SIZE, buildStatusIcon, buildStatusStyle } from '../ui-components/status-badge-builders.js';
 import St from 'gi://St';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
 
 import type { ClaudeStatus } from '../domain/notification-types.js';
 
-const STATUS_COLORS: Record<ClaudeStatus, string> = {
-    'working': '#4CAF50',
-    'needs-input': '#F44336',
-    'done': '#FF9800',
-};
-
-const ICON_SIZE = 75;
 const ICON_PADDING = 10;
 const PROBE_PATTERN = /^kestrel_probe_(.+)$/;
 
@@ -110,7 +104,7 @@ export class StatusOverlayAdapter {
 
         const overlay = this._overlays.get(windowId);
         if (overlay) {
-            overlay.style = `color: ${STATUS_COLORS[validStatus]}; -st-icon-style: symbolic;`;
+            overlay.style = buildStatusStyle(validStatus);
         }
     }
 
@@ -145,29 +139,22 @@ export class StatusOverlayAdapter {
     private _getOrCreateOverlay(windowId: WindowId, status: ClaudeStatus): St.Icon {
         let overlay = this._overlays.get(windowId);
         if (!overlay) {
-            const gicon = new Gio.FileIcon({ file: this._iconGFile! });
-            overlay = new St.Icon({
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                gicon: gicon as any,
-                icon_size: ICON_SIZE,
-                style: `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`,
-                reactive: false,
-            });
+            overlay = buildStatusIcon(this._iconGFile!, status);
             this._layer!.add_child(overlay);
             this._overlays.set(windowId, overlay);
         } else {
-            overlay.style = `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`;
+            overlay.style = buildStatusStyle(status);
         }
         return overlay;
     }
 
     private _positionOverlay(overlay: St.Icon, pos: ClonePosition, transform: OverviewTransform): void {
         const { scale, offsetX, offsetY } = transform;
-        const x = (pos.x + pos.width - ICON_SIZE - ICON_PADDING) * scale + offsetX;
+        const x = (pos.x + pos.width - STATUS_ICON_SIZE - ICON_PADDING) * scale + offsetX;
         const y = (pos.wsIndex * this._layer!.height + pos.y + ICON_PADDING) * scale + offsetY;
 
         overlay.set_position(Math.round(x), Math.round(y));
-        overlay.set_size(Math.round(ICON_SIZE * scale), Math.round(ICON_SIZE * scale));
+        overlay.set_size(Math.round(STATUS_ICON_SIZE * scale), Math.round(STATUS_ICON_SIZE * scale));
         overlay.visible = true;
     }
 

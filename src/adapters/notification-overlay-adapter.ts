@@ -1,10 +1,14 @@
 import type { NotificationPort, NotificationInitOptions } from '../ports/notification-port.js';
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
-import type { QuestionState, NotificationCardDelegate } from './notification-adapter-types.js';
+import type { QuestionState, NotificationCardDelegate } from '../ui-components/notification-adapter-types.js';
 import { PermissionCard } from '../ui-components/permission-card.js';
-import { NotificationCard } from './notification-card.js';
+import { NotificationCard } from '../ui-components/notification-card.js';
 import { QuestionCard } from '../ui-components/question-card.js';
-import { getCardBehavior } from './card-behavior.js';
+import { getCardBehavior } from '../ui-components/card-behavior.js';
+import {
+    buildNotificationContainer, buildCountBadge, buildCardStyle,
+    CARD_WIDTH, QUESTION_CARD_WIDTH, CARD_RIGHT_OFFSET,
+} from '../ui-components/notification-overlay-builders.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Graphene from 'gi://Graphene';
@@ -14,20 +18,12 @@ interface Easeable {
     ease(params: Record<string, unknown>): void;
 }
 
-const CARD_WIDTH = 400;
-const QUESTION_CARD_WIDTH = 600;
 const CARD_MARGIN = 12;
-const CARD_RIGHT_OFFSET = QUESTION_CARD_WIDTH - CARD_WIDTH;
 const COLLAPSED_H = 62;
 const STACK_OFFSET_Y = 4;
 const STACK_SCALE_STEP = 0.05;
 const STACK_OPACITY_STEP = 0.05;
 const ANIMATION_DURATION = 300;
-
-// Kestrel brand palette
-const SURFACE_HOVER = '#0f1612';
-const BORDER_HOVER = '#243138';
-const ACCENT = '#62af85';
 
 function _optStr(value: unknown): string | undefined {
     return value ? String(value) : undefined;
@@ -71,12 +67,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
     }
 
     private _createContainer(): void {
-        this._container = new St.Widget({
-            style: 'padding: 0;',
-            reactive: true,
-            clip_to_allocation: false,
-            layout_manager: new Clutter.FixedLayout(),
-        });
+        this._container = buildNotificationContainer();
 
         this._connectContainerHover();
 
@@ -110,12 +101,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
     }
 
     private _createCountBadge(): void {
-        this._countBadge = new St.Label({
-            text: '0',
-            style: `background-color: ${ACCENT}; color: #fff; font-family: monospace; font-size: 11px; font-weight: bold; border-radius: 100px; padding: 2px 7px; min-width: 22px; text-align: center;`,
-            visible: false,
-            reactive: false,
-        });
+        this._countBadge = buildCountBadge();
         this._container!.add_child(this._countBadge);
     }
 
@@ -656,10 +642,6 @@ export class NotificationOverlayAdapter implements NotificationPort {
     }
 
     private _cardStyle(hovered: boolean, behavior: { hasInternalPadding: boolean }): string {
-        const padding = behavior.hasInternalPadding ? '0' : '14px 16px';
-        if (hovered) {
-            return `background-color: ${SURFACE_HOVER}; border: 1px solid ${BORDER_HOVER}; border-radius: 12px; padding: ${padding}; box-shadow: 0 6px 28px rgba(0,0,0,0.35);`;
-        }
-        return `background-color: #0a0f0c; border: 1px solid #1c2b2c; border-radius: 12px; padding: ${padding};`;
+        return buildCardStyle(hovered, behavior.hasInternalPadding);
     }
 }

@@ -2,7 +2,7 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 
-import { BORDER, TEXT_DIM, ACCENT } from '../adapters/card-base.js';
+import { BORDER, TEXT_DIM, ACCENT } from './card-builders.js';
 
 // Palette values not exported from card-base
 const SURFACE = '#0a0f0c';

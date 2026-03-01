@@ -1,4 +1,5 @@
-import type { WindowId, LayoutState } from '../domain/types.js';
+import type { WindowId } from '../domain/types.js';
+import type { SceneModel } from '../domain/scene.js';
 
 export interface WindowPort {
     setWorkAreaY(workAreaY: number): void;
@@ -6,7 +7,7 @@ export interface WindowPort {
     track(windowId: WindowId, metaWindow: unknown): void;
     untrack(windowId: WindowId): void;
     setWindowFullscreen(windowId: WindowId, isFullscreen: boolean): void;
-    applyLayout(layout: LayoutState, nudgeUnsettled?: boolean): void;
+    applyScene(scene: SceneModel, nudgeUnsettled?: boolean): void;
     hasUnsettledWindows(): boolean;
     destroy(): void;
 }

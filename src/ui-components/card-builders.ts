@@ -8,10 +8,10 @@ export const BORDER = '#1c2b2c';
 const TEXT = '#e8ede9';
 export const TEXT_DIM = '#9ca8a0';
 export const ACCENT = '#62af85';
-export const CARD_WIDTH = 400;
+const CARD_WIDTH = 400;
 
 /** Create the outer card box with surface styling. */
-export function buildCardRoot(width: number): St.BoxLayout {
+function buildCardRoot(width: number): St.BoxLayout {
     return new St.BoxLayout({
         vertical: true,
         style: `background-color: ${SURFACE}; border: 1px solid ${BORDER}; border-radius: 12px; padding: 14px 16px;`,
@@ -22,7 +22,7 @@ export function buildCardRoot(width: number): St.BoxLayout {
 }
 
 /** Header row with optional workspace label + title. */
-export function buildCardHeader(workspaceName: string | undefined, title: string): St.BoxLayout {
+function buildCardHeader(workspaceName: string | undefined, title: string): St.BoxLayout {
     const header = new St.BoxLayout({
         style: 'spacing: 8px;',
         x_expand: true,
@@ -51,7 +51,7 @@ export function buildCardHeader(workspaceName: string | undefined, title: string
 }
 
 /** Message label with ellipsis. */
-export function buildCardMessage(message: string): St.Label {
+function buildCardMessage(message: string): St.Label {
     const label = new St.Label({
         text: message,
         style: `font-size: 12px; color: ${TEXT_DIM}; margin-top: 6px;`,
@@ -63,7 +63,7 @@ export function buildCardMessage(message: string): St.Label {
 }
 
 /** Clipped expand wrapper + inner content box. */
-export function buildExpandWrapper(): { wrapper: Clutter.Actor; content: St.BoxLayout } {
+function buildExpandWrapper(): { wrapper: Clutter.Actor; content: St.BoxLayout } {
     const wrapper = new Clutter.Actor({
         clip_to_allocation: true,
         height: 0,
@@ -144,4 +144,22 @@ export function buildProgressBar(): St.Widget {
         x_expand: true,
         pivot_point: new Graphene.Point({ x: 0, y: 0.5 }),
     });
+}
+
+interface CardSkeleton {
+    actor: St.BoxLayout;
+    expandWrapper: Clutter.Actor;
+    expandContent: St.BoxLayout;
+    msgLabel: St.Label;
+}
+
+/** Build the shared card skeleton: root, header, message label, expand wrapper. */
+export function buildCardSkeleton(notification: import('../domain/notification-types.js').OverlayNotification): CardSkeleton {
+    const actor = buildCardRoot(CARD_WIDTH);
+    actor.add_child(buildCardHeader(notification.workspaceName, notification.title));
+    const msgLabel = buildCardMessage(notification.message || '');
+    actor.add_child(msgLabel);
+    const { wrapper: expandWrapper, content: expandContent } = buildExpandWrapper();
+    actor.add_child(expandWrapper);
+    return { actor, expandWrapper, expandContent, msgLabel };
 }

@@ -2,9 +2,8 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import type { WindowId, WorkspaceId, MonitorInfo } from './domain/types.js';
 import type { World } from './domain/world.js';
 import { createWorld, setFocus, updateMonitor, updateConfig, buildUpdate, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
-import { computeScene, diffScene } from './domain/scene.js';
+import { diffScene } from './domain/scene.js';
 import type { SceneModel, CloneScene, RealWindowScene, FocusIndicatorScene, WorkspaceStripScene } from './domain/scene.js';
-import { computeLayout, computeLayoutForWorkspace } from './domain/layout.js';
 import { focusRight, focusLeft, focusDown, focusUp } from './domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from './domain/window-operations.js';
 import type { ClonePort } from './ports/clone-port.js';
@@ -34,7 +33,7 @@ import { WindowLifecycleHandler } from './adapters/window-lifecycle-handler.js';
 import { PanelIndicatorAdapter } from './adapters/panel-indicator-adapter.js';
 import { WorldHolder } from './adapters/world-holder.js';
 import { NotificationCoordinator } from './adapters/notification-coordinator.js';
-import { HelpOverlayAdapter } from './adapters/help-overlay-adapter.js';
+import { HelpOverlayAdapter } from './ui-components/help-overlay.js';
 import { MouseInputAdapter } from './adapters/mouse-input-adapter.js';
 import { safeWindow } from './adapters/safe-window.js';
 import type Gio from 'gi://Gio';
@@ -200,7 +199,7 @@ export default class KestrelExtension extends Extension {
                 focusWindow: (id) => this._focusAdapter?.focusInternal(id),
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
-                applyLayout: (layout, animate) => this._applyLayout(layout, animate),
+                applyScene: (scene, animate) => this._applyScene(scene, animate),
             });
 
             this._mouseInputAdapter = new MouseInputAdapter({
@@ -220,7 +219,7 @@ export default class KestrelExtension extends Extension {
                 getWorld: () => this._worldHolder.world,
                 setWorld: (w) => { this._setWorld(w); },
                 checkGuard: (label) => this._guard?.check(label) ?? false,
-                applyLayout: (layout, animate) => this._applyLayout(layout, animate),
+                applyScene: (scene, animate) => this._applyScene(scene, animate),
                 applyUpdateWithScroll: (update, animate, oldScrollX, oldWsId) =>
                     this._applyUpdateWithScroll(update, animate, oldScrollX, oldWsId),
                 focusWindow: (id) => this._focusAdapter?.focusInternal(id),
@@ -440,7 +439,7 @@ export default class KestrelExtension extends Extension {
         this._setWorld(update.world);
 
         this._cloneAdapter?.updateConfig?.(config);
-        this._applyLayout(update.layout, true);
+        this._applyScene(update.scene, true);
     }
 
     private _setWorld(world: World): void {
@@ -459,7 +458,7 @@ export default class KestrelExtension extends Extension {
 
     private _debugState(): string {
         if (!this._worldHolder.world) return '{"error":"no world"}';
-        const layout = buildUpdate(this._worldHolder.world).layout;
+        const scene = buildUpdate(this._worldHolder.world).scene;
         return JSON.stringify({
             world: {
                 config: this._worldHolder.world.config,
@@ -473,10 +472,11 @@ export default class KestrelExtension extends Extension {
                 })),
                 viewport: this._worldHolder.world.viewport,
             },
-            layout: {
-                scrollX: layout.scrollX,
-                focusedWindowId: layout.focusedWindowId,
-                windows: layout.windows,
+            scene: {
+                focusedWindowId: scene.focusedWindowId,
+                clones: scene.clones,
+                focusIndicator: scene.focusIndicator,
+                workspaceStrip: scene.workspaceStrip,
             },
         });
     }
@@ -486,13 +486,8 @@ export default class KestrelExtension extends Extension {
             const world = this._worldHolder.world;
             if (!world) return '{"error":"no world"}';
 
-            // Compute expected scene from domain
-            const layouts = world.workspaces.map((_, i) =>
-                i === world.viewport.workspaceIndex
-                    ? computeLayout(world)
-                    : computeLayoutForWorkspace(world, i),
-            );
-            const expected = computeScene(world, layouts);
+            // Expected scene comes directly from domain
+            const expected = buildUpdate(world).scene;
 
             // Read actual state from adapters
             const adapter = this._cloneAdapter as CloneAdapter;
@@ -544,6 +539,7 @@ export default class KestrelExtension extends Extension {
                 : expected.workspaceStrip;
 
             const actual: SceneModel = {
+                focusedWindowId: expected.focusedWindowId,
                 clones: actualClones,
                 realWindows: actualRealWindows,
                 focusIndicator: actualFocus,
@@ -631,13 +627,13 @@ export default class KestrelExtension extends Extension {
         if (newWsId && newWsId !== oldWsId) {
             this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
         }
-        this._applyLayout(update.layout, animate);
+        this._applyScene(update.scene, animate);
         this._focusAdapter?.focusInternal(update.world.focusedWindow);
     }
 
-    private _applyLayout(layout: import('./domain/types.js').LayoutState, animate: boolean, nudgeUnsettled: boolean = false): void {
-        this._windowAdapter?.applyLayout(layout, nudgeUnsettled);
-        this._cloneAdapter?.applyLayout(layout, animate);
+    private _applyScene(scene: import('./domain/scene.js').SceneModel, animate: boolean, nudgeUnsettled: boolean = false): void {
+        this._windowAdapter?.applyScene(scene, nudgeUnsettled);
+        this._cloneAdapter?.applyScene(scene, animate);
     }
 
     private _handleExternalFocus(windowId: WindowId): void {
@@ -656,7 +652,7 @@ export default class KestrelExtension extends Extension {
             if (newWsId && newWsId !== oldWsId) {
                 this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
             }
-            this._applyLayout(update.layout, true);
+            this._applyScene(update.scene, true);
         } catch (e) {
             console.error('[Kestrel] Error handling external focus:', e);
         }
@@ -676,7 +672,7 @@ export default class KestrelExtension extends Extension {
             this._windowAdapter?.setWorkAreaY(monitor.workAreaY);
             this._windowAdapter?.setMonitorBounds(monitor.stageOffsetX, monitor.totalWidth);
 
-            this._applyLayout(update.layout, false);
+            this._applyScene(update.scene, false);
         } catch (e) {
             console.error('[Kestrel] Error handling monitor change:', e);
         }

@@ -2,8 +2,8 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import { buildHelpCard } from '../ui-components/help-builders.js';
-import type { ShortcutSection } from '../ui-components/help-builders.js';
+import { buildHelpCard } from './help-builders.js';
+import type { ShortcutSection } from './help-builders.js';
 
 interface Easeable {
     ease(params: Record<string, unknown>): void;

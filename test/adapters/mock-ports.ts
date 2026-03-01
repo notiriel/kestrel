@@ -15,7 +15,7 @@ export function createMockClonePort(): Mocked<ClonePort> {
         removeFloatClone: vi.fn(),
         moveCloneToWorkspace: vi.fn(),
         setWindowFullscreen: vi.fn(),
-        applyLayout: vi.fn(),
+        applyScene: vi.fn(),
         setScroll: vi.fn(),
         setScrollForWorkspace: vi.fn(),
         animateViewport: vi.fn(),
@@ -33,7 +33,7 @@ export function createMockWindowPort(): Mocked<WindowPort> {
         track: vi.fn(),
         untrack: vi.fn(),
         setWindowFullscreen: vi.fn(),
-        applyLayout: vi.fn(),
+        applyScene: vi.fn(),
         hasUnsettledWindows: vi.fn().mockReturnValue(false),
         destroy: vi.fn(),
     };

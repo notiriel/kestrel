@@ -1,7 +1,7 @@
 import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
-import type { QuestionState } from './notification-adapter-types.js';
+import type { QuestionState } from '../ui-components/notification-adapter-types.js';
 import { QuestionCard } from '../ui-components/question-card.js';
 import {
     enterFocusMode, exitFocusMode, navigateFocusMode,

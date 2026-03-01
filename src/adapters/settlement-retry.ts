@@ -1,6 +1,6 @@
 import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { computeLayout } from '../domain/layout.js';
+import { buildUpdate } from '../domain/world.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { CloneRenderPort } from '../ports/clone-port.js';
 import GLib from 'gi://GLib';
@@ -62,11 +62,11 @@ export class SettlementRetry {
     }
 
     private _applySettlementLayout(world: World): void {
-        const layout = computeLayout(world);
+        const scene = buildUpdate(world).scene;
         const winAdapter = this._deps.getWindowAdapter();
         const cloneAdapter = this._deps.getCloneAdapter();
-        winAdapter?.applyLayout(layout, true);
-        cloneAdapter?.applyLayout(layout, false);
+        winAdapter?.applyScene(scene, true);
+        cloneAdapter?.applyScene(scene, false);
 
         if (winAdapter?.hasUnsettledWindows()) {
             this._step++;

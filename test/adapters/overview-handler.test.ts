@@ -191,7 +191,7 @@ describe('OverviewHandler', () => {
             expect(exitWorld.overviewActive).toBe(false);
 
             expect(clonePort.exitOverview).toHaveBeenCalledOnce();
-            expect(windowPort.applyLayout).toHaveBeenCalledOnce();
+            expect(windowPort.applyScene).toHaveBeenCalledOnce();
             expect(inputAdapter.deactivate).toHaveBeenCalledOnce();
             expect(deps.focusWindow).toHaveBeenCalled();
             expect(handler.isActive).toBe(false);

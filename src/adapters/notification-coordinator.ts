@@ -31,6 +31,7 @@ interface NotificationCoordinatorDeps {
     listWorkspaces(): string;
     switchToWorkspaceByName(name: string): string;
     renameCurrentWorkspace(name: string): string;
+    getDiagnostics(): string;
 }
 
 export class NotificationCoordinator {
@@ -72,6 +73,7 @@ export class NotificationCoordinator {
             listWorkspaces: () => this._deps.listWorkspaces(),
             switchToWorkspaceByName: (name) => this._deps.switchToWorkspaceByName(name),
             renameCurrentWorkspace: (name) => this._deps.renameCurrentWorkspace(name),
+            getDiagnostics: () => this._deps.getDiagnostics(),
         });
     }
 

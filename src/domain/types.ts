@@ -43,9 +43,10 @@ export interface LayoutState {
 
 export interface WorldUpdate {
     readonly world: World;
-    readonly layout: LayoutState;
+    readonly scene: SceneModel;
 }
 
 
 // Forward declaration to avoid circular import — imported as type only
 import type { World } from './world.js';
+import type { SceneModel } from './scene.js';

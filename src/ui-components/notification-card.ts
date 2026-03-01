@@ -2,7 +2,7 @@ import type { OverlayNotification } from '../domain/notification-types.js';
 import type { NotificationCardDelegate, VisitableCardOptions } from './notification-adapter-types.js';
 import St from 'gi://St';
 import type Clutter from 'gi://Clutter';
-import { ACCENT, TEXT_DIM, BORDER, buildCardSkeleton, makeButton } from './card-base.js';
+import { ACCENT, TEXT_DIM, BORDER, buildCardSkeleton, makeButton } from './card-builders.js';
 
 export class NotificationCard implements NotificationCardDelegate {
     readonly actor: St.BoxLayout;

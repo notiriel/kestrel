@@ -1,4 +1,5 @@
-import type { WindowId, WorkspaceId, LayoutState, KestrelConfig } from '../domain/types.js';
+import type { WindowId, WorkspaceId, KestrelConfig } from '../domain/types.js';
+import type { SceneModel } from '../domain/scene.js';
 import type { OverviewTransform } from '../domain/overview-state.js';
 
 export type { OverviewTransform } from '../domain/overview-state.js';
@@ -27,7 +28,7 @@ export interface FloatClonePort {
 
 /** Layout rendering: apply positions, scroll, animate. */
 export interface CloneRenderPort {
-    applyLayout(layout: LayoutState, animate: boolean): void;
+    applyScene(scene: SceneModel, animate: boolean): void;
     setScroll(scrollX: number): void;
     setScrollForWorkspace(wsId: WorkspaceId, scrollX: number): void;
     animateViewport(targetScrollX: number): void;
@@ -35,9 +36,9 @@ export interface CloneRenderPort {
 
 /** Overview mode rendering: enter, exit, focus updates. */
 export interface OverviewRenderPort {
-    enterOverview(transform: OverviewTransform, layout: LayoutState, numWorkspaces: number, onComplete?: () => void): void;
-    exitOverview(layout: LayoutState, animate?: boolean): void;
-    updateOverviewFocus(layout: LayoutState, wsIndex: number, transform: OverviewTransform): void;
+    enterOverview(transform: OverviewTransform, scene: SceneModel, numWorkspaces: number, onComplete?: () => void): void;
+    exitOverview(scene: SceneModel, animate?: boolean): void;
+    updateOverviewFocus(scene: SceneModel, wsIndex: number, transform: OverviewTransform): void;
 }
 
 /** Overview filter and rename rendering. All methods optional for backwards compatibility. */

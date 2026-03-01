@@ -1,17 +1,11 @@
 import type { World } from '../domain/world.js';
 import type { PanelIndicatorPort } from '../ports/panel-indicator-port.js';
 import type { ClaudeStatus } from '../domain/notification-types.js';
+import { STATUS_ICONS, buildIndicatorBox } from '../ui-components/panel-indicator-builders.js';
 import St from 'gi://St';
-import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-
-const STATUS_ICONS: Record<string, string> = {
-    'working': '\u{1F7E2}',    // 🟢
-    'needs-input': '\u{1F534}', // 🔴
-    'done': '\u{1F7E0}',       // 🟠
-};
 
 export class PanelIndicatorAdapter implements PanelIndicatorPort {
     private _indicator: InstanceType<typeof PanelMenu.Button> | null = null;
@@ -35,11 +29,9 @@ export class PanelIndicatorAdapter implements PanelIndicatorPort {
     }
 
     private _buildIndicatorBox(): void {
-        const box = new St.BoxLayout({ style_class: 'panel-status-indicators-box' });
-        this._label = new St.Label({ text: 'Kestrel', y_align: Clutter.ActorAlign.CENTER });
-        box.add_child(this._label);
-        this._statusDot = new St.Label({ text: '', y_align: Clutter.ActorAlign.CENTER, style: 'padding-left: 4px; font-size: 10px;' });
-        box.add_child(this._statusDot);
+        const { box, label, statusDot } = buildIndicatorBox();
+        this._label = label;
+        this._statusDot = statusDot;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this._indicator as any).add_child(box);
     }

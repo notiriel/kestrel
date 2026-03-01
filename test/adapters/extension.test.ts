@@ -80,7 +80,7 @@ vi.mock('../../src/adapters/clone-adapter.js', () => ({
             ...mockMethods(
                 'init', 'updateWorkArea', 'updateConfig', 'syncWorkspaces', 'addClone', 'removeClone',
                 'addFloatClone', 'removeFloatClone', 'moveCloneToWorkspace', 'setWindowFullscreen',
-                'applyLayout', 'setScroll', 'setScrollForWorkspace', 'animateViewport',
+                'applyScene', 'setScroll', 'setScrollForWorkspace', 'animateViewport',
                 'enterOverview', 'exitOverview', 'updateOverviewFocus', 'destroy',
             ),
             getLayer: vi.fn().mockReturnValue(null),
@@ -93,7 +93,7 @@ vi.mock('../../src/adapters/clone-adapter.js', () => ({
 vi.mock('../../src/adapters/window-adapter.js', () => ({
     WindowAdapter: vi.fn().mockImplementation(() => {
         const inst = {
-            ...mockMethods('setWorkAreaY', 'setMonitorBounds', 'track', 'untrack', 'setWindowFullscreen', 'applyLayout', 'destroy'),
+            ...mockMethods('setWorkAreaY', 'setMonitorBounds', 'track', 'untrack', 'setWindowFullscreen', 'applyScene', 'destroy'),
             hasUnsettledWindows: vi.fn().mockReturnValue(false),
         };
         mockInstances.window = inst;
@@ -160,7 +160,7 @@ vi.mock('../../src/adapters/panel-indicator-adapter.js', () => ({
         destroy: vi.fn(),
     })),
 }));
-vi.mock('../../src/adapters/help-overlay-adapter.js', () => ({
+vi.mock('../../src/ui-components/help-overlay.js', () => ({
     HelpOverlayAdapter: vi.fn().mockImplementation(() => ({
         toggle: vi.fn(),
         destroy: vi.fn(),
@@ -341,8 +341,8 @@ describe('KestrelExtension', () => {
                 expect(mockInstances.window.track).toHaveBeenCalledWith('w-1', meta);
                 expect(mockInstances.focus.track).toHaveBeenCalledWith('w-1', meta);
                 expect(mockInstances.clone.addClone).toHaveBeenCalled();
-                expect(mockInstances.window.applyLayout).toHaveBeenCalled();
-                expect(mockInstances.clone.applyLayout).toHaveBeenCalled();
+                expect(mockInstances.window.applyScene).toHaveBeenCalled();
+                expect(mockInstances.clone.applyScene).toHaveBeenCalled();
                 expect(mockInstances.focus.focusInternal).toHaveBeenCalledWith('w-1');
             });
 
@@ -365,7 +365,7 @@ describe('KestrelExtension', () => {
                 windowCallbacks.onWindowReady('w-1', mockMetaWindow());
                 windowCallbacks.onWindowReady('w-2', mockMetaWindow());
 
-                expect(mockInstances.clone.applyLayout).toHaveBeenCalled();
+                expect(mockInstances.clone.applyScene).toHaveBeenCalled();
             });
         });
 
@@ -407,7 +407,7 @@ describe('KestrelExtension', () => {
                 windowCallbacks.onWindowMaximized('w-1');
 
                 expect(mockInstances.focus.getMetaWindow).toHaveBeenCalledWith('w-1');
-                expect(mockInstances.window.applyLayout).toHaveBeenCalled();
+                expect(mockInstances.window.applyScene).toHaveBeenCalled();
             });
 
             it('handles missing metaWindow gracefully', () => {
@@ -423,20 +423,20 @@ describe('KestrelExtension', () => {
                 windowCallbacks.onWindowReady('w-1', mockMetaWindow());
                 windowCallbacks.onWindowReady('w-2', mockMetaWindow());
 
-                mockInstances.clone.applyLayout.mockClear();
+                mockInstances.clone.applyScene.mockClear();
 
                 focusCallback('w-1' as any);
 
-                expect(mockInstances.clone.applyLayout).toHaveBeenCalled();
+                expect(mockInstances.clone.applyScene).toHaveBeenCalled();
             });
 
             it('no-ops when focus matches current', () => {
                 windowCallbacks.onWindowReady('w-1', mockMetaWindow());
 
-                mockInstances.clone.applyLayout.mockClear();
+                mockInstances.clone.applyScene.mockClear();
                 focusCallback('w-1' as any);
 
-                expect(mockInstances.clone.applyLayout).not.toHaveBeenCalled();
+                expect(mockInstances.clone.applyScene).not.toHaveBeenCalled();
             });
         });
 
@@ -456,7 +456,7 @@ describe('KestrelExtension', () => {
                 expect(mockInstances.clone.updateWorkArea).toHaveBeenCalledWith(32, 1440);
                 expect(mockInstances.window.setWorkAreaY).toHaveBeenCalledWith(32);
                 expect(mockInstances.window.setMonitorBounds).toHaveBeenCalledWith(0, 2560);
-                expect(mockInstances.window.applyLayout).toHaveBeenCalled();
+                expect(mockInstances.window.applyScene).toHaveBeenCalled();
             });
         });
 
@@ -492,7 +492,7 @@ describe('KestrelExtension', () => {
             const result = (global as any)._kestrel.debugState();
             const parsed = JSON.parse(result);
             expect(parsed.world).toBeDefined();
-            expect(parsed.layout).toBeDefined();
+            expect(parsed.scene).toBeDefined();
             ext.disable();
             mockSettings.get_boolean.mockReturnValue(false);
         });
@@ -579,7 +579,7 @@ describe('KestrelExtension', () => {
                 get_title: () => 'T', get_wm_class: () => 'c',
                 maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
             });
-            mockInstances.clone.applyLayout.mockImplementation(() => { throw new Error('test'); });
+            mockInstances.clone.applyScene.mockImplementation(() => { throw new Error('test'); });
             expect(() => windowCallbacks.onWindowMaximized('w-1')).not.toThrow();
         });
 
@@ -592,7 +592,7 @@ describe('KestrelExtension', () => {
                 get_title: () => 'T', get_wm_class: () => 'c',
                 maximized_horizontally: false, maximized_vertically: false, fullscreen: false,
             });
-            mockInstances.clone.applyLayout.mockImplementation(() => { throw new Error('test'); });
+            mockInstances.clone.applyScene.mockImplementation(() => { throw new Error('test'); });
             expect(() => focusCallback('w-1')).not.toThrow();
         });
 
