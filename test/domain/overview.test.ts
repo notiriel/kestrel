@@ -7,7 +7,7 @@ import type { World } from '../../src/domain/world.js';
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -39,6 +39,7 @@ function makeWorld(windowIds: number[], focusedIdx: number): World {
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
     };
 }
 
@@ -111,6 +112,7 @@ describe('exitOverview', () => {
             overviewActive: true,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
         };
         const update = exitOverview(world);
         // win-3 is off-screen at scrollX=0, so viewport should scroll to show it

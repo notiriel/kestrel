@@ -4,6 +4,7 @@ import type {
     KestrelConfig,
     MonitorInfo,
     WorldUpdate,
+    QuakeState,
 } from './types.js';
 import type { TiledWindow } from './window.js';
 import { createTiledWindow } from './window.js';
@@ -34,6 +35,7 @@ import type { OverviewInteractionState } from './overview-state.js';
 import { createOverviewInteractionState } from './overview-state.js';
 import type { NotificationState } from './notification.js';
 import { createNotificationState, dismissNotificationsForWindow, unregisterWindow } from './notification.js';
+import { createQuakeState, isQuakeWindow, releaseQuakeWindow } from './quake.js';
 
 export interface World {
     readonly workspaces: readonly Workspace[];
@@ -44,6 +46,7 @@ export interface World {
     readonly overviewActive: boolean;
     readonly overviewInteractionState: OverviewInteractionState;
     readonly notificationState: NotificationState;
+    readonly quakeState: QuakeState;
 }
 
 let workspaceCounter = 0;
@@ -68,6 +71,7 @@ export function createWorld(config: KestrelConfig, monitor: MonitorInfo): World 
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
+        quakeState: createQuakeState(),
     };
 }
 
@@ -269,6 +273,11 @@ export function addWindow(world: World, windowId: WindowId): WorldUpdate {
 }
 
 export function removeWindow(world: World, windowId: WindowId): WorldUpdate {
+    // Check if this is a quake window — delegate to quake domain
+    if (isQuakeWindow(world, windowId)) {
+        return releaseQuakeWindow(world, windowId);
+    }
+
     const found = findWindowInWorld(world, windowId);
     if (!found) return buildUpdate(world);
     const wsIndex = found.wsIndex;
@@ -494,6 +503,7 @@ export function restoreWorld(
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
+        quakeState: createQuakeState(),
     };
 
     world = pruneEmptyWorkspaces(world);

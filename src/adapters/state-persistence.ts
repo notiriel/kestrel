@@ -40,6 +40,10 @@ export class StatePersistence implements StatePersistencePort {
     }
 
     readConfig(): KestrelConfig {
+        const quakeSlots = [];
+        for (let i = 1; i <= 5; i++) {
+            quakeSlots.push({ appId: this._settings.get_string(`quake-slot-${i}`) });
+        }
         return {
             gapSize: this._settings.get_int('gap-size'),
             edgeGap: this._settings.get_int('edge-gap'),
@@ -48,6 +52,9 @@ export class StatePersistence implements StatePersistencePort {
             focusBorderRadius: this._settings.get_int('focus-border-radius'),
             focusBgColor: this._settings.get_string('focus-background-color'),
             columnCount: this._settings.get_int('column-count'),
+            quakeSlots,
+            quakeWidthPercent: this._settings.get_int('quake-width-percent'),
+            quakeHeightPercent: this._settings.get_int('quake-height-percent'),
         };
     }
 

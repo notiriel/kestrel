@@ -18,6 +18,11 @@ export interface KeybindingCallbacks {
     onJoinStack: () => void;
     onForceWorkspaceUp: () => void;
     onForceWorkspaceDown: () => void;
+    onQuakeSlot1: () => void;
+    onQuakeSlot2: () => void;
+    onQuakeSlot3: () => void;
+    onQuakeSlot4: () => void;
+    onQuakeSlot5: () => void;
 }
 
 export interface KeybindingPort {

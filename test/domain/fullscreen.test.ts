@@ -8,7 +8,7 @@ import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navi
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -134,6 +134,7 @@ describe('Fullscreen Step-Out', () => {
                 overviewActive: false,
                 overviewInteractionState: createOverviewInteractionState(),
                 notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
             };
 
             ({ world } = enterFullscreen(world, wid(1)));
@@ -159,6 +160,7 @@ describe('Fullscreen Step-Out', () => {
                 overviewActive: false,
                 overviewInteractionState: createOverviewInteractionState(),
                 notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
             };
 
             ({ world } = enterFullscreen(world, wid(2)));

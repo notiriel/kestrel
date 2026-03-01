@@ -16,7 +16,7 @@ import { createWorld, addWindow } from '../../src/domain/world.js';
 import type { WindowId } from '../../src/domain/types.js';
 import type { World } from '../../src/domain/world.js';
 
-const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
+const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const MONITOR = { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
 
 function mockMetaWindow(overrides: any = {}) {
@@ -59,6 +59,10 @@ function createMockDeps(world: World): { deps: WindowLifecycleDeps; mocks: Recor
         startSettlement: vi.fn(),
         watchWindow: vi.fn(),
         unwatchWindow: vi.fn(),
+        matchQuakeSlot: vi.fn().mockReturnValue(null),
+        trackQuakeWindow: vi.fn(),
+        untrackQuakeWindow: vi.fn(),
+        applyQuakeScene: vi.fn(),
     };
 
     const deps: WindowLifecycleDeps = {
@@ -75,6 +79,10 @@ function createMockDeps(world: World): { deps: WindowLifecycleDeps; mocks: Recor
         startSettlement: mocks.startSettlement,
         watchWindow: mocks.watchWindow,
         unwatchWindow: mocks.unwatchWindow,
+        matchQuakeSlot: mocks.matchQuakeSlot,
+        trackQuakeWindow: mocks.trackQuakeWindow,
+        untrackQuakeWindow: mocks.untrackQuakeWindow,
+        applyQuakeScene: mocks.applyQuakeScene,
     };
 
     return { deps, mocks };

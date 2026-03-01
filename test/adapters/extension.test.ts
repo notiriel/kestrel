@@ -62,7 +62,7 @@ vi.mock('../../src/adapters/monitor-adapter.js', () => ({
 }));
 vi.mock('../../src/adapters/shell-adapter.js', () => ({
     ShellAdapter: vi.fn().mockImplementation(() => {
-        const inst = mockMethods('hideOverview', 'interceptWmAnimations', 'destroy');
+        const inst = mockMethods('hideOverview', 'interceptWmAnimations', 'setQuakeWindowCheck', 'destroy');
         mockInstances.shell = inst;
         return inst;
     }),
@@ -125,7 +125,7 @@ vi.mock('../../src/adapters/conflict-detector.js', () => ({
 function makeStatePersistenceMock(tryRestoreResult: any = null) {
     return () => {
         const inst = {
-            readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 }),
+            readConfig: vi.fn().mockReturnValue({ gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 }),
             save: vi.fn(),
             tryRestore: vi.fn().mockReturnValue(tryRestoreResult),
         };
@@ -173,6 +173,17 @@ vi.mock('../../src/adapters/mouse-input-adapter.js', () => ({
         return inst;
     }),
 }));
+vi.mock('../../src/adapters/quake-window-adapter.js', () => ({
+    QuakeWindowAdapter: vi.fn().mockImplementation(() => {
+        const inst = {
+            ...mockMethods('track', 'untrack', 'applyQuakeScene', 'launchApp', 'matchWindowToSlot', 'restoreFocus', 'destroy'),
+            isTracked: vi.fn().mockReturnValue(false),
+            isQuakeActor: vi.fn().mockReturnValue(false),
+        };
+        mockInstances.quake = inst;
+        return inst;
+    }),
+}));
 vi.mock('../../src/adapters/safe-window.js', () => ({
     safeWindow: (w: unknown) => w,
     rawWindow: (w: unknown) => w,
@@ -213,7 +224,7 @@ describe('KestrelExtension', () => {
 
         it('initializes clone adapter with monitor geometry', () => {
             ext.enable();
-            expect(mockInstances.clone.init).toHaveBeenCalledWith(0, 1080, { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 });
+            expect(mockInstances.clone.init).toHaveBeenCalledWith(0, 1080, { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 });
             expect(mockInstances.clone.syncWorkspaces).toHaveBeenCalled();
         });
 
@@ -287,7 +298,7 @@ describe('KestrelExtension', () => {
 
     describe('state restore on enable()', () => {
         it('applies restored world when tryRestore returns state', () => {
-            const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
+            const config = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
             const monitor = { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
             let restored = createWorld(config, monitor);
             restored = addWindow(restored, 'w-1' as WindowId).world;

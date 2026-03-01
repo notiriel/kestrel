@@ -167,6 +167,11 @@ All keybindings are configurable via GSettings. These are the defaults:
 | Super+BackSpace | Close focused window |
 | Super+Period | Toggle notification focus mode |
 | Super+Apostrophe | Show keyboard shortcuts help |
+| Super+W | Toggle quake slot 1 |
+| Super+E | Toggle quake slot 2 |
+| Super+R | Toggle quake slot 3 |
+| Super+T | Toggle quake slot 4 |
+| Super+Z | Toggle quake slot 5 |
 
 ### Boundary Behavior
 
@@ -376,6 +381,12 @@ graph LR
     E --> B
 ```
 
+## Quake Console
+
+Quake console provides up to 5 hotkey-bound application slots (Super+W/E/R/T/Z) that overlay-float in from the top of the screen, like the classic Quake terminal. Each slot can be configured with a desktop app ID. Only one quake overlay is visible at a time; pressing the same hotkey again dismisses it. If no matching window exists, the configured app is launched automatically. Configured apps are pre-launched on startup so they are ready instantly. External focus changes (clicking a tiled window) dismiss the visible overlay.
+
+Quake windows are managed by the domain as a separate category alongside tiled windows — they do not occupy workspace slots or participate in tiling layout. Full specification: `docs/feature/quake-console.md`.
+
 ## Configuration
 
 All settings are configurable via GSettings under the schema `org.gnome.shell.extensions.kestrel`.
@@ -396,6 +407,18 @@ All settings are configurable via GSettings under the schema `org.gnome.shell.ex
 | Border color | `rgba(125,214,164,0.8)` | `focus-border-color` |
 | Background color | `rgba(125,214,164,0.05)` | `focus-background-color` |
 | Border radius | 8px | `focus-border-radius` |
+
+### Quake Console Settings
+
+| Setting | Default | Key |
+|---|---|---|
+| Quake slot 1 app ID | (empty) | `quake-slot-1` |
+| Quake slot 2 app ID | (empty) | `quake-slot-2` |
+| Quake slot 3 app ID | (empty) | `quake-slot-3` |
+| Quake slot 4 app ID | (empty) | `quake-slot-4` |
+| Quake slot 5 app ID | (empty) | `quake-slot-5` |
+| Quake window width | 80% | `quake-width-percent` |
+| Quake window height | 80% | `quake-height-percent` |
 
 ### Debug Settings
 

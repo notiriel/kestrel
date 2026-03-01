@@ -37,6 +37,8 @@ import { WorldHolder } from './adapters/world-holder.js';
 import { NotificationCoordinator } from './adapters/notification-coordinator.js';
 import { HelpOverlayAdapter } from './ui-components/help-overlay.js';
 import { MouseInputAdapter } from './adapters/mouse-input-adapter.js';
+import { QuakeWindowAdapter } from './adapters/quake-window-adapter.js';
+import { toggleQuakeSlot, dismissQuake } from './domain/quake.js';
 import { safeWindow } from './adapters/safe-window.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
@@ -61,6 +63,7 @@ export default class KestrelExtension extends Extension {
     private _notificationCoordinator: NotificationCoordinator | null = null;
     private _helpOverlay: HelpOverlayAdapter | null = null;
     private _mouseInputAdapter: MouseInputAdapter | null = null;
+    private _quakeAdapter: QuakeWindowAdapter | null = null;
     private _debugMode: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
     private _settingsChangedId: number = 0;
@@ -81,6 +84,7 @@ export default class KestrelExtension extends Extension {
                 (global as any)._kestrel = {
                     debugState: () => this._debugState(),
                     diagnostics: () => this._getDiagnostics(),
+                    quakeToggle: (slot: number) => this._handleQuakeToggle(slot),
                 };
             }
 
@@ -111,6 +115,12 @@ export default class KestrelExtension extends Extension {
             this._windowAdapter.setMonitorBounds(monitor.stageOffsetX, monitor.totalWidth);
             this._focusAdapter = new FocusAdapter();
             this._shellAdapter = new ShellAdapter();
+            this._quakeAdapter = new QuakeWindowAdapter();
+            const kestrelLayer = (this._cloneAdapter as CloneAdapter)?.getLayer?.();
+            if (kestrelLayer) this._quakeAdapter.setKestrelLayer(kestrelLayer);
+            (this._shellAdapter as ShellAdapter).setQuakeWindowCheck(
+                (actor) => this._quakeAdapter?.isQuakeActor(actor) ?? false,
+            );
 
             // Panel indicator in top bar
             this._panelIndicator = new PanelIndicatorAdapter();
@@ -180,6 +190,12 @@ export default class KestrelExtension extends Extension {
                 },
                 onOverviewEnter: () => {
                     this._mouseInputAdapter?.deactivate();
+                    // Dismiss quake overlay when entering overview
+                    if (this._worldHolder.world?.quakeState.activeSlot !== null) {
+                        const quakeDismiss = dismissQuake(this._worldHolder.world!);
+                        this._setWorld(quakeDismiss.world);
+                        this._quakeAdapter?.applyQuakeScene(quakeDismiss.scene.quakeWindow);
+                    }
                 },
                 onOverviewExit: () => {
                     this._mouseInputAdapter?.activate();
@@ -234,6 +250,20 @@ export default class KestrelExtension extends Extension {
                 startSettlement: () => this._settlementRetry?.start(),
                 watchWindow: (wid, meta) => this._notificationCoordinator?.watchWindow(wid, meta as Meta.Window),
                 unwatchWindow: (wid) => this._notificationCoordinator?.unwatchWindow(wid),
+                matchQuakeSlot: (metaWindow) => {
+                    if (!this._quakeAdapter || !this._worldHolder.world) return null;
+                    const slotIndex = this._quakeAdapter.matchWindowToSlot(metaWindow, this._worldHolder.world.config);
+                    if (slotIndex === null) return null;
+                    // Only match if the slot is empty (first window gets the slot)
+                    if (this._worldHolder.world.quakeState.slots[slotIndex] !== null) return null;
+                    return slotIndex;
+                },
+                trackQuakeWindow: (wid, metaWindow) => this._quakeAdapter?.track(wid, metaWindow),
+                untrackQuakeWindow: (wid) => this._quakeAdapter?.untrack(wid),
+                applyQuakeScene: (world) => {
+                    const scene = computeScene(world);
+                    this._quakeAdapter?.applyQuakeScene(scene.quakeWindow);
+                },
             });
 
             // 6. Connect keybindings
@@ -270,6 +300,11 @@ export default class KestrelExtension extends Extension {
                 onJoinStack: () => this._navigationHandler!.handleSimpleCommand(toggleStack, 'joinStack'),
                 onForceWorkspaceUp: () => this._navigationHandler!.handleVerticalFocus(forceWorkspaceUp, 'forceWorkspaceUp'),
                 onForceWorkspaceDown: () => this._navigationHandler!.handleVerticalFocus(forceWorkspaceDown, 'forceWorkspaceDown'),
+                onQuakeSlot1: () => this._handleQuakeToggle(0),
+                onQuakeSlot2: () => this._handleQuakeToggle(1),
+                onQuakeSlot3: () => this._handleQuakeToggle(2),
+                onQuakeSlot4: () => this._handleQuakeToggle(3),
+                onQuakeSlot5: () => this._handleQuakeToggle(4),
             });
 
             // 7b. Activate mouse scroll handler
@@ -323,9 +358,13 @@ export default class KestrelExtension extends Extension {
             this._windowEventAdapter.enumerateExisting();
 
             // Dismiss GNOME overview if it's showing (e.g. on login).
+            // Also pre-launch quake apps after a delay (windows need time to enumerate).
             this._overviewDismissTimeout = setTimeout(() => {
                 this._overviewDismissTimeout = null;
                 this._shellAdapter?.hideOverview();
+                if (settings.get_boolean('quake-prelaunch')) {
+                    this._prelaunchQuakeApps();
+                }
             }, 1000);
 
             // 12. Live settings reload
@@ -363,6 +402,9 @@ export default class KestrelExtension extends Extension {
 
             this._notificationCoordinator?.destroy();
             this._notificationCoordinator = null;
+
+            this._quakeAdapter?.destroy();
+            this._quakeAdapter = null;
 
             this._shellAdapter?.destroy();
             this._shellAdapter = null;
@@ -570,6 +612,7 @@ export default class KestrelExtension extends Extension {
                 realWindows: actualRealWindows,
                 focusIndicator: actualFocus,
                 workspaceStrip: actualStrip,
+                quakeWindow: expected.quakeWindow,
             };
 
             const mismatches = diffScene(expected, actual);
@@ -662,11 +705,76 @@ export default class KestrelExtension extends Extension {
         this._cloneAdapter?.applyScene(scene, animate);
     }
 
+    /** Launch all configured quake apps that don't already have a window assigned. */
+    private _prelaunchQuakeApps(): void {
+        try {
+            if (!this._worldHolder.world || !this._quakeAdapter) return;
+            const { quakeSlots } = this._worldHolder.world.config;
+            const { slots } = this._worldHolder.world.quakeState;
+
+            for (let i = 0; i < quakeSlots.length; i++) {
+                const appId = quakeSlots[i]?.appId;
+                if (appId && slots[i] === null) {
+                    this._log(`[Kestrel] pre-launching quake slot ${i}: ${appId}`);
+                    this._quakeAdapter.launchApp(appId);
+                }
+            }
+        } catch (e) {
+            console.error('[Kestrel] Error pre-launching quake apps:', e);
+        }
+    }
+
+    private _handleQuakeToggle(slotIndex: number): void {
+        try {
+            if (!this._worldHolder.world || !this._quakeAdapter) return;
+
+            const config = this._worldHolder.world.config;
+            const slotConfig = config.quakeSlots[slotIndex];
+            if (!slotConfig?.appId) return;  // Slot not configured
+
+            const { quakeState } = this._worldHolder.world;
+            const windowId = quakeState.slots[slotIndex];
+
+            this._log(`[Kestrel] quake toggle slot=${slotIndex} windowId=${windowId} activeSlot=${quakeState.activeSlot}`);
+
+            if (!windowId) {
+                // No window assigned — launch the app
+                this._log(`[Kestrel] quake launching app: ${slotConfig.appId}`);
+                this._quakeAdapter.launchApp(slotConfig.appId);
+                return;
+            }
+
+            // Toggle the slot
+            const update = toggleQuakeSlot(this._worldHolder.world, slotIndex);
+            this._setWorld(update.world);
+            this._log(`[Kestrel] quake toggled: newActiveSlot=${update.world.quakeState.activeSlot} quakeScene=${update.scene.quakeWindow ? 'visible' : 'null'}`);
+            this._quakeAdapter.applyQuakeScene(update.scene.quakeWindow);
+
+            // Focus management
+            if (update.world.quakeState.activeSlot === null) {
+                // Quake was dismissed — restore tiled focus
+                this._quakeAdapter.restoreFocus(
+                    update.world.focusedWindow,
+                    (id) => this._focusAdapter?.focusInternal(id),
+                );
+            }
+        } catch (e) {
+            console.error('[Kestrel] Error handling quake toggle:', e);
+        }
+    }
+
     private _handleExternalFocus(windowId: WindowId): void {
         try {
             if (!this._worldHolder.world) return;
             if (!this._guard?.check('externalFocus')) return;
             if (this._worldHolder.world.focusedWindow === windowId) return;
+
+            // Dismiss quake overlay when a tiled window receives focus
+            if (this._worldHolder.world.quakeState.activeSlot !== null) {
+                const quakeDismiss = dismissQuake(this._worldHolder.world);
+                this._setWorld(quakeDismiss.world);
+                this._quakeAdapter?.applyQuakeScene(quakeDismiss.scene.quakeWindow);
+            }
 
             const oldScrollX = this._worldHolder.world.viewport.scrollX;
             const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);

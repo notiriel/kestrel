@@ -4,6 +4,7 @@ import type { World } from '../domain/world.js';
 import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt } from '../domain/world.js';
 import { computeScene } from '../domain/scene.js';
 import { allWindows } from '../domain/workspace.js';
+import { isQuakeWindow, releaseQuakeWindow, assignQuakeWindow } from '../domain/quake.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { FocusPort } from '../ports/focus-port.js';
@@ -25,6 +26,10 @@ export interface WindowLifecycleDeps {
     startSettlement(): void;
     watchWindow(windowId: WindowId, metaWindow: unknown): void;
     unwatchWindow(windowId: WindowId): void;
+    matchQuakeSlot(metaWindow: Meta.Window): number | null;
+    trackQuakeWindow(windowId: WindowId, metaWindow: Meta.Window): void;
+    untrackQuakeWindow(windowId: WindowId): void;
+    applyQuakeScene(world: World): void;
 }
 
 export class WindowLifecycleHandler {
@@ -37,23 +42,38 @@ export class WindowLifecycleHandler {
     handleWindowReady(windowId: WindowId, rawMetaWindow: Meta.Window): void {
         try {
             const world = this._deps.getWorld();
-            if (!world) return;
-            if (!this._deps.checkGuard('windowReady')) return;
+            if (!world || !this._deps.checkGuard('windowReady')) return;
 
             this._deps.log(`[Kestrel] window added: ${windowId} title="${rawMetaWindow.get_title()}" wmclass="${rawMetaWindow.get_wm_class()}"`);
             this._deps.watchWindow(windowId, rawMetaWindow);
 
             const metaWindow = safeWindow(rawMetaWindow);
-            const existsInDomain = world.workspaces.some(ws => allWindows(ws).some(w => w.id === windowId));
-
-            if (existsInDomain) {
-                this._restoreExistingWindow(world, windowId, metaWindow);
-            } else {
-                this._addNewWindow(world, windowId, metaWindow);
-            }
+            if (this._tryAssignQuakeSlot(world, windowId, metaWindow)) return;
+            this._routeWindow(world, windowId, metaWindow);
         } catch (e) {
             console.error('[Kestrel] Error handling window ready:', e);
         }
+    }
+
+    private _routeWindow(world: World, windowId: WindowId, metaWindow: Meta.Window): void {
+        const existsInDomain = world.workspaces.some(ws => allWindows(ws).some(w => w.id === windowId));
+        if (existsInDomain) {
+            this._restoreExistingWindow(world, windowId, metaWindow);
+        } else {
+            this._addNewWindow(world, windowId, metaWindow);
+        }
+    }
+
+    private _tryAssignQuakeSlot(world: World, windowId: WindowId, metaWindow: Meta.Window): boolean {
+        const quakeSlot = this._deps.matchQuakeSlot(metaWindow);
+        if (quakeSlot === null) return false;
+
+        this._deps.log(`[Kestrel] quake window matched slot ${quakeSlot}: ${windowId}`);
+        const update = assignQuakeWindow(world, quakeSlot, windowId);
+        this._deps.setWorld(update.world);
+        this._deps.trackQuakeWindow(windowId, metaWindow);
+        this._deps.applyQuakeScene(update.world);
+        return true;
     }
 
     private _restoreExistingWindow(world: World, windowId: WindowId, metaWindow: Meta.Window): void {
@@ -129,21 +149,36 @@ export class WindowLifecycleHandler {
     handleWindowDestroyed(windowId: WindowId): void {
         try {
             const world = this._deps.getWorld();
-            if (!world) return;
-            if (!this._deps.checkGuard('windowDestroyed')) return;
+            if (!world || !this._deps.checkGuard('windowDestroyed')) return;
 
             this._deps.log(`[Kestrel] window removed: ${windowId}`);
-
-            const oldScrollX = world.viewport.scrollX;
-            const oldWsId = wsIdAt(world, world.viewport.workspaceIndex);
-            const update = removeWindow(world, windowId);
-
-            this._untrackFromAdapters(windowId);
-            this._deps.getCloneAdapter()?.syncWorkspaces(update.world.workspaces);
-            this._deps.applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
+            if (this._tryReleaseQuakeWindow(world, windowId)) return;
+            this._removeTiledWindow(world, windowId);
         } catch (e) {
             console.error('[Kestrel] Error handling window destroyed:', e);
         }
+    }
+
+    private _removeTiledWindow(world: World, windowId: WindowId): void {
+        const oldScrollX = world.viewport.scrollX;
+        const oldWsId = wsIdAt(world, world.viewport.workspaceIndex);
+        const update = removeWindow(world, windowId);
+
+        this._untrackFromAdapters(windowId);
+        this._deps.getCloneAdapter()?.syncWorkspaces(update.world.workspaces);
+        this._deps.applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
+    }
+
+    private _tryReleaseQuakeWindow(world: World, windowId: WindowId): boolean {
+        if (!isQuakeWindow(world, windowId)) return false;
+
+        this._deps.log(`[Kestrel] quake window destroyed: ${windowId}`);
+        const update = releaseQuakeWindow(world, windowId);
+        this._deps.setWorld(update.world);
+        this._deps.untrackQuakeWindow(windowId);
+        this._deps.applyQuakeScene(update.world);
+        this._deps.unwatchWindow(windowId);
+        return true;
     }
 
     private _untrackFromAdapters(windowId: WindowId): void {

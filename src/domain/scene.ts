@@ -1,6 +1,7 @@
 import type { WindowId, WorkspaceId } from './types.js';
 import type { World } from './world.js';
 import { computeWindowPositions } from './layout.js';
+import { computeQuakeGeometry } from './quake.js';
 
 interface SceneMismatch {
     readonly entity: 'clone' | 'realWindow' | 'focusIndicator' | 'workspaceStrip';
@@ -49,12 +50,22 @@ export interface WorkspaceStripScene {
     readonly workspaces: readonly WorkspaceContainerScene[];
 }
 
+export interface QuakeWindowScene {
+    readonly windowId: WindowId;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly visible: boolean;
+}
+
 export interface SceneModel {
     readonly focusedWindowId: WindowId | null;
     readonly clones: readonly CloneScene[];
     readonly realWindows: readonly RealWindowScene[];
     readonly focusIndicator: FocusIndicatorScene;
     readonly workspaceStrip: WorkspaceStripScene;
+    readonly quakeWindow: QuakeWindowScene | null;
 }
 
 /**
@@ -144,7 +155,25 @@ export function computeScene(world: World): SceneModel {
         workspaces: workspaceContainers,
     };
 
-    return { focusedWindowId: world.focusedWindow, clones, realWindows, focusIndicator, workspaceStrip };
+    // Quake window
+    let quakeWindow: QuakeWindowScene | null = null;
+    const { quakeState } = world;
+    if (quakeState.activeSlot !== null) {
+        const windowId = quakeState.slots[quakeState.activeSlot];
+        if (windowId) {
+            const geo = computeQuakeGeometry(monitor, world.config);
+            quakeWindow = {
+                windowId,
+                x: geo.x,
+                y: geo.y,
+                width: geo.width,
+                height: geo.height,
+                visible: true,
+            };
+        }
+    }
+
+    return { focusedWindowId: world.focusedWindow, clones, realWindows, focusIndicator, workspaceStrip, quakeWindow };
 }
 
 /**

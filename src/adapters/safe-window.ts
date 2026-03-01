@@ -13,6 +13,12 @@ import type Meta from 'gi://Meta';
 
 const RAW = Symbol('SafeWindow.raw');
 
+/** Extract the raw Meta.Window GObject from a safe proxy. Needed for GObject APIs like Shell.WindowTracker. */
+export function rawWindow(metaWindow: Meta.Window): Meta.Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (metaWindow as any)[RAW] ?? metaWindow;
+}
+
 export function safeWindow(metaWindow: Meta.Window): Meta.Window {
     return new Proxy(metaWindow, {
         get(target, prop, _receiver) {

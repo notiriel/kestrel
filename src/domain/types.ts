@@ -4,6 +4,15 @@ export type WindowId = string & { readonly __brand: 'WindowId' };
 /** Branded type for workspace identity */
 export type WorkspaceId = string & { readonly __brand: 'WorkspaceId' };
 
+export interface QuakeSlotConfig {
+    readonly appId: string;  // desktop app ID, empty = disabled
+}
+
+export interface QuakeState {
+    readonly slots: readonly (WindowId | null)[];  // 5 slots
+    readonly activeSlot: number | null;
+}
+
 export interface KestrelConfig {
     readonly gapSize: number;
     readonly edgeGap: number;
@@ -12,6 +21,9 @@ export interface KestrelConfig {
     readonly focusBorderRadius: number;
     readonly focusBgColor: string;
     readonly columnCount: number;
+    readonly quakeSlots: readonly QuakeSlotConfig[];
+    readonly quakeWidthPercent: number;
+    readonly quakeHeightPercent: number;
 }
 
 export interface MonitorInfo {

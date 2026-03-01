@@ -24,6 +24,7 @@ graph TB
         notif["notification.ts\nNotification lifecycle"]
         notifTypes["notification-types.ts\nNotification types"]
         fuzzy["fuzzy-match.ts\nFuzzy search"]
+        quake["quake.ts\nQuake console"]
     end
 
     subgraph "Ports (src/ports/)"
@@ -110,6 +111,7 @@ Pure TypeScript with no `gi://` imports. Fully testable with Vitest.
 | `notification.ts` | Full notification lifecycle (`addNotification`, `respondToNotification`, `dismissForSession`, etc.), question interaction (`navigateQuestion`, `selectQuestionOption`, `setOtherText`), focus mode, session/window tracking, response formatting |
 | `notification-types.ts` | `OverlayNotification`, `QuestionOption`, `QuestionDefinition`, `ClaudeStatus` |
 | `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
+| `quake.ts` | Quake console lifecycle: `assignQuakeWindow`, `toggleQuakeSlot`, `dismissQuake`, `releaseQuakeWindow`, `isQuakeWindow` |
 
 ### Ports (src/ports/)
 
@@ -146,6 +148,7 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 | `window-event-adapter.ts` | `window-created`/`destroy`/`first-frame` signals, separates float windows. Implements `WindowEventPort` |
 | `state-persistence.ts` | Saves/restores world state to dconf settings. Implements `StatePersistencePort` |
 | `conflict-detector.ts` | Detects/disables conflicting GNOME extensions. Implements `ConflictDetectorPort` |
+| `quake-window-adapter.ts` | Positions and animates quake overlay windows via `move_resize_frame()` and `Clutter.ease()`, launches apps via `Shell.AppSystem`, matches windows to app IDs via `Shell.WindowTracker` |
 
 **Handlers** (orchestrate domain calls + adapter updates):
 
@@ -253,6 +256,7 @@ interface World {
     readonly overviewActive: boolean;
     readonly overviewInteractionState: OverviewInteractionState;
     readonly notificationState: NotificationState;
+    readonly quakeState: QuakeState;
 }
 
 interface WorldUpdate {
@@ -266,6 +270,7 @@ interface SceneModel {
     readonly realWindows: readonly RealWindowScene[];
     readonly focusIndicator: FocusIndicatorScene;
     readonly workspaceStrip: WorkspaceStripScene;
+    readonly quakeWindow: QuakeWindowScene | null;
 }
 
 interface Viewport {
@@ -288,6 +293,22 @@ interface Workspace {
     readonly id: WorkspaceId;
     readonly columns: readonly Column[];
     readonly name: string | null;
+}
+```
+
+```typescript
+interface QuakeState {
+    readonly slots: readonly (WindowId | null)[];   // 5 slots, null = empty
+    readonly activeSlot: number | null;             // which slot is visible, null = all hidden
+}
+
+interface QuakeWindowScene {
+    readonly windowId: WindowId;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly visible: boolean;      // true when activeSlot matches this slot
 }
 ```
 
@@ -430,6 +451,20 @@ stateDiagram-v2
     Open --> ClickFocus: click on window clone
     ClickFocus --> Closed: setFocus + confirm exit
 ```
+
+### Quake Slot
+
+```mermaid
+stateDiagram-v2
+    [*] --> Empty
+    Empty --> Hidden: assignQuakeWindow(slotIndex, windowId)
+    Hidden --> Visible: toggleQuakeSlot (activeSlot = this)
+    Visible --> Hidden: toggleQuakeSlot / dismissQuake
+    Hidden --> Empty: releaseQuakeWindow (window destroyed)
+    Visible --> Empty: releaseQuakeWindow (window destroyed while visible)
+```
+
+Animation states (SLIDING_IN / SLIDING_OUT) are purely adapter concerns — the domain only tracks HIDDEN vs VISIBLE via `activeSlot`. The adapter manages transition animations when applying scene changes.
 
 ### Settlement Retry
 

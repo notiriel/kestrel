@@ -7,7 +7,7 @@ import type { World } from '../../src/domain/world.js';
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
-const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2 };
+const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const monitor: MonitorInfo = {
     count: 1,
     totalWidth: 1920,
@@ -39,6 +39,7 @@ function makeWorld(windowIds: number[], focusedIdx: number, scrollX = 0): World 
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
     };
 }
 
@@ -126,6 +127,7 @@ function makeMultiWorld(
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
     };
 }
 
@@ -160,6 +162,7 @@ describe('focusDown', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
         };
         const update = focusDown(world);
         expect(update.world.focusedWindow).toBe(wid(3));
@@ -199,6 +202,7 @@ describe('focusDown', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
         };
         const update = focusDown(world);
         // Should navigate within stack (wid(1) → wid(2)), not switch workspace
@@ -244,6 +248,7 @@ describe('focusUp', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
         };
         const update = focusUp(world);
         expect(update.world.focusedWindow).toBe(wid(1));
@@ -267,6 +272,7 @@ describe('forceWorkspaceDown/Up', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
         };
         const update = forceWorkspaceDown(world);
         expect(update.world.viewport.workspaceIndex).toBe(1);
@@ -290,6 +296,7 @@ describe('horizontal navigation with stacks', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
         };
         const update = focusLeft(world);
         expect(update.world.focusedWindow).toBe(wid(2));
@@ -308,6 +315,7 @@ describe('horizontal navigation with stacks', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
+        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
         };
         const update = focusLeft(world);
         // col0 has only 1 window, clamp to position 0

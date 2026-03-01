@@ -133,5 +133,72 @@
       <summary>Saved world state</summary>
       <description>Serialized world state for persistence across disable/enable cycles (e.g. screen lock)</description>
     </key>
+    <key name="quake-slot-1" type="s">
+      <default>''</default>
+      <summary>Quake slot 1 application</summary>
+      <description>Desktop app ID for quake slot 1 (e.g. 'org.gnome.Terminal.desktop')</description>
+    </key>
+    <key name="quake-slot-2" type="s">
+      <default>''</default>
+      <summary>Quake slot 2 application</summary>
+      <description>Desktop app ID for quake slot 2</description>
+    </key>
+    <key name="quake-slot-3" type="s">
+      <default>''</default>
+      <summary>Quake slot 3 application</summary>
+      <description>Desktop app ID for quake slot 3</description>
+    </key>
+    <key name="quake-slot-4" type="s">
+      <default>''</default>
+      <summary>Quake slot 4 application</summary>
+      <description>Desktop app ID for quake slot 4</description>
+    </key>
+    <key name="quake-slot-5" type="s">
+      <default>''</default>
+      <summary>Quake slot 5 application</summary>
+      <description>Desktop app ID for quake slot 5</description>
+    </key>
+    <key name="quake-slot-1-toggle" type="as">
+      <default>['&lt;Super&gt;w']</default>
+      <summary>Toggle quake slot 1</summary>
+      <description>Toggle the quake console for slot 1</description>
+    </key>
+    <key name="quake-slot-2-toggle" type="as">
+      <default>['&lt;Super&gt;e']</default>
+      <summary>Toggle quake slot 2</summary>
+      <description>Toggle the quake console for slot 2</description>
+    </key>
+    <key name="quake-slot-3-toggle" type="as">
+      <default>['&lt;Super&gt;r']</default>
+      <summary>Toggle quake slot 3</summary>
+      <description>Toggle the quake console for slot 3</description>
+    </key>
+    <key name="quake-slot-4-toggle" type="as">
+      <default>['&lt;Super&gt;t']</default>
+      <summary>Toggle quake slot 4</summary>
+      <description>Toggle the quake console for slot 4</description>
+    </key>
+    <key name="quake-slot-5-toggle" type="as">
+      <default>['&lt;Super&gt;z']</default>
+      <summary>Toggle quake slot 5</summary>
+      <description>Toggle the quake console for slot 5</description>
+    </key>
+    <key name="quake-prelaunch" type="b">
+      <default>true</default>
+      <summary>Pre-launch quake apps</summary>
+      <description>Launch all configured quake applications on startup so they are ready instantly</description>
+    </key>
+    <key name="quake-width-percent" type="i">
+      <default>80</default>
+      <range min="20" max="100"/>
+      <summary>Quake window width percentage</summary>
+      <description>Width of the quake overlay window as a percentage of screen width</description>
+    </key>
+    <key name="quake-height-percent" type="i">
+      <default>80</default>
+      <range min="20" max="100"/>
+      <summary>Quake window height percentage</summary>
+      <description>Height of the quake overlay window as a percentage of screen height</description>
+    </key>
   </schema>
 </schemalist>

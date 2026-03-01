@@ -91,6 +91,7 @@ export class KeybindingAdapter implements KeybindingPort {
     private _registerBindings(settings: Gio.Settings, callbacks: KeybindingCallbacks): void {
         this._addBindings(settings, this._coreBindings(callbacks));
         this._addBindings(settings, this._stackBindings(callbacks));
+        this._addBindings(settings, this._quakeBindings(callbacks));
     }
 
     private _coreBindings(cb: KeybindingCallbacks): Array<[string, () => void]> {
@@ -113,10 +114,21 @@ export class KeybindingAdapter implements KeybindingPort {
         ];
     }
 
+    private _quakeBindings(cb: KeybindingCallbacks): Array<[string, () => void]> {
+        return [
+            ['quake-slot-1-toggle', cb.onQuakeSlot1],
+            ['quake-slot-2-toggle', cb.onQuakeSlot2],
+            ['quake-slot-3-toggle', cb.onQuakeSlot3],
+            ['quake-slot-4-toggle', cb.onQuakeSlot4],
+            ['quake-slot-5-toggle', cb.onQuakeSlot5],
+        ];
+    }
+
     private _addBindings(settings: Gio.Settings, bindings: Array<[string, () => void]>): void {
         for (const [name, handler] of bindings) {
             try {
-                Main.wm.addKeybinding(name, settings, Meta.KeyBindingFlags.NONE, Shell.ActionMode.NORMAL, handler);
+                const action = Main.wm.addKeybinding(name, settings, Meta.KeyBindingFlags.NONE, Shell.ActionMode.NORMAL, handler);
+                console.log(`[Kestrel] addKeybinding(${name}) → action=${action}`);
                 this._bound.push(name);
             } catch (e) {
                 console.error(`[Kestrel] Failed to add keybinding ${name}:`, e);

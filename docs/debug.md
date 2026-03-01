@@ -21,8 +21,8 @@ Requires a session restart to take effect.
 
 When enabled, `global._kestrel` is exposed on the GNOME Shell global object with two methods:
 
-- `debugState()` — Returns JSON with the full world state (config, monitor, workspaces, windows, viewport, computed layouts, and scene model).
-- `diagnostics()` — Compares expected scene (from domain `computeScene()`) against actual adapter state read from Clutter actors. Returns `{ expected, actual, mismatches }`.
+- `debugState()` — Returns JSON with the full world state (config, monitor, workspaces, windows, viewport, computed layouts, scene model, and quake state including slot assignments and active slot).
+- `diagnostics()` — Compares expected scene (from domain `computeScene()`) against actual adapter state read from Clutter actors. Returns `{ expected, actual, mismatches }`. When a quake overlay is active, the quake window scene is included in the comparison.
 
 ## 3. Querying Domain State via DBus
 
@@ -172,3 +172,5 @@ Workflow:
 **Signal handler interference:** When debugging layout bugs, check if `_onSizeChanged` or `_onPositionChanged` handlers in `window-adapter.ts` are re-triggering layout corrections that fight with the intended layout.
 
 **Mutter constraints:** `constrain_partially_onscreen` prevents real windows from being positioned outside monitor bounds. The focused window is always positioned within bounds (scrollX ensures this). Non-focused windows may be clamped by Mutter — this is expected and does not affect the clone-based visual rendering.
+
+**Quake window spawn timing:** When a quake slot hotkey launches an app, the window does not appear immediately. The domain marks the slot as awaiting assignment, and the window-created handler assigns it when the window's first frame arrives. If the window never appears (e.g., invalid app ID), the slot remains empty. Check journal logs for `[Kestrel]` messages about quake slot assignment failures.

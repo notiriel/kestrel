@@ -40,6 +40,7 @@ const SHORTCUTS: ShortcutSection[] = [
         heading: 'System',
         entries: [
             ['Super + -', 'Overview'],
+            ['Super + W / E / R / T / Z', 'Quake console slots 1–5'],
             ['Super + .', 'Notifications'],
             ["Super + '", 'This help'],
         ],

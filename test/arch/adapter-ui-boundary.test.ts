@@ -58,6 +58,8 @@ const KNOWN_VIOLATIONS: Record<string, string> = {
     'conflict-detector.ts': 'Pending builder extraction',
     // Status overlay: .style assignments — pending extraction to status-badge-builders
     'status-overlay-adapter.ts': 'Pending style extraction to builders',
+    // Quake window adapter: .ease() animation for slide in/out
+    'quake-window-adapter.ts': 'Pending animation extraction to builders',
 };
 
 function getAdapterFiles(): string[] {

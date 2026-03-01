@@ -77,6 +77,7 @@ B is focused. WS2 has D, E.
 | `notification.ts` | Notification domain: `addNotification`, `respondToNotification`, `dismissNotificationsForWindow`, session/status tracking, focus mode |
 | `notification-types.ts` | Type definitions for notifications (`QuestionOption`, `OverlayNotification`, `FocusModeState`) |
 | `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
+| `quake.ts` | QuakeState lifecycle: assign, toggle, dismiss, release quake windows |
 
 ### Ports
 
@@ -88,7 +89,7 @@ B is focused. WS2 has D, E.
 | `window-port.ts` | `WindowPort` — position real windows, check settlement |
 | `focus-port.ts` | `FocusPort` — focus activation, feedback loop suppression |
 | `monitor-port.ts` | `MonitorPort` — monitor geometry reading |
-| `keybinding-port.ts` | `KeybindingPort` — register/unregister keybindings |
+| `keybinding-port.ts` | `KeybindingPort` — register/unregister keybindings (includes quake slot toggle callbacks) |
 | `shell-port.ts` | `ShellPort` — GNOME Shell interaction (hide overview, intercept animations) |
 | `window-event-port.ts` | `WindowEventPort` — window lifecycle signals, enumerate existing windows |
 | `state-persistence-port.ts` | `StatePersistencePort` — save/load world state across enable/disable cycles |
@@ -113,6 +114,7 @@ B is focused. WS2 has D, E.
 | `window-event-adapter.ts` | Listens for `window-created`/`destroy` signals, waits for `first-frame`, separates float windows |
 | `state-persistence.ts` | Saves/restores world state to dconf settings, reads config from schema |
 | `conflict-detector.ts` | Detects and disables conflicting GNOME extensions at runtime |
+| `quake-window-adapter.ts` | Positions and animates quake overlay windows, launches apps via Shell.AppSystem |
 
 **Handlers (orchestrate domain calls + adapter updates):**
 
@@ -226,7 +228,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 
 | Directory | Coverage |
 |-----------|----------|
-| `test/domain/` | Unit tests for all domain modules (world, navigation, layout, scene, workspace, window-operations, overview, notifications, fullscreen, fuzzy-match, filter-workspaces, workspace-naming) |
+| `test/domain/` | Unit tests for all domain modules (world, navigation, layout, scene, workspace, window-operations, overview, notifications, fullscreen, fuzzy-match, filter-workspaces, workspace-naming, quake) |
 | `test/adapters/` | Integration tests for handlers and extension (overview-handler, navigation-handler, window-lifecycle-handler, extension) |
 | `test/arch/` | Architecture boundary test — verifies domain files have no `gi://` imports |
 | `test/adapters/mock-ports.ts` | Mock implementations of all ports for adapter testing |

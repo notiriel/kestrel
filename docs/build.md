@@ -122,6 +122,7 @@ Pure TypeScript tests requiring no GNOME Shell runtime:
 | `filter-workspaces.test.ts` | Workspace filter logic |
 | `fuzzy-match.test.ts` | Fuzzy search scoring |
 | `smoke.test.ts` | Basic smoke tests of common operations |
+| `quake.test.ts` | Quake console operations (assign, toggle, dismiss, release, scene computation) |
 
 ### Adapter Integration Tests (`test/adapters/`) — 4 test files
 
@@ -189,6 +190,11 @@ Path: `/org/gnome/shell/extensions/kestrel@kestrel.github.com/`
 | `join-stack` | string array | `['<Super>j']` |
 | `force-workspace-up` | string array | `['<Super><Alt>Up']` |
 | `force-workspace-down` | string array | `['<Super><Alt>Down']` |
+| `quake-slot-1-toggle` | string array | `['<Super>w']` |
+| `quake-slot-2-toggle` | string array | `['<Super>e']` |
+| `quake-slot-3-toggle` | string array | `['<Super>r']` |
+| `quake-slot-4-toggle` | string array | `['<Super>t']` |
+| `quake-slot-5-toggle` | string array | `['<Super>z']` |
 
 ### Layout Configuration
 
@@ -206,6 +212,19 @@ Path: `/org/gnome/shell/extensions/kestrel@kestrel.github.com/`
 | `focus-border-color` | string | `rgba(125,214,164,0.8)` |
 | `focus-background-color` | string | `rgba(125,214,164,0.05)` |
 | `focus-border-radius` | int | 8 |
+
+### Quake Console
+
+| Key | Type | Default |
+|-----|------|---------|
+| `quake-slot-1` | string | (empty) |
+| `quake-slot-2` | string | (empty) |
+| `quake-slot-3` | string | (empty) |
+| `quake-slot-4` | string | (empty) |
+| `quake-slot-5` | string | (empty) |
+| `quake-width-percent` | int | 80 (range 20--100) |
+| `quake-height-percent` | int | 80 (range 20--100) |
+| `quake-prelaunch` | boolean | true |
 
 ### System
 

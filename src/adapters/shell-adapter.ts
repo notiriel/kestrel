@@ -6,6 +6,11 @@ export class ShellAdapter implements ShellPort {
     private _wmDestroyId: number | null = null;
     private _wmMinimizeId: number | null = null;
     private _wmUnminimizeId: number | null = null;
+    private _isQuakeWindow: ((actor: Meta.WindowActor) => boolean) | null = null;
+
+    setQuakeWindowCheck(fn: (actor: Meta.WindowActor) => boolean): void {
+        this._isQuakeWindow = fn;
+    }
 
     hideOverview(): void {
         try {
@@ -66,13 +71,17 @@ export class ShellAdapter implements ShellPort {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (_shellWm: any, actor: Meta.WindowActor) => {
                 try {
+                    if (this._isQuakeWindow?.(actor)) {
+                        // Quake windows manage their own animation — complete immediately
+                        _shellWm.completed_unminimize(actor);
+                        return;
+                    }
                     // Cancel GNOME's animation (opacity ease 0→255)
                     actor.remove_all_transitions();
                     // Trigger GNOME's natural completion path which calls
                     // completed_unminimize internally after proper cleanup
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     (Main.wm as any)._unminimizeWindowDone(_shellWm, actor);
-                    // Override the opacity=255 that _unminimizeWindowDone sets
                     actor.set_opacity(0);
                 } catch (e) {
                     console.error('[Kestrel] Error completing unminimize:', e);
