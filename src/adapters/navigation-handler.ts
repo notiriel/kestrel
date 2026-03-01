@@ -12,6 +12,8 @@ export interface NavigationDeps {
     getCloneAdapter(): (CloneLifecyclePort & CloneRenderPort) | null;
     getWindowAdapter(): WindowPort | null;
     applyScene(scene: WorldUpdate['scene'], animate: boolean): void;
+    applyUpdateWithScroll(update: WorldUpdate, animate: boolean,
+                          oldScrollX: number, oldWsId: WorkspaceId | null): void;
 }
 
 function getActiveWsId(world: World): WorkspaceId | null {
@@ -53,11 +55,7 @@ export class NavigationHandler {
             const oldWsId = getActiveWsId(world);
 
             const update = domainFn(world);
-            this._deps.setWorld(update.world);
-
-            this._syncScrollOnSwitch(oldScrollX, oldWsId, update.world);
-            this._deps.applyScene(update.scene, true);
-            this._deps.focusWindow(update.world.focusedWindow);
+            this._deps.applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
         } catch (e) {
             console.error(`[Kestrel] Error handling ${label}:`, e);
         }
@@ -72,13 +70,10 @@ export class NavigationHandler {
 
             const sourceWsId = getActiveWsId(world);
             const update = domainFn(world);
-            this._deps.setWorld(update.world);
 
             this._reparentCloneIfMoved(world.focusedWindow, sourceWsId, update);
             this._syncWorkspaces(update);
-            this._syncScrollOnSwitch(world.viewport.scrollX, sourceWsId, update.world);
-            this._deps.applyScene(update.scene, true);
-            this._deps.focusWindow(update.world.focusedWindow);
+            this._deps.applyUpdateWithScroll(update, true, world.viewport.scrollX, sourceWsId);
         } catch (e) {
             console.error(`[Kestrel] Error handling ${label}:`, e);
         }
@@ -87,14 +82,6 @@ export class NavigationHandler {
     private _syncWorkspaces(update: WorldUpdate): void {
         const clone = this._deps.getCloneAdapter();
         if (clone) clone.syncWorkspaces(update.world.workspaces);
-    }
-
-    /** If the new workspace differs from oldWsId, carry scroll state over */
-    private _syncScrollOnSwitch(oldScrollX: number, oldWsId: WorkspaceId | null, newWorld: World): void {
-        const newWsId = getActiveWsId(newWorld);
-        if (!newWsId || newWsId === oldWsId) return;
-        const clone = this._deps.getCloneAdapter();
-        if (clone) clone.setScrollForWorkspace(newWsId, oldScrollX);
     }
 
     /** If window moved cross-workspace, reparent its clone */

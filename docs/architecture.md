@@ -151,7 +151,7 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 
 | File | Purpose |
 |------|---------|
-| `navigation-handler.ts` | `handleSimpleCommand` (linear focus/move), `handleVerticalFocus` (workspace switch), `handleVerticalMove` (cross-workspace window move) |
+| `navigation-handler.ts` | `handleSimpleCommand` (linear focus/move), `handleVerticalFocus` (workspace switch via `applyUpdateWithScroll`), `handleVerticalMove` (cross-workspace window move via `applyUpdateWithScroll`) |
 | `overview-handler.ts` | Overview enter/exit/navigate/filter/click/drag/rename |
 | `window-lifecycle-handler.ts` | Window add/remove/fullscreen/maximize — domain updates + adapter sync |
 
@@ -512,10 +512,7 @@ sequenceDiagram
     Domain-->>NavH: WorldUpdate { world, scene }
     NavH->>Clone: moveCloneToWorkspace(windowId, targetWsId)
     NavH->>Clone: syncWorkspaces()
-    NavH->>Clone: setScrollForWorkspace(sourceWsId, savedScrollX)
-    NavH->>WinAdapt: applyScene(scene.realWindows)
-    NavH->>Clone: applyScene(scene.clones, scene.focusIndicator)
-    NavH->>Focus: activate(focusedWindowId)
+    NavH->>NavH: applyUpdateWithScroll(update, scrollX, wsId)
 ```
 
 ### Window Destruction

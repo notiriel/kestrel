@@ -41,6 +41,7 @@ function createDeps(world: World | null = null) {
         getCloneAdapter: vi.fn(() => clonePort),
         getWindowAdapter: vi.fn(() => null),
         applyScene: vi.fn(),
+        applyUpdateWithScroll: vi.fn((update: { world: World }) => { currentWorld = update.world; }),
         mocks: null as any,
     };
 
@@ -126,14 +127,13 @@ describe('NavigationHandler', () => {
             // focusUp should move from ws1 to ws0
             handler.handleVerticalFocus(focusUp, 'focus-up');
 
-            expect(deps.setWorld).toHaveBeenCalledOnce();
-            const updatedWorld = deps.mocks.currentWorld!;
-            expect(updatedWorld.viewport.workspaceIndex).toBe(0);
-
-            // Should have synced scroll for the new workspace
-            expect(deps.mocks.clonePort.setScrollForWorkspace).toHaveBeenCalledOnce();
-            const [_wsId, scrollX] = deps.mocks.clonePort.setScrollForWorkspace.mock.calls[0]!;
-            expect(scrollX).toBe(100); // old scroll carried over
+            // Should have called applyUpdateWithScroll with old scroll state
+            expect(deps.applyUpdateWithScroll).toHaveBeenCalledOnce();
+            const [update, animate, oldScrollX, oldWsId] = (deps.applyUpdateWithScroll as ReturnType<typeof vi.fn>).mock.calls[0]!;
+            expect(update.world.viewport.workspaceIndex).toBe(0);
+            expect(animate).toBe(true);
+            expect(oldScrollX).toBe(100); // old scroll carried over
+            expect(oldWsId).not.toBeNull();
         });
 
         it('does not sync scroll when staying on same workspace', () => {
@@ -142,12 +142,13 @@ describe('NavigationHandler', () => {
             const deps = createDeps(world);
             const handler = new NavigationHandler(deps);
 
-            // focusDown from ws0 to ws1 (empty trailing) — domain won't change ws since empty
-            // Actually focusDown navigates even to empty workspace. Let's use focusUp from ws0 — no-op.
+            // focusUp from ws0 — no-op, stays on same workspace
             handler.handleVerticalFocus(focusUp, 'focus-up');
 
-            // Domain returns same world (can't go up from ws0)
-            expect(deps.mocks.clonePort.setScrollForWorkspace).not.toHaveBeenCalled();
+            // applyUpdateWithScroll is still called (it handles the no-change case internally)
+            expect(deps.applyUpdateWithScroll).toHaveBeenCalledOnce();
+            const [_update, _animate, oldScrollX, _oldWsId] = (deps.applyUpdateWithScroll as ReturnType<typeof vi.fn>).mock.calls[0]!;
+            expect(oldScrollX).toBe(0); // default scroll
         });
     });
 
@@ -172,8 +173,7 @@ describe('NavigationHandler', () => {
             expect(windowId).toBe(wid(2));
 
             expect(deps.mocks.clonePort.syncWorkspaces).toHaveBeenCalled();
-            expect(deps.applyScene).toHaveBeenCalled();
-            expect(deps.focusWindow).toHaveBeenCalled();
+            expect(deps.applyUpdateWithScroll).toHaveBeenCalled();
         });
 
         it('does not reparent when window stays on same workspace', () => {
@@ -190,7 +190,7 @@ describe('NavigationHandler', () => {
             // moveCloneToWorkspace is called when window changes workspace
             // In this case it should be called since win-1 moves from ws0 to ws1
             expect(deps.mocks.clonePort.syncWorkspaces).toHaveBeenCalled();
-            expect(deps.focusWindow).toHaveBeenCalled();
+            expect(deps.applyUpdateWithScroll).toHaveBeenCalled();
         });
     });
 });

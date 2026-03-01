@@ -1,7 +1,8 @@
 import type { WindowId, WorldUpdate } from '../domain/types.js';
 import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
-import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace, buildUpdate } from '../domain/world.js';
+import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace } from '../domain/world.js';
+import { computeScene } from '../domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
 import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
@@ -149,7 +150,7 @@ export class OverviewHandler {
         const overviewWorld = { ...update.world, overviewActive: true };
         this._deps.setWorld(overviewWorld);
 
-        const scene = buildUpdate(overviewWorld).scene;
+        const scene = computeScene(overviewWorld);
         this._deps.getCloneAdapter()?.updateOverviewFocus(
             scene, targetWsIndex, this._overviewTransform!,
         );
@@ -217,7 +218,7 @@ export class OverviewHandler {
     private _renderDragRevert(revertWorld: World): void {
         if (!this._overviewTransform) return;
         const wsIndex = revertWorld.viewport.workspaceIndex;
-        const scene = buildUpdate(revertWorld).scene;
+        const scene = computeScene(revertWorld);
         this._deps.getCloneAdapter()?.updateOverviewFocus(
             scene, wsIndex, this._overviewTransform,
         );
@@ -289,7 +290,7 @@ export class OverviewHandler {
         const wsIndex = world.viewport.workspaceIndex;
         const wsId = world.workspaces[wsIndex]?.id;
         if (!wsId) return;
-        const scene = buildUpdate(world).scene;
+        const scene = computeScene(world);
         const wsClones = scene.clones.filter(c => c.workspaceId === wsId);
         const subjectIdx = wsClones.findIndex(c => c.windowId === this._dragSubject);
         if (subjectIdx < 0) return;
@@ -373,7 +374,7 @@ export class OverviewHandler {
     private _getClonesForWorkspace(world: World, wsIndex: number): SceneModel['clones'] {
         const wsId = world.workspaces[wsIndex]?.id;
         if (!wsId) return [];
-        return buildUpdate(world).scene.clones.filter(c => c.workspaceId === wsId);
+        return computeScene(world).clones.filter(c => c.workspaceId === wsId);
     }
 
     private _isInsideWindow(win: { x: number; y: number; width: number; height: number }, rx: number, localY: number): boolean {
@@ -442,7 +443,7 @@ export class OverviewHandler {
     }
 
     private _updateFocusForWorkspace(world: World, transform: OverviewTransform): void {
-        const scene = buildUpdate(world).scene;
+        const scene = computeScene(world);
         this._deps.getCloneAdapter()?.updateOverviewFocus(
             scene, world.viewport.workspaceIndex, transform,
         );
@@ -488,7 +489,7 @@ export class OverviewHandler {
         cloneAdapter?.applyOverviewFilter?.(
             filteredIndices, transform, currentWorld.viewport.workspaceIndex,
         );
-        const scene = buildUpdate(currentWorld).scene;
+        const scene = computeScene(currentWorld);
         cloneAdapter?.updateOverviewFocus(scene, currentWorld.viewport.workspaceIndex, transform);
     }
 

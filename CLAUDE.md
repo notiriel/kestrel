@@ -119,7 +119,7 @@ B is focused. WS2 has D, E.
 | File | Purpose |
 |------|---------|
 | `overview-handler.ts` | Overview mode: enter/exit/navigate/filter/click, transforms clones, workspace labels |
-| `navigation-handler.ts` | Keybinding handlers: `handleSimpleCommand`, `handleVerticalFocus`, `handleVerticalMove` |
+| `navigation-handler.ts` | Keybinding handlers: `handleSimpleCommand`, `handleVerticalFocus`, `handleVerticalMove` (vertical ops delegate to `applyUpdateWithScroll`) |
 | `window-lifecycle-handler.ts` | Window add/remove/fullscreen/maximize → domain updates + adapter sync |
 
 **Notification system:**

@@ -1,8 +1,8 @@
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import type { WindowId, WorkspaceId, MonitorInfo } from './domain/types.js';
 import type { World } from './domain/world.js';
-import { createWorld, setFocus, updateMonitor, updateConfig, buildUpdate, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
-import { diffScene } from './domain/scene.js';
+import { createWorld, setFocus, updateMonitor, updateConfig, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
+import { diffScene, computeScene } from './domain/scene.js';
 import type { SceneModel, CloneScene, RealWindowScene, FocusIndicatorScene, WorkspaceStripScene } from './domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from './domain/navigation.js';
 import { moveLeft, moveRight, moveDown, moveUp, toggleSize } from './domain/window-operations.js';
@@ -200,6 +200,8 @@ export default class KestrelExtension extends Extension {
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
                 applyScene: (scene, animate) => this._applyScene(scene, animate),
+                applyUpdateWithScroll: (update, animate, oldScrollX, oldWsId) =>
+                    this._applyUpdateWithScroll(update, animate, oldScrollX, oldWsId),
             });
 
             this._mouseInputAdapter = new MouseInputAdapter({
@@ -458,7 +460,7 @@ export default class KestrelExtension extends Extension {
 
     private _debugState(): string {
         if (!this._worldHolder.world) return '{"error":"no world"}';
-        const scene = buildUpdate(this._worldHolder.world).scene;
+        const scene = computeScene(this._worldHolder.world);
         return JSON.stringify({
             world: {
                 config: this._worldHolder.world.config,
@@ -487,7 +489,7 @@ export default class KestrelExtension extends Extension {
             if (!world) return '{"error":"no world"}';
 
             // Expected scene comes directly from domain
-            const expected = buildUpdate(world).scene;
+            const expected = computeScene(world);
 
             // Read actual state from adapters
             const adapter = this._cloneAdapter as CloneAdapter;
@@ -646,13 +648,7 @@ export default class KestrelExtension extends Extension {
             const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
 
             const update = setFocus(this._worldHolder.world, windowId);
-            this._setWorld(update.world);
-
-            const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
-            if (newWsId && newWsId !== oldWsId) {
-                this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
-            }
-            this._applyScene(update.scene, true);
+            this._applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
         } catch (e) {
             console.error('[Kestrel] Error handling external focus:', e);
         }

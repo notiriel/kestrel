@@ -1,7 +1,8 @@
 import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/types.js';
 import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
-import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, buildUpdate } from '../domain/world.js';
+import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt } from '../domain/world.js';
+import { computeScene } from '../domain/scene.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { FocusPort } from '../ports/focus-port.js';
@@ -61,7 +62,7 @@ export class WindowLifecycleHandler {
         const restoredWsId = findWorkspaceIdForWindow(world, windowId)!;
         this._trackInAdapters(windowId, metaWindow, restoredWsId);
 
-        const scene = buildUpdate(world).scene;
+        const scene = computeScene(world);
         this._deps.applyScene(scene, false);
         this._deps.focusWindow(world.focusedWindow);
         this._deps.startSettlement();
