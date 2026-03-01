@@ -19,7 +19,7 @@ import {
     windowAtSlot,
 } from './workspace.js';
 import { createViewport, type Viewport } from './viewport.js';
-import { computeLayout, computeLayoutForWorkspace } from './layout.js';
+import { computeFocusedWindowPosition } from './layout.js';
 import { computeScene } from './scene.js';
 import { fuzzyMatch } from './fuzzy-match.js';
 import type { OverviewInteractionState } from './overview-state.js';
@@ -115,12 +115,7 @@ export function replaceCurrentWorkspace(world: World, ws: Workspace): World {
 }
 
 export function buildUpdate(world: World): WorldUpdate {
-    const layouts = world.workspaces.map((_, i) =>
-        i === world.viewport.workspaceIndex
-            ? computeLayout(world)
-            : computeLayoutForWorkspace(world, i),
-    );
-    return { world, scene: computeScene(world, layouts) };
+    return { world, scene: computeScene(world) };
 }
 
 /** Ensure there is always exactly one empty workspace at the bottom. */
@@ -189,15 +184,12 @@ export function pruneEmptyWorkspaces(world: World): World {
 export function adjustViewport(world: World, minimal: boolean = false): World {
     if (!world.focusedWindow) return world;
 
-    const layout = computeLayout(world);
-    const focusedLayout = layout.windows.find(
-        w => w.windowId === world.focusedWindow,
-    );
-    if (!focusedLayout) return world;
+    const focused = computeFocusedWindowPosition(world);
+    if (!focused) return world;
 
     const { viewport, config: { edgeGap } } = world;
-    const winLeft = focusedLayout.x;
-    const winRight = focusedLayout.x + focusedLayout.width;
+    const winLeft = focused.x;
+    const winRight = focused.x + focused.width;
 
     let newScrollX = viewport.scrollX;
 

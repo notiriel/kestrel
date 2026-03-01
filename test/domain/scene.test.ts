@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId, LayoutState } from '../../src/domain/types.js';
-import { computeLayout, computeLayoutForWorkspace } from '../../src/domain/layout.js';
+import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
+import { computeWindowPositions } from '../../src/domain/layout.js';
 import { computeScene, diffScene } from '../../src/domain/scene.js';
 import type { SceneModel } from '../../src/domain/scene.js';
 import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
@@ -42,43 +42,34 @@ function makeWorld(workspaces: ReturnType<typeof createWorkspace>[], overrides: 
     };
 }
 
-/** Compute layouts for all workspaces in a world. */
-function allLayouts(world: World): LayoutState[] {
-    return world.workspaces.map((_, i) =>
-        i === world.viewport.workspaceIndex
-            ? computeLayout(world)
-            : computeLayoutForWorkspace(world, i),
-    );
-}
-
 describe('computeScene', () => {
     it('single window: clone matches layout, real window offset by workAreaY', () => {
         let ws = createWorkspace(wsId(0));
         ws = addWindow(ws, createTiledWindow(wid(1)));
         const world = makeWorld([ws], { focusedWindow: wid(1) });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         expect(scene.clones).toHaveLength(1);
         expect(scene.realWindows).toHaveLength(1);
 
         const clone = scene.clones[0]!;
         const real = scene.realWindows[0]!;
-        const wl = layouts[0]!.windows[0]!;
+        const positions = computeWindowPositions(ws, config, monitor, world.viewport);
+        const wp = positions[0]!;
 
         // Clone matches layout directly
-        expect(clone.x).toBe(wl.x);
-        expect(clone.y).toBe(wl.y);
-        expect(clone.width).toBe(wl.width);
-        expect(clone.height).toBe(wl.height);
+        expect(clone.x).toBe(wp.x);
+        expect(clone.y).toBe(wp.y);
+        expect(clone.width).toBe(wp.width);
+        expect(clone.height).toBe(wp.height);
         expect(clone.visible).toBe(true);
         expect(clone.workspaceId).toBe(wsId(0));
 
         // Real window: x same (scrollX=0), y offset by workAreaY
-        expect(real.x).toBe(wl.x);
-        expect(real.y).toBe(wl.y + monitor.workAreaY);
-        expect(real.width).toBe(wl.width);
-        expect(real.height).toBe(wl.height);
+        expect(real.x).toBe(wp.x);
+        expect(real.y).toBe(wp.y + monitor.workAreaY);
+        expect(real.width).toBe(wp.width);
+        expect(real.height).toBe(wp.height);
         expect(real.opacity).toBe(0);
         expect(real.minimized).toBe(false);
     });
@@ -88,8 +79,7 @@ describe('computeScene', () => {
         ws = addWindow(ws, createTiledWindow(wid(1)));
         ws = addWindow(ws, createTiledWindow(wid(2)));
         const world = makeWorld([ws], { focusedWindow: wid(1) });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         for (let i = 0; i < scene.clones.length; i++) {
             expect(scene.realWindows[i]!.x).toBe(scene.clones[i]!.x);
@@ -106,17 +96,17 @@ describe('computeScene', () => {
             viewport: { workspaceIndex: 0, scrollX, widthPx: 1920 },
             focusedWindow: wid(2),
         });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
+        const positions = computeWindowPositions(ws, config, monitor, world.viewport);
 
         // Clones use layout coordinates (workspace-relative)
         for (let i = 0; i < scene.clones.length; i++) {
-            expect(scene.clones[i]!.x).toBe(layouts[0]!.windows[i]!.x);
+            expect(scene.clones[i]!.x).toBe(positions[i]!.x);
         }
 
         // Real windows shifted by scrollX
         for (let i = 0; i < scene.realWindows.length; i++) {
-            expect(scene.realWindows[i]!.x).toBe(layouts[0]!.windows[i]!.x - scrollX);
+            expect(scene.realWindows[i]!.x).toBe(positions[i]!.x - scrollX);
         }
     });
 
@@ -131,8 +121,7 @@ describe('computeScene', () => {
             viewport: { workspaceIndex: 0, scrollX: 0, widthPx: 1920 },
             focusedWindow: wid(1),
         });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         const rw1 = scene.realWindows.find(r => r.windowId === wid(1))!;
         const rw2 = scene.realWindows.find(r => r.windowId === wid(2))!;
@@ -147,8 +136,7 @@ describe('computeScene', () => {
         // Manually make the window fullscreen
         ws = { ...ws, windows: ws.windows.map(w => ({ ...w, fullscreen: true })) };
         const world = makeWorld([ws], { focusedWindow: wid(1) });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         const real = scene.realWindows[0]!;
         expect(real.opacity).toBe(255);
@@ -160,15 +148,15 @@ describe('computeScene', () => {
         ws = addWindow(ws, createTiledWindow(wid(1)));
         ws = addWindow(ws, createTiledWindow(wid(2)));
         const world = makeWorld([ws], { focusedWindow: wid(2) });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
-        const focused = layouts[0]!.windows.find(w => w.windowId === wid(2))!;
+        const positions = computeWindowPositions(ws, config, monitor, world.viewport);
+        const focused = positions.find(w => w.windowId === wid(2))!;
         const fi = scene.focusIndicator;
         const bw = config.focusBorderWidth;
 
         expect(fi.visible).toBe(true);
-        expect(fi.x).toBe(focused.x - layouts[0]!.scrollX - bw);
+        expect(fi.x).toBe(focused.x - world.viewport.scrollX - bw);
         expect(fi.y).toBe(focused.y - bw);
         expect(fi.width).toBe(focused.width + bw * 2);
         expect(fi.height).toBe(focused.height + bw * 2);
@@ -178,8 +166,7 @@ describe('computeScene', () => {
         let ws = createWorkspace(wsId(0));
         ws = addWindow(ws, createTiledWindow(wid(1)));
         const world = makeWorld([ws]); // no focusedWindow
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         expect(scene.focusIndicator.visible).toBe(false);
     });
@@ -196,8 +183,7 @@ describe('computeScene', () => {
             viewport: { workspaceIndex: 1, scrollX: 0, widthPx: 1920 },
             focusedWindow: wid(2),
         });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         expect(scene.workspaceStrip.y).toBe(-1 * monitor.totalHeight);
     });
@@ -213,8 +199,7 @@ describe('computeScene', () => {
             viewport: { workspaceIndex: 0, scrollX: 0, widthPx: 1920 },
             focusedWindow: wid(1),
         });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         expect(scene.workspaceStrip.workspaces).toHaveLength(3);
         for (let i = 0; i < 3; i++) {
@@ -232,8 +217,7 @@ describe('computeScene', () => {
             viewport: { workspaceIndex: 0, scrollX: 0, widthPx: 1920 },
             focusedWindow: wid(1),
         });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         // Only ws0's window appears
         expect(scene.clones).toHaveLength(1);
@@ -248,8 +232,7 @@ describe('computeScene', () => {
         let ws = createWorkspace(wsId(0));
         ws = addWindow(ws, createTiledWindow(wid(1)));
         const world = makeWorld([ws], { focusedWindow: wid(1) });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         expect(scene.clones[0]!.visible).toBe(true);
     });
@@ -265,8 +248,7 @@ describe('computeScene', () => {
             viewport: { workspaceIndex: 0, scrollX, widthPx: 1920 },
             focusedWindow: wid(1),
         });
-        const layouts = allLayouts(world);
-        const scene = computeScene(world, layouts);
+        const scene = computeScene(world);
 
         // Current workspace gets its scrollX
         expect(scene.workspaceStrip.workspaces[0]!.scrollX).toBe(scrollX);

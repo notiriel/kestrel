@@ -1,25 +1,35 @@
-import type { WindowLayout, LayoutState } from './types.js';
+import type { WindowId } from './types.js';
 import type { World } from './world.js';
 import type { Workspace } from './workspace.js';
 
+interface WindowPosition {
+    readonly windowId: WindowId;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly visible: boolean;
+    readonly fullscreen: boolean;
+}
+
 /**
- * Shared layout computation for a workspace.
+ * Compute pixel positions for all windows in a workspace.
  * When viewport is provided, computes visibility against it.
  * When viewport is null, marks all windows visible (for non-current workspaces).
  */
-function computeWindowPositions(
+export function computeWindowPositions(
     ws: Workspace,
     config: World['config'],
     monitor: World['monitor'],
     viewport: { scrollX: number; widthPx: number } | null,
-): WindowLayout[] {
+): WindowPosition[] {
     const { gapSize, edgeGap, focusBorderWidth } = config;
     const { slotWidth, totalHeight, totalWidth } = monitor;
     const effectiveEdge = edgeGap + focusBorderWidth;
     const windowHeight = totalHeight - effectiveEdge * 2;
     const windowY = effectiveEdge;
 
-    const windows: WindowLayout[] = [];
+    const windows: WindowPosition[] = [];
     let x = edgeGap;
 
     for (const win of ws.windows) {
@@ -63,37 +73,18 @@ function computeWindowPositions(
 }
 
 /**
- * Computes pixel positions for all windows in the current workspace.
+ * Compute the position of the focused window in the current workspace.
+ * Returns { x, width } or null if no focused window found.
  */
-export function computeLayout(world: World): LayoutState {
-    const { viewport, focusedWindow } = world;
-    const ws = world.workspaces[viewport.workspaceIndex]!;
-    const windows = computeWindowPositions(ws, world.config, world.monitor, viewport);
+export function computeFocusedWindowPosition(world: World): { x: number; width: number } | null {
+    if (!world.focusedWindow) return null;
 
-    return {
-        windows,
-        scrollX: viewport.scrollX,
-        workspaceIndex: viewport.workspaceIndex,
-        focusedWindowId: focusedWindow,
-    };
-}
+    const ws = world.workspaces[world.viewport.workspaceIndex];
+    if (!ws) return null;
 
-/**
- * Compute layout for a specific workspace (not necessarily the current one).
- * Used to reposition windows on non-current workspaces after cross-workspace moves.
- */
-export function computeLayoutForWorkspace(world: World, wsIndex: number): LayoutState {
-    const { viewport, focusedWindow } = world;
-    const ws = world.workspaces[wsIndex];
-    if (!ws) return { windows: [], scrollX: viewport.scrollX, workspaceIndex: wsIndex, focusedWindowId: null };
+    const positions = computeWindowPositions(ws, world.config, world.monitor, world.viewport);
+    const focused = positions.find(w => w.windowId === world.focusedWindow);
+    if (!focused) return null;
 
-    const windows = computeWindowPositions(ws, world.config, world.monitor, null);
-    const hasFocus = focusedWindow && ws.windows.some(w => w.id === focusedWindow);
-
-    return {
-        windows,
-        scrollX: viewport.scrollX,
-        workspaceIndex: wsIndex,
-        focusedWindowId: hasFocus ? focusedWindow : null,
-    };
+    return { x: focused.x, width: focused.width };
 }

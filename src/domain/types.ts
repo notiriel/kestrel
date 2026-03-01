@@ -24,23 +24,6 @@ export interface MonitorInfo {
     readonly stageOffsetX: number;
 }
 
-export interface WindowLayout {
-    readonly windowId: WindowId;
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-    readonly visible: boolean;
-    readonly fullscreen: boolean;
-}
-
-export interface LayoutState {
-    readonly windows: readonly WindowLayout[];
-    readonly scrollX: number;
-    readonly workspaceIndex: number;
-    readonly focusedWindowId: WindowId | null;
-}
-
 export interface WorldUpdate {
     readonly world: World;
     readonly scene: SceneModel;

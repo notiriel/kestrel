@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow, enterFullscreen, exitFullscreen } from '../../src/domain/world.js';
+import { createWorld, addWindow, enterFullscreen, exitFullscreen, buildUpdate } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addWindow as wsAddWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
-import { computeLayout } from '../../src/domain/layout.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
 import { createNotificationState } from '../../src/domain/notification.js';
 import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
@@ -180,19 +179,19 @@ describe('Fullscreen Step-Out', () => {
         });
     });
 
-    describe('layout', () => {
-        it('fullscreen window produces full-monitor-size layout entry', () => {
+    describe('layout via scene', () => {
+        it('fullscreen window produces full-monitor-size clone', () => {
             let world = createWorld(config, monitor);
             ({ world } = addWindow(world, wid(1)));
             ({ world } = enterFullscreen(world, wid(1)));
 
-            const layout = computeLayout(world);
-            expect(layout.windows).toHaveLength(1);
-            expect(layout.windows[0]!.width).toBe(1920);
-            expect(layout.windows[0]!.height).toBe(1080);
-            expect(layout.windows[0]!.x).toBe(0);
-            expect(layout.windows[0]!.y).toBe(0);
-            expect(layout.windows[0]!.visible).toBe(true);
+            const { scene } = buildUpdate(world);
+            const fsClone = scene.clones.find(c => c.windowId === wid(1))!;
+            expect(fsClone.width).toBe(1920);
+            expect(fsClone.height).toBe(1080);
+            expect(fsClone.x).toBe(0);
+            expect(fsClone.y).toBe(0);
+            expect(fsClone.visible).toBe(true);
         });
 
         it('other windows fill remaining space without gap for fullscreen window', () => {
@@ -202,14 +201,14 @@ describe('Fullscreen Step-Out', () => {
             ({ world } = addWindow(world, wid(3)));
             ({ world } = enterFullscreen(world, wid(1)));
 
-            const layout = computeLayout(world);
+            const { scene } = buildUpdate(world);
 
             // wid(2) should be at edgeGap (first strip position)
-            const w2 = layout.windows.find(w => w.windowId === wid(2));
+            const w2 = scene.clones.find(c => c.windowId === wid(2));
             expect(w2!.x).toBe(8);
 
             // wid(3) follows wid(2) — no gap reserved for the fullscreen window
-            const w3 = layout.windows.find(w => w.windowId === wid(3));
+            const w3 = scene.clones.find(c => c.windowId === wid(3));
             expect(w3!.x).toBe(968);
         });
     });

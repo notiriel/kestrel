@@ -59,17 +59,17 @@ B is focused. WS2 has D, E.
 
 ### Domain core
 
-`src/domain/` — Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return `WorldUpdate { world, layout }`.
+`src/domain/` — Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return `WorldUpdate { world, scene }`.
 
 | File | Purpose |
 |------|---------|
 | `world.ts` | Aggregate root. `createWorld`, `addWindow`, `removeWindow`, `setFocus`, `updateMonitor`, `switchToWorkspace`, `buildUpdate` |
-| `types.ts` | Branded types (`WindowId`, `WorkspaceId`), core interfaces (`KestrelConfig`, `MonitorInfo`, `WindowLayout`, `LayoutState`, `WorldUpdate`) |
+| `types.ts` | Branded types (`WindowId`, `WorkspaceId`), core interfaces (`KestrelConfig`, `MonitorInfo`, `WorldUpdate`) |
 | `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (slotSpan, fullscreen state) |
 | `workspace.ts` | `Workspace` type and operations: `addWindow`, `removeWindow`, `replaceWindow`, `windowAfter`, `windowBefore`, `slotIndexOf`, `windowAtSlot` |
 | `viewport.ts` | `Viewport` type: tracks current workspace index, scrollX, widthPx |
-| `layout.ts` | `computeLayout()` / `computeLayoutForWorkspace()` — turns workspace + config + monitor into pixel positions (`LayoutState`) |
-| `scene.ts` | `computeScene()` — pure function computing the complete physical scene (`SceneModel`) from world + layouts. Produces `CloneScene[]`, `RealWindowScene[]`, `FocusIndicatorScene`, `WorkspaceStripScene` |
+| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — turns workspace + config + monitor into pixel positions |
+| `scene.ts` | `computeScene(world)` — pure function computing the complete physical scene (`SceneModel`) from world state. Produces `CloneScene[]`, `RealWindowScene[]`, `FocusIndicatorScene`, `WorkspaceStripScene` |
 | `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp` |
 | `window-operations.ts` | `moveLeft`, `moveRight`, `moveDown`, `moveUp`, `toggleSize` |
 | `overview.ts` | Overview mode domain logic: `enterOverview`, `exitOverview`, `cancelOverview`, filter management |
@@ -130,17 +130,12 @@ B is focused. WS2 has D, E.
 | `notification-overlay-adapter.ts` | Renders permission/notification/question card UI |
 | `notification-focus-mode.ts` | Keyboard-driven navigation for permission/question cards |
 | `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
-| `notification-card.ts` | Card UI component |
-| `card-base.ts` | Shared card skeleton/styling |
-| `card-behavior.ts` | Card hover/focus/animation behavior |
-| `notification-adapter-types.ts` | Notification adapter type definitions |
 | `dbus-service.ts` | Exports `io.kestrel.Extension` DBus interface for Claude Code plugin |
 
-**UI:**
+**UI adapters:**
 
 | File | Purpose |
 |------|---------|
-| `help-overlay-adapter.ts` | Keybindings help sheet (Super+') |
 | `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch |
 | `overview-input-adapter.ts` | Keyboard input handler for overview mode |
 | `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
@@ -155,7 +150,25 @@ B is focused. WS2 has D, E.
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
 | `safe-window.ts` | Safe extraction of window information |
 | `signal-utils.ts` | GObject signal management helpers |
+
+**UI Components (`src/ui-components/`)** — Presentational widget builders. May import `gi://` but must NOT import domain types or adapter state:
+
+| File | Purpose |
+|------|---------|
+| `help-overlay.ts` | Keybindings help sheet (Super+') |
+| `notification-card.ts` | Notification card UI component |
+| `permission-card.ts` | Permission card UI component |
+| `question-card.ts` | Question card UI component |
+| `card-builders.ts` | Shared card skeleton/styling builders |
+| `card-behavior.ts` | Card hover/focus/animation behavior |
+| `clone-ui-builders.ts` | Clone-related UI builders |
+| `status-badge-builders.ts` | Status badge widget builders |
+| `panel-indicator-builders.ts` | Panel indicator widget builders |
+| `notification-overlay-builders.ts` | Notification overlay widget builders |
+| `help-builders.ts` | Help overlay widget builders |
+| `focus-mode-builders.ts` | Focus mode widget builders |
 | `animation-helpers.ts` | Clutter animation utilities |
+| `notification-adapter-types.ts` | Notification adapter type definitions |
 
 **Entry point**: `src/extension.ts` — Composition root. `KestrelExtension` extends the GNOME `Extension` base class and wires domain + adapters in `enable()`/`disable()`.
 
@@ -222,14 +235,12 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 
 | File | Content |
 |------|---------|
-| `docs/design.md` | Product design spec (keybindings, UX, phasing) |
-| `docs/solution-design.md` | Technical architecture (data model, adapter contracts, phases) |
-| `docs/architecture.md` | Architecture overview and design decisions |
-| `docs/debug.md` | Live debugging via DBus Eval (`global._kestrel`), journal logs, crash recovery |
-| `docs/adapter-refactoring.md` | Adapter refactoring design: UI extraction, domain model migration |
-| `docs/overview-filter-rename.md` | Overview filter and workspace rename feature |
-| `docs/mouse-interaction-design.md` | Mouse scroll interaction design |
-| `docs/event-interception-design.md` | Event interception strategy |
+| `docs/design.md` | Product design spec (keybindings, UX, behavior) |
+| `docs/architecture.md` | Technical architecture (data model, layers, state machines, signal flows) |
+| `docs/debug.md` | Debugging guide (DBus, journal logs, diagnostics, crash recovery) |
+| `docs/claude-code-plugin.md` | Claude Code integration (DBus interface, hooks, data flow) |
+| `docs/build.md` | Build system, testing, development workflow, GSettings schema |
+| `docs/historic/` | Archived design documents from earlier development phases |
 
 ## General Principles
 

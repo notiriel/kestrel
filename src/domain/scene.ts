@@ -1,5 +1,6 @@
-import type { WindowId, WorkspaceId, LayoutState } from './types.js';
+import type { WindowId, WorkspaceId } from './types.js';
 import type { World } from './world.js';
+import { computeWindowPositions } from './layout.js';
 
 interface SceneMismatch {
     readonly entity: 'clone' | 'realWindow' | 'focusIndicator' | 'workspaceStrip';
@@ -61,60 +62,66 @@ export interface SceneModel {
  * Pure function — no GNOME imports, no side effects.
  *
  * @param world - Current world state
- * @param layouts - Layout for each workspace (layouts[i] corresponds to workspaces[i])
  */
-export function computeScene(world: World, layouts: readonly LayoutState[]): SceneModel {
+export function computeScene(world: World): SceneModel {
     const { monitor, config, viewport } = world;
     const currentWsIndex = viewport.workspaceIndex;
     const borderWidth = config.focusBorderWidth;
 
     const clones: CloneScene[] = [];
     const realWindows: RealWindowScene[] = [];
+    let currentWsPositions: ReturnType<typeof computeWindowPositions> | null = null;
 
-    for (let wsIndex = 0; wsIndex < layouts.length; wsIndex++) {
-        const layout = layouts[wsIndex]!;
+    for (let wsIndex = 0; wsIndex < world.workspaces.length; wsIndex++) {
         const ws = world.workspaces[wsIndex];
         if (!ws) continue;
         const isCurrent = wsIndex === currentWsIndex;
-        const scrollX = isCurrent ? layout.scrollX : 0;
+        const positions = computeWindowPositions(
+            ws, config, monitor,
+            isCurrent ? viewport : null,
+        );
 
-        for (const wl of layout.windows) {
+        if (isCurrent) {
+            currentWsPositions = positions;
+        }
+
+        const scrollX = isCurrent ? viewport.scrollX : 0;
+
+        for (const wp of positions) {
             clones.push({
-                windowId: wl.windowId,
+                windowId: wp.windowId,
                 workspaceId: ws.id,
-                x: wl.x,
-                y: wl.y,
-                width: wl.width,
-                height: wl.height,
-                visible: wl.visible,
+                x: wp.x,
+                y: wp.y,
+                width: wp.width,
+                height: wp.height,
+                visible: wp.visible,
             });
 
             realWindows.push({
-                windowId: wl.windowId,
-                x: wl.x - scrollX,
-                y: wl.y + monitor.workAreaY,
-                width: wl.width,
-                height: wl.height,
-                opacity: wl.fullscreen ? 255 : 0,
+                windowId: wp.windowId,
+                x: wp.x - scrollX,
+                y: wp.y + monitor.workAreaY,
+                width: wp.width,
+                height: wp.height,
+                opacity: wp.fullscreen ? 255 : 0,
                 minimized: !isCurrent,
             });
         }
     }
 
     // Focus indicator
-    const currentLayout = layouts[currentWsIndex];
-    const focusedWl = currentLayout?.windows.find(
+    const focusedWp = currentWsPositions?.find(
         w => w.windowId === world.focusedWindow,
     );
     let focusIndicator: FocusIndicatorScene;
-    if (focusedWl) {
-        const scrollX = currentLayout!.scrollX;
+    if (focusedWp) {
         focusIndicator = {
             visible: true,
-            x: focusedWl.x - scrollX - borderWidth,
-            y: focusedWl.y - borderWidth,
-            width: focusedWl.width + borderWidth * 2,
-            height: focusedWl.height + borderWidth * 2,
+            x: focusedWp.x - viewport.scrollX - borderWidth,
+            y: focusedWp.y - borderWidth,
+            width: focusedWp.width + borderWidth * 2,
+            height: focusedWp.height + borderWidth * 2,
         };
     } else {
         focusIndicator = { visible: false, x: 0, y: 0, width: 0, height: 0 };
@@ -124,12 +131,11 @@ export function computeScene(world: World, layouts: readonly LayoutState[]): Sce
     const workspaceContainers: WorkspaceContainerScene[] = [];
     for (let i = 0; i < world.workspaces.length; i++) {
         const ws = world.workspaces[i]!;
-        const layout = layouts[i];
         const isCurrent = i === currentWsIndex;
         workspaceContainers.push({
             workspaceId: ws.id,
             y: i * monitor.totalHeight,
-            scrollX: isCurrent && layout ? layout.scrollX : 0,
+            scrollX: isCurrent ? viewport.scrollX : 0,
         });
     }
 

@@ -1,223 +1,394 @@
-# Architecture
+# Kestrel Technical Architecture
 
-Visual guide to Kestrel's internals. For product design see [design.md](design.md), for technical decisions see [solution-design.md](solution-design.md).
-
----
+This document describes how the Kestrel GNOME Shell extension codebase is structured and why. It is the primary technical reference for contributors and maintainers.
 
 ## 1. Layer Overview
 
-```mermaid
-graph LR
-
-    subgraph GNOME["GNOME Shell / Mutter"]
-        Meta["Meta (windows, display)"]
-        Clutter["Clutter (actors, input)"]
-        St["St (widgets, UI)"]
-        Shell["Shell (keybindings)"]
-    end
-
-    subgraph Adapters["Adapters Layer — src/adapters/"]
-        WinEvent["window-event-adapter"]
-        Clone["clone-adapter"]
-        WinAdapt["window-adapter"]
-        Focus["focus-adapter"]
-        Monitor["monitor-adapter"]
-        Keybind["keybinding-adapter"]
-        OvHandler["overview-handler"]
-        NavHandler["navigation-handler"]
-        Settlement["settlement-retry"]
-        OvInput["overview-input-adapter"]
-        Persist["state-persistence"]
-        DBus["dbus-service"]
-        Notif["notification-overlay-adapter"]
-        Panel["panel-indicator-adapter"]
-        FloatClone["float-clone-manager"]
-        StatusOv["status-overlay-adapter"]
-        HelpOv["help-overlay-adapter"]
-        NotifFocus["notification-focus-mode"]
-        Conflict["conflict-detector"]
-        Recon["reconciliation-guard"]
-        ShellAdapt["shell-adapter"]
-        SafeWin["safe-window"]
-        SigUtil["signal-utils"]
-    end
-
-    subgraph Ports["Ports Layer — src/ports/"]
-        CP["ClonePort"]
-        WP["WindowPort"]
-        FP["FocusPort"]
-        MP["MonitorPort"]
-        SP["ShellPort"]
-        KP["KeybindingPort"]
-        WEP["WindowEventPort"]
-        SPP["StatePersistencePort"]
-        NP["NotificationPort"]
-        PIP["PanelIndicatorPort"]
-        CDP["ConflictDetectorPort"]
-    end
-
-    subgraph Domain["Domain Core — src/domain/"]
-        World["world.ts\n(aggregate root)"]
-        Nav["navigation.ts"]
-        WinOps["window-operations.ts"]
-        Layout["layout.ts"]
-        Overview["overview.ts"]
-        WS["workspace.ts"]
-        Win["window.ts"]
-        VP["viewport.ts"]
-        Types["types.ts"]
-        NTypes["notification-types.ts"]
-    end
-
-    Ext["extension.ts\n(composition root)"]
-
-    Ext --> CP & WP & FP & MP & SP & KP & WEP & SPP & CDP
-    Ext --> World & Nav & WinOps & Layout & Overview
-
-    CP -.-> Types
-    WP -.-> Types
-    FP -.-> Types
-    MP -.-> Types
-    WEP -.-> Types
-
-    CP -->|implemented by| Clone
-    WP -->|implemented by| WinAdapt
-    FP -->|implemented by| Focus
-    MP -->|implemented by| Monitor
-    SP -->|implemented by| ShellAdapt
-    KP -->|implemented by| Keybind
-    WEP -->|implemented by| WinEvent
-    SPP -->|implemented by| Persist
-    NP -->|implemented by| Notif
-    PIP -->|implemented by| Panel
-    CDP -->|implemented by| Conflict
-
-    Clone --> Meta & Clutter
-    WinAdapt --> Meta
-    Focus --> Meta & Shell
-    Monitor --> Meta
-    Keybind --> Meta & Shell
-    WinEvent --> Meta
-    OvInput --> Clutter & St & Shell
-    Notif --> St & Clutter
-    Panel --> St & Clutter
-
-    style Domain fill:#e8f5e9,stroke:#4caf50
-    style Ports fill:#e3f2fd,stroke:#2196f3
-    style Adapters fill:#fff3e0,stroke:#ff9800
-    style GNOME fill:#fce4ec,stroke:#e91e63
-```
-
-**Import rule:** Domain and Ports never import `gi://` modules. All GNOME interaction flows through Adapters.
-
----
-
-## 2. Module Dependency Map
-
-### Domain internals
+Kestrel follows a hexagonal (ports-and-adapters) architecture with four layers:
 
 ```mermaid
-graph LR
-    Types["types.ts"]
-    VP["viewport.ts"]
-    Win["window.ts"]
-    WS["workspace.ts"]
-    Layout["layout.ts"]
-    World["world.ts"]
-    Nav["navigation.ts"]
-    WinOps["window-operations.ts"]
-    Overview["overview.ts"]
-    NTypes["notification-types.ts"]
+graph TB
+    subgraph "Domain Core (src/domain/)"
+        direction LR
+        world["world.ts\nAggregate root"]
+        scene["scene.ts\nSceneModel computation"]
+        layout["layout.ts\nPixel positions"]
+        nav["navigation.ts\nFocus movement"]
+        winops["window-operations.ts\nWindow move/resize"]
+        ws["workspace.ts\nWorkspace operations"]
+        vp["viewport.ts\nCamera state"]
+        win["window.ts\nTiledWindow"]
+        types["types.ts\nBranded types, interfaces"]
+        overview["overview.ts\nOverview mode"]
+        overviewState["overview-state.ts\nOverview interaction"]
+        notif["notification.ts\nNotification lifecycle"]
+        notifTypes["notification-types.ts\nNotification types"]
+        fuzzy["fuzzy-match.ts\nFuzzy search"]
+    end
 
-    Win --> Types
-    WS --> Types & Win
-    Layout --> Types & World & WS
-    World --> Types & Win & WS & VP & Layout
-    Nav --> Types & World & WS
-    WinOps --> Types & World & WS
-    Overview --> Types & World
+    subgraph "Ports (src/ports/)"
+        direction LR
+        clonePort["ClonePort"]
+        windowPort["WindowPort"]
+        focusPort["FocusPort"]
+        monitorPort["MonitorPort"]
+        keybindingPort["KeybindingPort"]
+        shellPort["ShellPort"]
+        windowEventPort["WindowEventPort"]
+        statePersistencePort["StatePersistencePort"]
+        conflictDetectorPort["ConflictDetectorPort"]
+        notificationPort["NotificationPort"]
+        panelIndicatorPort["PanelIndicatorPort"]
+    end
 
-    style Types fill:#c8e6c9
-    style World fill:#a5d6a7,stroke:#388e3c,stroke-width:2px
+    subgraph "Adapters (src/adapters/)"
+        direction LR
+        cloneAdapter["clone-adapter.ts"]
+        windowAdapter["window-adapter.ts"]
+        focusAdapter["focus-adapter.ts"]
+        monitorAdapter["monitor-adapter.ts"]
+        keybindingAdapter["keybinding-adapter.ts"]
+        shellAdapter["shell-adapter.ts"]
+        windowEventAdapter["window-event-adapter.ts"]
+        statePersistence["state-persistence.ts"]
+        conflictDetector["conflict-detector.ts"]
+        notifCoordinator["notification-coordinator.ts"]
+        notifOverlay["notification-overlay-adapter.ts"]
+        handlers["Handlers:\nnavigation-handler.ts\noverview-handler.ts\nwindow-lifecycle-handler.ts"]
+    end
+
+    subgraph "UI Components (src/ui-components/)"
+        direction LR
+        cards["notification-card.ts\npermission-card.ts\nquestion-card.ts"]
+        builders["card-builders.ts\nclone-ui-builders.ts\nstatus-badge-builders.ts\npanel-indicator-builders.ts"]
+        uiHelpers["help-overlay.ts\nhelp-builders.ts\nfocus-mode-builders.ts\nanimation-helpers.ts"]
+    end
+
+    world --> types
+    scene --> types
+    layout --> types
+    nav --> world
+    winops --> world
+
+    cloneAdapter --> clonePort
+    windowAdapter --> windowPort
+    focusAdapter --> focusPort
+    monitorAdapter --> monitorPort
+    keybindingAdapter --> keybindingPort
+    shellAdapter --> shellPort
+    windowEventAdapter --> windowEventPort
+    statePersistence --> statePersistencePort
+    conflictDetector --> conflictDetectorPort
+    notifOverlay --> notificationPort
+
+    handlers --> world
+    handlers --> cloneAdapter
+    handlers --> windowAdapter
+    handlers --> focusAdapter
+
+    notifOverlay --> cards
+    cloneAdapter --> builders
 ```
 
-`world.ts` is the aggregate root — all state mutations go through it. `navigation.ts`, `window-operations.ts`, and `overview.ts` are operation modules that take a `World` and return a `WorldUpdate`.
+### Domain Core (src/domain/)
 
-### Extension wiring
+Pure TypeScript with no `gi://` imports. Fully testable with Vitest.
+
+| File | Purpose |
+|------|---------|
+| `types.ts` | Branded types (`WindowId`, `WorkspaceId`), core interfaces (`World`, `WorldUpdate`, `KestrelConfig`, `MonitorInfo`) |
+| `world.ts` | Aggregate root. Functions: `createWorld`, `addWindow`, `removeWindow`, `setFocus`, `buildUpdate`, `updateMonitor`, `updateConfig`, `enterFullscreen`, `exitFullscreen`, `widenWindow`, `switchToWorkspace`, `filterWorkspaces`, `restoreWorld`, `adjustViewport`, `ensureTrailingEmpty`, `pruneEmptyWorkspaces`, `renameCurrentWorkspace` |
+| `scene.ts` | `computeScene(world)` pure function producing `SceneModel` from `World`. Also `diffScene()` for diagnostics. Types: `CloneScene`, `RealWindowScene`, `FocusIndicatorScene`, `WorkspaceContainerScene`, `WorkspaceStripScene` |
+| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — turns workspace + config + monitor into pixel positions (internal to scene computation and viewport adjustment) |
+| `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp` — pure functions taking `World`, returning `WorldUpdate` |
+| `window-operations.ts` | `moveRight`, `moveLeft`, `moveDown`, `moveUp`, `toggleSize` |
+| `workspace.ts` | `Workspace` type and operations: `createWorkspace`, `addWindow`, `removeWindow`, `windowAfter`, `windowBefore`, `slotIndexOf`, `windowAtSlot`, `swapNeighbor`, `insertWindowAt`, `replaceWindow` |
+| `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (slotSpan, fullscreen state) |
+| `viewport.ts` | `Viewport` type: `createViewport`, tracks current workspace index, scrollX, widthPx |
+| `overview.ts` | `enterOverview`, `exitOverview`, `cancelOverview` |
+| `overview-state.ts` | `OverviewInteractionState` (filter text, rename state, saved focus/viewport), `OverviewTransform`, filter/rename/navigation functions, `computeOverviewTransform`, `overviewHitTest` |
+| `notification.ts` | Full notification lifecycle (`addNotification`, `respondToNotification`, `dismissForSession`, etc.), question interaction (`navigateQuestion`, `selectQuestionOption`, `setOtherText`), focus mode, session/window tracking, response formatting |
+| `notification-types.ts` | `OverlayNotification`, `QuestionOption`, `QuestionDefinition`, `ClaudeStatus` |
+| `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
+
+### Ports (src/ports/)
+
+Interface definitions only. No `gi://` imports. The extension depends on ports, never on concrete adapters.
+
+| File | Purpose |
+|------|---------|
+| `clone-port.ts` | `CloneLifecyclePort`, `CloneRenderPort`, `OverviewRenderPort`, `OverviewFilterPort` (and composite `ClonePort`) |
+| `window-port.ts` | `WindowPort` — position real windows, check settlement |
+| `focus-port.ts` | `FocusPort` — focus activation, feedback loop suppression |
+| `monitor-port.ts` | `MonitorPort` — monitor geometry reading |
+| `keybinding-port.ts` | `KeybindingPort`, `KeybindingCallbacks` — register/unregister keybindings |
+| `shell-port.ts` | `ShellPort` — GNOME Shell interaction (hide overview, intercept animations) |
+| `window-event-port.ts` | `WindowEventPort`, `WindowEventCallbacks` — window lifecycle signals |
+| `state-persistence-port.ts` | `StatePersistencePort` — save/load world state across enable/disable cycles |
+| `conflict-detector-port.ts` | `ConflictDetectorPort` — detect conflicting GNOME extensions |
+| `notification-port.ts` | `NotificationPort` — render permission/notification/question cards |
+| `panel-indicator-port.ts` | `PanelIndicatorPort` — workspace indicator in top panel |
+
+### Adapters (src/adapters/)
+
+GNOME Shell integration via `gi://` imports. Each adapter implements its corresponding port.
+
+**Core adapters:**
+
+| File | Purpose |
+|------|---------|
+| `clone-adapter.ts` | `Clutter.Clone` lifecycle, workspace strip, focus indicator, overview zoom. Implements `CloneLifecyclePort`, `CloneRenderPort`, `OverviewRenderPort`, `OverviewFilterPort` |
+| `window-adapter.ts` | Positions real `Meta.Window`s via `move_resize_frame()`, tracks settlement. Implements `WindowPort` |
+| `focus-adapter.ts` | `Meta.Window.activate()`, external focus tracking, new/close window suppression. Implements `FocusPort` |
+| `monitor-adapter.ts` | Reads monitor geometry, `monitors-changed` signal. Implements `MonitorPort` |
+| `keybinding-adapter.ts` | Registers GNOME keybindings from schema. Implements `KeybindingPort` |
+| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations. Implements `ShellPort` |
+| `window-event-adapter.ts` | `window-created`/`destroy`/`first-frame` signals, separates float windows. Implements `WindowEventPort` |
+| `state-persistence.ts` | Saves/restores world state to dconf settings. Implements `StatePersistencePort` |
+| `conflict-detector.ts` | Detects/disables conflicting GNOME extensions. Implements `ConflictDetectorPort` |
+
+**Handlers** (orchestrate domain calls + adapter updates):
+
+| File | Purpose |
+|------|---------|
+| `navigation-handler.ts` | `handleSimpleCommand` (linear focus/move), `handleVerticalFocus` (workspace switch), `handleVerticalMove` (cross-workspace window move) |
+| `overview-handler.ts` | Overview enter/exit/navigate/filter/click/drag/rename |
+| `window-lifecycle-handler.ts` | Window add/remove/fullscreen/maximize — domain updates + adapter sync |
+
+**Notification system:**
+
+| File | Purpose |
+|------|---------|
+| `notification-coordinator.ts` | Orchestrates status/permission/notification overlays, DBus, focus mode, Claude session watching |
+| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI. Implements `NotificationPort` |
+| `notification-focus-mode.ts` | Keyboard-driven navigation for permission/question cards |
+| `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
+| `dbus-service.ts` | Exports `io.kestrel.Extension` DBus interface |
+
+**UI adapters:**
+
+| File | Purpose |
+|------|---------|
+| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch. Implements `PanelIndicatorPort` |
+| `overview-input-adapter.ts` | Keyboard input handler for overview mode |
+| `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
+
+**Utilities:**
+
+| File | Purpose |
+|------|---------|
+| `world-holder.ts` | Holds current `World` state, fires panel update on change |
+| `settlement-retry.ts` | Exponential-backoff layout retry for async Wayland configures. Delays: `[100, 150, 200, 300, 400, 500, 750, 1000]` ms |
+| `float-clone-manager.ts` | Floating (non-tiled) window clone management |
+| `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
+| `safe-window.ts` | Safe extraction of window information |
+| `signal-utils.ts` | GObject signal management helpers |
+
+### UI Components (src/ui-components/)
+
+Presentational widget builders. These are pure UI construction functions with strict constraints:
+
+- May import `gi://` (St, Clutter, GObject)
+- Must NOT import domain types or adapter state
+- Complexity limit: 8, LOC limit: 60
+
+| File | Purpose |
+|------|---------|
+| `help-overlay.ts` | Keybindings help sheet (Super+') |
+| `notification-card.ts` | Notification card widget |
+| `permission-card.ts` | Permission card widget |
+| `question-card.ts` | Question card widget |
+| `card-builders.ts` | Shared card construction helpers |
+| `card-behavior.ts` | Card hover/focus/animation behavior |
+| `clone-ui-builders.ts` | Clone visual construction |
+| `status-badge-builders.ts` | Status badge construction |
+| `panel-indicator-builders.ts` | Panel indicator construction |
+| `notification-overlay-builders.ts` | Notification overlay construction |
+| `help-builders.ts` | Help overlay construction |
+| `focus-mode-builders.ts` | Focus mode UI construction |
+| `animation-helpers.ts` | Clutter animation utilities |
+| `notification-adapter-types.ts` | Notification adapter type definitions |
+
+## 2. Core Data Flow
+
+The fundamental data flow is unidirectional:
+
+```
+Reality -(signals)-> Adapters -(domain calls)-> Domain -(WorldUpdate)-> Adapters -(animate)-> Reality
+```
+
+All domain operations return `WorldUpdate { world, scene }`. The domain computes the complete desired physical state as a `SceneModel`. Adapters apply the scene by setting actor properties and animating transitions.
+
+**The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output.
+
+Operations like workspace pruning happen immediately in the domain. If a workspace empties, the domain removes it and adjusts all indices in the same operation. The adapter must reconcile its visual state (e.g., clone containers) to match.
 
 ```mermaid
-graph LR
-    Ext["extension.ts"]
+sequenceDiagram
+    participant GNOME as GNOME Shell
+    participant Adapter as Adapter Layer
+    participant Domain as Domain Core
+    participant Scene as Scene Computation
 
-    subgraph Handlers["Extracted Handlers"]
-        NavH["navigation-handler"]
-        OvH["overview-handler"]
-        WinLC["window-lifecycle-handler"]
-        Settle["settlement-retry"]
-        NotifCoord["notification-coordinator"]
-    end
-
-    subgraph AdapterImpls["Adapter Implementations"]
-        Clone["clone-adapter"]
-        WinA["window-adapter"]
-        FocusA["focus-adapter"]
-        MonA["monitor-adapter"]
-        KeyA["keybinding-adapter"]
-        WinEA["window-event-adapter"]
-        ShellA["shell-adapter"]
-        OvIA["overview-input-adapter"]
-        ConflA["conflict-detector"]
-        PersA["state-persistence"]
-        PanelA["panel-indicator-adapter"]
-        NotifA["notification-overlay-adapter"]
-        DBusA["dbus-service"]
-        StatusA["status-overlay-adapter"]
-        NotifFM["notification-focus-mode"]
-        HelpA["help-overlay-adapter"]
-        LaunchA["launcher-adapter"]
-    end
-
-    subgraph Utilities["Utilities"]
-        Guard["reconciliation-guard"]
-        SafeW["safe-window"]
-        WorldH["world-holder"]
-    end
-
-    Ext --> NavH & OvH & WinLC & Settle & NotifCoord
-    Ext --> Clone & WinA & FocusA & MonA & KeyA & WinEA & ShellA
-    Ext --> OvIA & ConflA & PersA & PanelA & HelpA & LaunchA
-    Ext --> Guard & SafeW & WorldH
-
-    NotifCoord --> NotifA & DBusA & StatusA & NotifFM
-    OvH --> OvIA
-    Clone --> FloatCM["float-clone-manager"]
-
-    style Ext fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+    GNOME->>Adapter: Signal fires (key press, window event)
+    Adapter->>Domain: Call domain function (e.g. focusRight(world))
+    Domain->>Domain: Compute new World state
+    Domain->>Scene: computeScene(world)
+    Scene-->>Domain: SceneModel (positions, visibility, transforms)
+    Domain-->>Adapter: WorldUpdate { world, scene }
+    Adapter->>Adapter: Apply scene to Clutter actors
+    Adapter->>Adapter: Animate transitions (Clutter.ease)
+    Adapter->>GNOME: Visual state updated
 ```
 
----
+## 3. Key Data Types
 
-## 3. Port–Adapter Matrix
+```typescript
+interface World {
+    readonly workspaces: readonly Workspace[];
+    readonly viewport: Viewport;
+    readonly focusedWindow: WindowId | null;
+    readonly config: KestrelConfig;
+    readonly monitor: MonitorInfo;
+    readonly overviewActive: boolean;
+    readonly overviewInteractionState: OverviewInteractionState;
+    readonly notificationState: NotificationState;
+}
 
-| Port | Adapter | Responsibility |
-|------|---------|----------------|
-| `ClonePort` | `clone-adapter` | Clone lifecycle, workspace strip, focus indicator, overview zoom |
-| `WindowPort` | `window-adapter` | `move_resize_frame()` on real `Meta.Window`s |
-| `FocusPort` | `focus-adapter` | `Meta.Window.activate()`, external focus tracking |
-| `MonitorPort` | `monitor-adapter` | Read monitor geometry, `monitors-changed` signal |
-| `ShellPort` | `shell-adapter` | Shell method wrappers (`Main.*`) |
-| `KeybindingPort` | `keybinding-adapter` | Register/unregister `Meta.KeyBindingAction`s |
-| `WindowEventPort` | `window-event-adapter` | `window-created`, `first-frame`, `destroy` signals |
-| `StatePersistencePort` | `state-persistence` | Save/restore `World` across enable/disable cycles |
-| `NotificationPort` | `notification-overlay-adapter` | Claude Code notification cards in overview |
-| `PanelIndicatorPort` | `panel-indicator-adapter` | Workspace name in GNOME top bar |
-| `ConflictDetectorPort` | `conflict-detector` | Detect keybinding conflicts with other extensions |
+interface WorldUpdate {
+    readonly world: World;
+    readonly scene: SceneModel;
+}
 
----
+interface SceneModel {
+    readonly focusedWindowId: WindowId | null;
+    readonly clones: readonly CloneScene[];
+    readonly realWindows: readonly RealWindowScene[];
+    readonly focusIndicator: FocusIndicatorScene;
+    readonly workspaceStrip: WorkspaceStripScene;
+}
 
-## 4. State Machines
+interface Viewport {
+    readonly workspaceIndex: number;
+    readonly scrollX: number;
+    readonly widthPx: number;
+}
 
-### Window lifecycle
+interface TiledWindow {
+    readonly id: WindowId;
+    readonly slotSpan: 1 | 2;
+    readonly fullscreen: boolean;
+}
+
+interface Workspace {
+    readonly id: WorkspaceId;
+    readonly windows: readonly TiledWindow[];
+    readonly name: string | null;
+}
+```
+
+`WindowId` and `WorkspaceId` are branded types — plain numbers at runtime but distinct types at compile time, preventing accidental mixing.
+
+## 4. Port-Adapter Matrix
+
+| Port Interface | Implementing Adapter | Key Responsibilities |
+|----------------|---------------------|---------------------|
+| `CloneLifecyclePort` | `clone-adapter.ts` | Clone creation/destruction, workspace containers |
+| `CloneRenderPort` | `clone-adapter.ts` | Clone positioning, scroll offsets, focus indicator |
+| `OverviewRenderPort` | `clone-adapter.ts` | Overview zoom transform, workspace labels |
+| `OverviewFilterPort` | `clone-adapter.ts` | Filter/sort clones during overview |
+| `WindowPort` | `window-adapter.ts` | Real window positioning via `move_resize_frame()` |
+| `FocusPort` | `focus-adapter.ts` | Window activation, focus suppression |
+| `MonitorPort` | `monitor-adapter.ts` | Monitor geometry, layout change signals |
+| `KeybindingPort` | `keybinding-adapter.ts` | GNOME keybinding registration |
+| `ShellPort` | `shell-adapter.ts` | Overview hiding, animation interception |
+| `WindowEventPort` | `window-event-adapter.ts` | Window lifecycle signals (create/destroy) |
+| `StatePersistencePort` | `state-persistence.ts` | World state save/restore to dconf |
+| `ConflictDetectorPort` | `conflict-detector.ts` | Conflicting extension detection |
+| `NotificationPort` | `notification-overlay-adapter.ts` | Permission/notification/question card rendering |
+| `PanelIndicatorPort` | `panel-indicator-adapter.ts` | Top panel workspace indicator |
+
+## 5. Extension Entry Point
+
+`src/extension.ts` is the composition root. `KestrelExtension extends Extension` (the GNOME Shell base class) and wires together domain and adapters in `enable()`/`disable()`.
+
+### enable() sequence (19 steps)
+
+1. **Conflict detection** — disables conflicting extensions
+2. **Config loading** from GSettings
+3. **Monitor geometry** reading
+4. **World creation** — `createWorld(config, monitor)`
+5. **Clone adapter init** — creates Clutter layer hierarchy
+6. **Window/focus adapter init**
+7. **Panel indicator** with workspace click-to-switch
+8. **Notification coordinator** — status overlays, permission cards, DBus service
+9. **Overview handler**
+10. **Settlement retry** — exponential backoff
+11. **Navigation handler**
+12. **Mouse input adapter**
+13. **Keybinding adapter** — registers all Super+key handlers
+14. **External focus tracking**
+15. **Monitor change tracking**
+16. **Window lifecycle signals** — window-created, destroy
+17. **Shell animation interception**
+18. **State restoration** from dconf
+19. **Settings change listener** for live config reload
+
+### disable()
+
+Reverse order: save state, disconnect signals, destroy adapters, clear debug global.
+
+### Debug mode
+
+When the `debug-mode` setting is true, `enable()` exposes `global._kestrel` with:
+
+- `debugState()` — returns domain world + layout
+- `diagnostics()` — runs `computeScene()` and compares expected scene against actual Clutter actor state
+
+## 6. Key Architectural Decisions
+
+### Single GNOME Workspace
+
+All windows live on one GNOME workspace. Kestrel workspaces are virtual, managed entirely in the domain. This avoids conflicts with GNOME's built-in workspace switching animations and transition effects.
+
+### Clone-Based Rendering
+
+Real `Meta.WindowActor`s cannot be reparented from `global.window_group` on Wayland. `Clutter.Clone` allows free positioning on a custom Clutter layer for horizontal scrolling, overview zoom, and workspace strip rendering.
+
+The layer hierarchy:
+
+```
+global.stage
+  +-- global.window_group (real WindowActors, opacity 0)
+  +-- kestrel-layer (above window_group, clipped to monitor)
+        +-- overview-bg
+        +-- kestrel-strip (translated Y for workspace switch)
+        |     +-- kestrel-ws-{id} (per workspace container)
+        |           +-- kestrel-scroll-{id} (translated X for scrolling)
+        |                 +-- kestrel-clone-{windowId} (wrapper, clips content)
+        |                       +-- Clutter.Clone { source: WindowActor }
+        +-- kestrel-focus-indicator
+```
+
+Real windows are hidden (opacity 0) and positioned at their target coordinates. Clones mirror the window content and are freely positioned on the custom layer. This separation allows scrolling clones without moving actual windows.
+
+### Scene Model
+
+`computeScene()` is a pure function that produces a complete `SceneModel` describing the exact physical state of every visual element — clone positions, real window positions, focus indicator geometry, and workspace strip transform.
+
+Adapters consume the scene model rather than computing positions themselves. This keeps all coordinate math testable in the domain and ensures the adapter layer is a thin translation from scene model to Clutter actor properties.
+
+### Target-State Model
+
+Domain operations compute only final positions, not transitions. Adapters handle animation via `Clutter.ease()` independently. When rapid input arrives (e.g., holding Super+Right), each new `WorldUpdate` retargets the animation from the current interpolated position to the new target, producing smooth continuous motion.
+
+### Focused-Window Alignment
+
+Wayland constraint: Mutter's `constrain_partially_onscreen` prevents real windows from being positioned entirely outside the monitor workarea. The solution is to ensure `scrollX` always positions the focused window within monitor bounds. Non-focused windows may end up at incorrect real positions, but this is acceptable — the first click on a misaligned window focuses it (via passive GNOME click-to-focus), which adjusts scrollX to align it. The second click then lands correctly.
+
+## 7. State Machines
+
+### Window Lifecycle
 
 ```mermaid
 stateDiagram-v2
@@ -225,305 +396,191 @@ stateDiagram-v2
     Created --> WaitingFirstFrame: deferred classification
     WaitingFirstFrame --> Tiled: shouldTile() = true
     WaitingFirstFrame --> Floating: shouldFloat() = true
-    WaitingFirstFrame --> Tiled: timeout (2000ms)
-
-    state Tiled {
-        [*] --> Positioned: domain.addWindow() → applyLayout()
-        Positioned --> Settling: settlement-retry loop
-        Settling --> Settled: all windows match target positions
-        Settling --> Settling: unsettled → retry (backoff)
-        Settled --> Fullscreen: fullscreen toggled on
-        Fullscreen --> Settled: fullscreen toggled off
-        Settled --> Widened: maximized → unmaximize + widen
-        Widened --> Settled: toggleSize back
-    }
-
-    Floating --> FloatClone: addFloatClone()
-
+    WaitingFirstFrame --> Tiled: timeout 2000ms
+    Tiled --> Positioned: domain.addWindow + applyScene
+    Positioned --> Settling: settlement-retry loop
+    Settling --> Settled: all windows match targets
+    Settling --> Settling: unsettled, retry with backoff
+    Settled --> Fullscreen: fullscreen toggled on
+    Fullscreen --> Settled: fullscreen toggled off
+    Settled --> Widened: maximized, unmaximize + widen
     Tiled --> [*]: actor destroy signal
+    Floating --> FloatClone: addFloatClone
     Floating --> [*]: actor destroy signal
 ```
 
-### Overview mode
+### Overview Mode
 
 ```mermaid
 stateDiagram-v2
     [*] --> Closed
-
-    Closed --> Open: Super+M / toggle keybinding
-    note right of Open: domain.enterOverview()\nclone-adapter zooms out\noverview-input-adapter activates
-
+    Closed --> Open: Super+Minus
     Open --> Navigating: Arrow keys
-    Navigating --> Navigating: Arrow keys
-    Navigating --> Open: no more input
-
-    Open --> Closed: Enter / Super+M (confirm)
-    Navigating --> Closed: Enter / Super+M (confirm)
-    note right of Closed: domain.exitOverview()\nfocus navigated window\nclone-adapter zooms in
-
+    Open --> Filtering: printable key typed
+    Filtering --> Filtering: more keys
+    Open --> Closed: Enter / Super+Minus confirm
     Open --> Cancelled: Escape
-    Navigating --> Cancelled: Escape
     Cancelled --> Closed: restore pre-overview state
-    note left of Cancelled: domain.cancelOverview()\nrestore saved focus + viewport
-
+    Open --> Renaming: Super+R
+    Renaming --> Open: Enter saves / Escape cancels
     Open --> ClickFocus: click on window clone
-    ClickFocus --> Closed: domain.setFocus() → confirm exit
+    ClickFocus --> Closed: setFocus + confirm exit
 ```
 
-### Settlement retry
+### Settlement Retry
 
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-
-    Idle --> Checking: start() called after layout change
-    note right of Checking: Backoff delays (ms) 100 / 150 / 200 / 300 / 400 / 500 / 750 / 1000
-
+    Idle --> Checking: start() after layout change
     Checking --> Applying: timer fires
-    Applying --> Checking: hasUnsettledWindows() = true\nincrement step, schedule next
-    Applying --> Idle: all windows settled OR max retries
-    Checking --> Idle: cancel() or destroy()
+    Applying --> Checking: unsettled, increment step, schedule next
+    Applying --> Idle: all settled OR max retries
 ```
 
-### Viewport scroll
+Backoff delays: `[100, 150, 200, 300, 400, 500, 750, 1000]` ms. Each step checks whether all real windows match their target positions. If any window is unsettled, the layout is re-applied and the next retry is scheduled with increasing delay.
 
-```mermaid
-stateDiagram-v2
-    [*] --> Centered: viewport centered on focused window
+## 8. Signal Choreography
 
-    Centered --> Scrolling: focus/move changes viewport
-    note right of Scrolling: domain.adjustViewport()\nclone-adapter animates strip X
-
-    Scrolling --> Centered: animation completes
-
-    Centered --> OverviewZoom: enter overview
-    OverviewZoom --> Centered: exit overview
-```
-
----
-
-## 5. Signal Choreography
-
-### Window creation flow
+### Window Creation
 
 ```mermaid
 sequenceDiagram
     participant Mutter
     participant WEA as WindowEventAdapter
     participant Ext as Extension
-    participant Domain
+    participant Guard as ReconciliationGuard
     participant Clone as CloneAdapter
-    participant WinA as WindowAdapter
+    participant Domain
+    participant WinAdapt as WindowAdapter
     participant Focus as FocusAdapter
     participant Settle as SettlementRetry
 
     Mutter->>WEA: window-created signal
-    WEA->>WEA: defer to first-frame / timeout
-
-    alt first-frame fires
-        Mutter->>WEA: first-frame signal
-    else timeout (2000ms)
-        WEA->>WEA: timeout fires
-    end
-
-    WEA->>WEA: classify: shouldTile()?
-    WEA->>Ext: onWindowReady(windowId)
-    Ext->>Ext: reconciliation guard check
-    Ext->>Clone: addClone(window)
+    WEA->>WEA: Wait for first-frame / timeout (2000ms)
+    WEA->>WEA: Classify: shouldTile()?
+    WEA->>Ext: onWindowAdded(metaWindow)
+    Ext->>Guard: Acquire reconciliation lock
+    Ext->>Clone: addClone(metaWindow)
     Ext->>Domain: addWindow(world, windowId)
-    Domain-->>Ext: WorldUpdate { world, layout }
-    Ext->>WinA: applyLayout(layout)
-    Ext->>Clone: applyLayout(layout)
-    Ext->>Focus: focusInternal(focusedWindow)
+    Domain-->>Ext: WorldUpdate { world, scene }
+    Ext->>WinAdapt: applyScene(scene.realWindows)
+    Ext->>Clone: applyScene(scene.clones, scene.focusIndicator)
+    Ext->>Focus: focusInternal(focusedWindowId)
     Ext->>Settle: start()
-    Settle->>Settle: schedule check (100ms)
-
-    loop until settled or max retries
-        Settle->>Domain: computeLayout(world)
-        Domain-->>Settle: LayoutState
-        Settle->>WinA: applyLayout(layout)
-        Settle->>Clone: applyLayout(layout)
-        Settle->>WinA: hasUnsettledWindows()?
-        alt unsettled
-            Settle->>Settle: schedule next (backoff)
-        end
-    end
+    Guard-->>Ext: Release lock
 ```
 
-### Keybinding → layout flow
+### Keybinding to Layout
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant KeyA as KeybindingAdapter
-    participant NavH as NavigationHandler
-    participant Domain
+    participant KB as KeybindingAdapter
     participant Ext as Extension
+    participant NavH as NavigationHandler
+    participant Guard as ReconciliationGuard
+    participant Domain
+    participant WinAdapt as WindowAdapter
     participant Clone as CloneAdapter
-    participant WinA as WindowAdapter
     participant Focus as FocusAdapter
 
-    User->>KeyA: Super+Right
-    KeyA->>Ext: keybinding callback
+    User->>KB: Super+Right
+    KB->>Ext: keybinding callback
     Ext->>NavH: handleSimpleCommand(focusRight)
-
-    NavH->>NavH: reconciliation guard check
+    NavH->>Guard: Check reconciliation lock
     NavH->>Domain: focusRight(world)
-    Domain-->>NavH: WorldUpdate { world, layout }
-    NavH->>Ext: set new world
-    NavH->>WinA: applyLayout(layout)
-    NavH->>Clone: applyLayout(layout)
-    NavH->>Focus: focusInternal(newFocusWindow)
+    Domain-->>NavH: WorldUpdate { world, scene }
+    NavH->>NavH: Set new world
+    NavH->>WinAdapt: applyScene(scene.realWindows)
+    NavH->>Clone: applyScene(scene.clones, scene.focusIndicator)
+    NavH->>Focus: focusInternal(focusedWindowId)
 ```
 
-### Vertical move (cross-workspace)
+### Vertical Move (Cross-Workspace)
 
 ```mermaid
 sequenceDiagram
     participant NavH as NavigationHandler
     participant Domain
     participant Clone as CloneAdapter
-    participant WinA as WindowAdapter
+    participant WinAdapt as WindowAdapter
     participant Focus as FocusAdapter
 
-    NavH->>NavH: save source workspace ID & scroll X
+    NavH->>NavH: Save source wsId & scrollX
     NavH->>Domain: moveDown(world)
-    Domain-->>NavH: WorldUpdate { world, layout }
-    NavH->>Clone: moveCloneToWorkspace(windowId, newWsId)
-    NavH->>Clone: syncWorkspaceContainers(world)
-    NavH->>Clone: setScrollForWorkspace(newWsId, savedScrollX)
-    NavH->>WinA: applyLayout(mainLayout)
-    NavH->>Domain: computeLayoutForWorkspace(sourceWs)
-    NavH->>WinA: applyLayout(sourceLayout)
-    NavH->>Clone: applyLayout(sourceLayout)
-    NavH->>Focus: activate(movedWindow)
+    Domain-->>NavH: WorldUpdate { world, scene }
+    NavH->>Clone: moveCloneToWorkspace(windowId, targetWsId)
+    NavH->>Clone: syncWorkspaces()
+    NavH->>Clone: setScrollForWorkspace(sourceWsId, savedScrollX)
+    NavH->>WinAdapt: applyScene(scene.realWindows)
+    NavH->>Clone: applyScene(scene.clones, scene.focusIndicator)
+    NavH->>Focus: activate(focusedWindowId)
 ```
 
-### Overview enter/exit
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant OvH as OverviewHandler
-    participant Domain
-    participant Clone as CloneAdapter
-    participant OvInput as OverviewInputAdapter
-    participant WinA as WindowAdapter
-    participant Focus as FocusAdapter
-
-    User->>OvH: Super+M (toggle)
-    OvH->>OvH: save focus & viewport snapshot
-    OvH->>Domain: enterOverview(world)
-    Domain-->>OvH: WorldUpdate { world, layout }
-    OvH->>Clone: enterOverview(transform, layout)
-    OvH->>OvInput: activate()
-
-    Note over User,Focus: User navigates in overview...
-
-    User->>OvInput: Arrow key
-    OvInput->>OvH: onNavigate(direction)
-    OvH->>Domain: focusRight/Left/Up/Down(world)
-    Domain-->>OvH: WorldUpdate
-    OvH->>Clone: updateOverviewFocus(layout)
-
-    User->>OvInput: Enter (confirm)
-    OvInput->>OvH: onConfirm()
-    OvH->>Domain: exitOverview(world)
-    Domain-->>OvH: WorldUpdate { world, layout }
-    OvH->>OvInput: deactivate()
-    OvH->>Clone: exitOverview()
-    OvH->>WinA: applyLayout(layout)
-    OvH->>Focus: activate(selectedWindow)
-```
-
-### Window destruction flow
+### Window Destruction
 
 ```mermaid
 sequenceDiagram
     participant Mutter
     participant WEA as WindowEventAdapter
     participant Ext as Extension
+    participant Guard as ReconciliationGuard
     participant Domain
     participant Clone as CloneAdapter
-    participant WinA as WindowAdapter
+    participant WinAdapt as WindowAdapter
     participant Focus as FocusAdapter
 
     Mutter->>WEA: actor destroy signal
-    WEA->>Ext: onWindowDestroyed(windowId)
-    Ext->>Ext: reconciliation guard check
+    WEA->>Ext: onWindowRemoved(windowId)
+    Ext->>Guard: Acquire reconciliation lock
     Ext->>Domain: removeWindow(world, windowId)
-    Domain-->>Ext: WorldUpdate { world, layout }
-    Note over Domain: empty workspace pruned,<br/>indices adjusted
+    Domain->>Domain: Prune empty workspaces, adjust indices
+    Domain-->>Ext: WorldUpdate { world, scene }
     Ext->>Clone: removeClone(windowId)
-    Ext->>WinA: applyLayout(layout)
-    Ext->>Clone: applyLayout(layout)
-    Ext->>Clone: syncWorkspaceContainers(world)
-    Ext->>Focus: focusInternal(newFocusWindow)
+    Ext->>WinAdapt: applyScene(scene.realWindows)
+    Ext->>Clone: applyScene(scene.clones, scene.focusIndicator)
+    Ext->>Clone: syncWorkspaces()
+    Ext->>Focus: focusInternal(focusedWindowId)
+    Guard-->>Ext: Release lock
 ```
 
----
+## 9. Textual Model Notation
 
-## 6. Feature Walkthrough
+Tests and bug reports use a compact notation for describing world state:
 
-### Adding a new keybinding
+```
+<>  viewport (what's visible on screen)
+[]  focus indicator (which window has focus)
+```
 
-**Example:** Add `Super+G` to group windows.
+Example — two workspaces, B focused on WS1:
 
-1. **Schema** — `schemas/org.gnome.shell.extensions.kestrel.gschema.xml`
-   - Add a new key: `<key name="group-windows" type="as"><default>['&lt;Super&gt;g']</default></key>`
+```
+A
+<[B] C>
+D E
+```
 
-2. **Domain** — `src/domain/window-operations.ts` (or new file)
-   - Write a pure function: `groupWindows(world: World): WorldUpdate`
-   - Add tests in `test/domain/`
+Reading: WS0 has window A. WS1 (current viewport) has windows B and C. The viewport shows B and C, with B focused. WS2 has windows D and E.
 
-3. **Port** — `src/ports/keybinding-port.ts`
-   - Add the binding name to `KeybindingCallbacks` interface
+Each line is a workspace. Windows are separated by spaces. `<>` marks the viewport boundaries. `[]` marks the focused window. A window name alone (like `A`) means it is offscreen.
 
-4. **Adapter** — `src/adapters/keybinding-adapter.ts`
-   - Register the binding in `enable()`, unregister in `destroy()`
-
-5. **Extension** — `src/extension.ts`
-   - Wire the callback: call domain function → `_applyLayout()` → `focusInternal()`
-
-6. **Build & test**
-   ```bash
-   npx vitest run test/domain/window-operations.test.ts
-   make install
-   ```
-
-### Adding a new adapter
-
-**Example:** Add a sound-effects adapter.
-
-1. **Port** — `src/ports/sound-port.ts`
-   - Define interface: `interface SoundPort { playNavigate(): void; playOverview(): void; }`
-
-2. **Adapter** — `src/adapters/sound-adapter.ts`
-   - Implement `SoundPort` using `gi://` audio APIs
-   - Include `destroy()` for cleanup
-
-3. **Extension** — `src/extension.ts`
-   - Import and instantiate in `enable()`
-   - Call port methods at appropriate points (after navigation, overview enter/exit)
-   - Call `destroy()` in `disable()`
-
----
-
-## 7. Glossary
+## 10. Glossary
 
 | Term | Meaning |
 |------|---------|
-| **World** | Complete domain state: all workspaces, windows, focus, viewport, config |
-| **WorldUpdate** | Return type of domain operations: `{ world, layout }` — new state + computed positions |
-| **Workspace** | Virtual container of windows (Kestrel concept, not GNOME workspaces) |
-| **Slot** | Half-monitor-width unit. A window occupies 1 or 2 slots. |
-| **Viewport** | 2D camera showing a portion of the workspace. Width = monitor. Scrolls in 1-slot increments. |
-| **Clone** | `Clutter.Clone` of a `Meta.WindowActor`, positioned on a custom layer for scrolling |
-| **Clone wrapper** | `Clutter.Actor` parent of a clone, sized to layout target, clips overflow |
-| **Settlement** | State where all real windows match their target positions (Wayland configures complete) |
-| **Settlement retry** | Exponential-backoff loop re-applying layout until windows settle |
-| **Reconciliation guard** | Debounce mechanism preventing duplicate signal processing within a frame |
-| **Overview transform** | Scale + offset that zooms out the workspace strip to show all workspaces |
-| **Float clone** | Clone of a non-tiled window (dialog, popup) rendered above the tiling layer |
-| **Layout** | `LayoutState` — computed pixel positions for all windows in a workspace |
-| **Branded type** | TypeScript type with a phantom brand field (`WindowId`, `WorkspaceId`) for type safety |
+| World | Complete domain state: all workspaces, windows, focus, viewport, config, overview, notifications |
+| WorldUpdate | Return type of domain operations: `{ world, scene }` — new state + scene model |
+| SceneModel | Domain-computed physical state: positions for every clone, real window, focus indicator, workspace strip |
+| Workspace | Virtual container of windows (Kestrel concept, not GNOME workspaces) |
+| Slot | Half-monitor-width unit. A window occupies 1 or 2 slots |
+| Viewport | 2D camera showing a portion of the workspace. Width = monitor pixels. Scrolls to fit focused window |
+| Clone | `Clutter.Clone` of a `Meta.WindowActor`, positioned on custom layer for scrolling |
+| Clone wrapper | `Clutter.Actor` parent of a clone, sized to layout target, clips overflow |
+| Settlement | State where all real windows match their target positions (Wayland configures complete) |
+| Settlement retry | Exponential-backoff loop re-applying layout until windows settle |
+| Reconciliation guard | Prevents concurrent/overlapping signal-driven operations |
+| Overview transform | Scale + offset that zooms out workspace strip to show all workspaces |
+| Float clone | Clone of a non-tiled window (dialog, popup) rendered above the tiling layer |
+| Branded type | TypeScript type with phantom brand field (`WindowId`, `WorkspaceId`) for type safety |

@@ -1,13 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { KestrelConfig, MonitorInfo, WindowId } from '../../src/domain/types.js';
-import { computeLayout } from '../../src/domain/layout.js';
+import { computeWindowPositions } from '../../src/domain/layout.js';
 import type { WorkspaceId } from '../../src/domain/types.js';
 import { createWorkspace, addWindow } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
-import type { World } from '../../src/domain/world.js';
-import { createViewport } from '../../src/domain/viewport.js';
-import { createNotificationState } from '../../src/domain/notification.js';
-import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)' };
 const monitor: MonitorInfo = {
@@ -27,39 +23,20 @@ function wsId(n: number): WorkspaceId {
     return `ws-${n}` as WorkspaceId;
 }
 
-function makeWorld(wsFactory: () => ReturnType<typeof createWorkspace>, overrides: Partial<World> = {}): World {
-    return {
-        workspaces: [wsFactory()],
-        viewport: createViewport(monitor.totalWidth),
-        focusedWindow: null,
-        config,
-        monitor,
-        overviewActive: false,
-        overviewInteractionState: createOverviewInteractionState(),
-        notificationState: createNotificationState(),
-        ...overrides,
-    };
-}
-
-describe('computeLayout', () => {
-    it('returns empty layout for empty workspace', () => {
-        const world = makeWorld(() => createWorkspace(wsId(0)));
-        const layout = computeLayout(world);
-        expect(layout.windows).toHaveLength(0);
-        expect(layout.scrollX).toBe(0);
-        expect(layout.focusedWindowId).toBeNull();
+describe('computeWindowPositions', () => {
+    it('returns empty array for empty workspace', () => {
+        const ws = createWorkspace(wsId(0));
+        const positions = computeWindowPositions(ws, config, monitor, { scrollX: 0, widthPx: 1920 });
+        expect(positions).toHaveLength(0);
     });
 
     it('positions a single window correctly', () => {
-        const world = makeWorld(() => {
-            let ws = createWorkspace(wsId(0));
-            ws = addWindow(ws, createTiledWindow(wid(1)));
-            return ws;
-        });
-        const layout = computeLayout(world);
+        let ws = createWorkspace(wsId(0));
+        ws = addWindow(ws, createTiledWindow(wid(1)));
+        const positions = computeWindowPositions(ws, config, monitor, { scrollX: 0, widthPx: 1920 });
 
-        expect(layout.windows).toHaveLength(1);
-        const win = layout.windows[0]!;
+        expect(positions).toHaveLength(1);
+        const win = positions[0]!;
         expect(win.windowId).toBe(wid(1));
         expect(win.x).toBe(8);
         expect(win.y).toBe(11);
@@ -72,16 +49,13 @@ describe('computeLayout', () => {
     });
 
     it('positions two windows side by side with gap', () => {
-        const world = makeWorld(() => {
-            let ws = createWorkspace(wsId(0));
-            ws = addWindow(ws, createTiledWindow(wid(1)));
-            ws = addWindow(ws, createTiledWindow(wid(2)));
-            return ws;
-        });
-        const layout = computeLayout(world);
+        let ws = createWorkspace(wsId(0));
+        ws = addWindow(ws, createTiledWindow(wid(1)));
+        ws = addWindow(ws, createTiledWindow(wid(2)));
+        const positions = computeWindowPositions(ws, config, monitor, { scrollX: 0, widthPx: 1920 });
 
-        expect(layout.windows).toHaveLength(2);
-        const [w1, w2] = layout.windows;
+        expect(positions).toHaveLength(2);
+        const [w1, w2] = positions;
 
         expect(w1!.x).toBe(8);
         expect(w1!.width).toBe(952);
@@ -92,14 +66,11 @@ describe('computeLayout', () => {
     });
 
     it('handles double-width window', () => {
-        const world = makeWorld(() => {
-            let ws = createWorkspace(wsId(0));
-            ws = addWindow(ws, createTiledWindow(wid(1), 2));
-            return ws;
-        });
-        const layout = computeLayout(world);
+        let ws = createWorkspace(wsId(0));
+        ws = addWindow(ws, createTiledWindow(wid(1), 2));
+        const positions = computeWindowPositions(ws, config, monitor, { scrollX: 0, widthPx: 1920 });
 
-        const win = layout.windows[0]!;
+        const win = positions[0]!;
         // width = 2 * 960 - 8 = 1912
         expect(win.width).toBe(1912);
     });
@@ -107,57 +78,41 @@ describe('computeLayout', () => {
     it('marks off-screen windows as not visible', () => {
         // 3 windows, each 952px wide. Third starts at 1928px.
         // Viewport is 1920px wide, scrollX=0 → third window is off-screen.
-        const world = makeWorld(
-            () => {
-                let ws = createWorkspace(wsId(0));
-                ws = addWindow(ws, createTiledWindow(wid(1)));
-                ws = addWindow(ws, createTiledWindow(wid(2)));
-                ws = addWindow(ws, createTiledWindow(wid(3)));
-                return ws;
-            },
-        );
-        const layout = computeLayout(world);
+        let ws = createWorkspace(wsId(0));
+        ws = addWindow(ws, createTiledWindow(wid(1)));
+        ws = addWindow(ws, createTiledWindow(wid(2)));
+        ws = addWindow(ws, createTiledWindow(wid(3)));
+        const positions = computeWindowPositions(ws, config, monitor, { scrollX: 0, widthPx: 1920 });
 
-        expect(layout.windows[0]!.visible).toBe(true);
+        expect(positions[0]!.visible).toBe(true);
         // Second window: x=971, right=1923 — partially visible (right edge > 1920)
-        expect(layout.windows[1]!.visible).toBe(true);
+        expect(positions[1]!.visible).toBe(true);
         // Third window: x=1931, right=2883 — left edge 1931 >= viewport end 1920
-        expect(layout.windows[2]!.visible).toBe(false);
+        expect(positions[2]!.visible).toBe(false);
     });
 
     it('marks scrolled-past windows as not visible', () => {
-        const world = makeWorld(
-            () => {
-                let ws = createWorkspace(wsId(0));
-                ws = addWindow(ws, createTiledWindow(wid(1)));
-                ws = addWindow(ws, createTiledWindow(wid(2)));
-                ws = addWindow(ws, createTiledWindow(wid(3)));
-                return ws;
-            },
-            { viewport: { workspaceIndex: 0, scrollX: 971, widthPx: 1920 } },
-        );
-        const layout = computeLayout(world);
+        let ws = createWorkspace(wsId(0));
+        ws = addWindow(ws, createTiledWindow(wid(1)));
+        ws = addWindow(ws, createTiledWindow(wid(2)));
+        ws = addWindow(ws, createTiledWindow(wid(3)));
+        const positions = computeWindowPositions(ws, config, monitor, { scrollX: 971, widthPx: 1920 });
 
         // First window: x=11, right=963 → right(963) > scrollX(971) is false
-        expect(layout.windows[0]!.visible).toBe(false);
-        expect(layout.windows[1]!.visible).toBe(true);
-        expect(layout.windows[2]!.visible).toBe(true);
+        expect(positions[0]!.visible).toBe(false);
+        expect(positions[1]!.visible).toBe(true);
+        expect(positions[2]!.visible).toBe(true);
     });
 
-    it('includes scrollX and focusedWindowId in layout', () => {
-        const world = makeWorld(
-            () => {
-                let ws = createWorkspace(wsId(0));
-                ws = addWindow(ws, createTiledWindow(wid(1)));
-                return ws;
-            },
-            {
-                viewport: { workspaceIndex: 0, scrollX: 100, widthPx: 1920 },
-                focusedWindow: wid(1),
-            },
-        );
-        const layout = computeLayout(world);
-        expect(layout.scrollX).toBe(100);
-        expect(layout.focusedWindowId).toBe(wid(1));
+    it('marks all windows visible when viewport is null', () => {
+        let ws = createWorkspace(wsId(0));
+        ws = addWindow(ws, createTiledWindow(wid(1)));
+        ws = addWindow(ws, createTiledWindow(wid(2)));
+        ws = addWindow(ws, createTiledWindow(wid(3)));
+        const positions = computeWindowPositions(ws, config, monitor, null);
+
+        for (const pos of positions) {
+            expect(pos.visible).toBe(true);
+        }
     });
 });
