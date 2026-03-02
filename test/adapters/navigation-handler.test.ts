@@ -85,14 +85,17 @@ describe('NavigationHandler', () => {
             expect(deps.focusWindow).not.toHaveBeenCalled();
         });
 
-        it('no-ops when overview is active', () => {
+        it('no-ops when overview is active (domain returns unchanged world)', () => {
             const world = { ...buildWorld(1, 2), overviewActive: true };
             const deps = createDeps(world);
             const handler = new NavigationHandler(deps);
 
             handler.handleSimpleCommand(focusLeft, 'focus-left');
 
-            expect(deps.setWorld).not.toHaveBeenCalled();
+            // Domain guard returns the same world unchanged
+            const updatedWorld = (deps.setWorld as ReturnType<typeof vi.fn>).mock.calls[0]![0] as World;
+            expect(updatedWorld.focusedWindow).toBe(world.focusedWindow);
+            expect(updatedWorld.overviewActive).toBe(true);
         });
 
         it('no-ops when guard returns false', () => {

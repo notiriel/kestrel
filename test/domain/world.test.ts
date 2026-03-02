@@ -418,6 +418,32 @@ describe('World', () => {
             expect(result.notificationState.notifications.has('p1')).toBe(true);
         });
 
+        it('addWindow with preferWide creates 2-slot column', () => {
+            const { world: w } = addWindow(world, wid(1), { preferWide: true });
+            expect(w.workspaces[0]!.columns[0]!.slotSpan).toBe(2);
+        });
+
+        it('addWindow without preferWide creates 1-slot column', () => {
+            const { world: w } = addWindow(world, wid(1));
+            expect(w.workspaces[0]!.columns[0]!.slotSpan).toBe(1);
+        });
+
+        it('setFocus auto-dismisses quake overlay', () => {
+            let w = addWindow(world, wid(1)).world;
+            w = { ...w, quakeState: { slots: [wid(10) as WindowId, null, null, null, null], activeSlot: 0 } };
+
+            const { world: result } = setFocus(w, wid(1));
+            expect(result.quakeState.activeSlot).toBeNull();
+        });
+
+        it('setFocus preserves quake slots when dismissing', () => {
+            let w = addWindow(world, wid(1)).world;
+            w = { ...w, quakeState: { slots: [wid(10) as WindowId, null, null, null, null], activeSlot: 0 } };
+
+            const { world: result } = setFocus(w, wid(1));
+            expect(result.quakeState.slots[0]).toBe(wid(10));
+        });
+
         it('removeWindow cleans up session/status for destroyed window', () => {
             let w = addWindow(world, wid(1)).world;
             w = addWindow(w, wid(2)).world;

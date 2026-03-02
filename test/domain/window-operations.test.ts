@@ -303,3 +303,41 @@ describe('toggleStack', () => {
         expect(update.world.workspaces[0]!.columns).toHaveLength(2);
     });
 });
+
+describe('overviewActive guard', () => {
+    it('moveRight is no-op when overview is active', () => {
+        const world = { ...makeWorld([1, 2, 3], 0), overviewActive: true };
+        const update = moveRight(world);
+        expect(update.world).toBe(world);
+    });
+
+    it('moveLeft is no-op when overview is active', () => {
+        const world = { ...makeWorld([1, 2, 3], 2), overviewActive: true };
+        const update = moveLeft(world);
+        expect(update.world).toBe(world);
+    });
+
+    it('moveDown is no-op when overview is active', () => {
+        const world = { ...makeMultiWorld([[1], [2], []], 0, 1), overviewActive: true };
+        const update = moveDown(world);
+        expect(update.world).toBe(world);
+    });
+
+    it('moveUp is no-op when overview is active', () => {
+        const world = { ...makeMultiWorld([[1], [2], []], 1, 2), overviewActive: true };
+        const update = moveUp(world);
+        expect(update.world).toBe(world);
+    });
+
+    it('toggleSize is no-op when overview is active', () => {
+        const world = { ...makeWorld([1, 2], 0), overviewActive: true };
+        const update = toggleSize(world);
+        expect(update.world).toBe(world);
+    });
+
+    it('toggleStack is no-op when overview is active', () => {
+        const world = { ...makeWorld([1, 2], 1), overviewActive: true };
+        const update = toggleStack(world);
+        expect(update.world).toBe(world);
+    });
+});

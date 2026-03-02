@@ -12,6 +12,7 @@ export function createQuakeState(): QuakeState {
 }
 
 export function assignQuakeWindow(world: World, slotIndex: number, windowId: WindowId): WorldUpdate {
+    if (world.quakeState.slots[slotIndex] !== null) return buildUpdate(world);
     const slots = world.quakeState.slots.map((s, i) => i === slotIndex ? windowId : s);
     const newWorld: World = {
         ...world,
@@ -53,6 +54,20 @@ export function releaseQuakeWindow(world: World, windowId: WindowId): WorldUpdat
         quakeState: { slots, activeSlot },
     };
     return buildUpdate(newWorld);
+}
+
+/** Get quake slots that are configured but have no window assigned. */
+export function getUnoccupiedQuakeSlots(world: World): Array<{ slotIndex: number; appId: string }> {
+    const { quakeSlots } = world.config;
+    const { slots } = world.quakeState;
+    const result: Array<{ slotIndex: number; appId: string }> = [];
+    for (let i = 0; i < quakeSlots.length; i++) {
+        const appId = quakeSlots[i]?.appId;
+        if (appId && slots[i] === null) {
+            result.push({ slotIndex: i, appId });
+        }
+    }
+    return result;
 }
 
 export function isQuakeWindow(world: World, windowId: WindowId): boolean {

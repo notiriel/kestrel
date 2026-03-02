@@ -14,7 +14,10 @@ export function enterOverview(world: World): WorldUpdate {
         world.viewport.workspaceIndex,
         world.viewport.scrollX,
     );
-    return buildUpdate({ ...world, overviewActive: true, overviewInteractionState });
+    const quakeState = world.quakeState.activeSlot !== null
+        ? { ...world.quakeState, activeSlot: null }
+        : world.quakeState;
+    return buildUpdate({ ...world, overviewActive: true, overviewInteractionState, quakeState });
 }
 
 /**

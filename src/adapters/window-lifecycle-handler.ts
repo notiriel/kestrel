@@ -97,12 +97,7 @@ export class WindowLifecycleHandler {
         if (wasMaximized) metaWindow.unmaximize(Meta.MaximizeFlags.BOTH);
 
         const oldScrollX = world.viewport.scrollX;
-        let update = addWindow(world, windowId);
-
-        // Widen to 2-slot if the window was maximized
-        if (wasMaximized) {
-            update = widenWindow(update.world, windowId);
-        }
+        let update = addWindow(world, windowId, { preferWide: wasMaximized });
 
         this._deps.setWorld(update.world);
 

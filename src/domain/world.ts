@@ -245,11 +245,15 @@ export function setFocus(world: World, windowId: WindowId): WorldUpdate {
     const targetWsIndex = found ? found.wsIndex : world.viewport.workspaceIndex;
 
     const notificationState = dismissNotificationsForWindow(world.notificationState, windowId);
+    const quakeState = world.quakeState.activeSlot !== null
+        ? { ...world.quakeState, activeSlot: null }
+        : world.quakeState;
     const newWorld: World = {
         ...world,
         focusedWindow: windowId,
         viewport: { ...world.viewport, workspaceIndex: targetWsIndex },
         notificationState,
+        quakeState,
     };
     return buildUpdate(adjustViewport(newWorld));
 }
@@ -259,10 +263,10 @@ export function updateNotificationState(world: World, ns: NotificationState): Wo
     return { ...world, notificationState: ns };
 }
 
-export function addWindow(world: World, windowId: WindowId): WorldUpdate {
+export function addWindow(world: World, windowId: WindowId, options?: { preferWide?: boolean }): WorldUpdate {
     const ws = currentWorkspace(world);
     const tiledWindow = createTiledWindow(windowId);
-    const column = createColumn(tiledWindow);
+    const column = createColumn(tiledWindow, options?.preferWide ? 2 : 1);
     const newWs = wsAddColumn(ws, column);
     let newWorld = replaceCurrentWorkspace(
         { ...world, focusedWindow: windowId },

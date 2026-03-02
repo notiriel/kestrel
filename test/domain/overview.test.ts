@@ -120,6 +120,24 @@ describe('exitOverview', () => {
     });
 });
 
+describe('enterOverview quake dismiss', () => {
+    it('auto-dismisses quake overlay when entering overview', () => {
+        const world = {
+            ...makeWorld([1, 2], 0),
+            quakeState: { slots: [wid(10), null, null, null, null], activeSlot: 0 },
+        };
+        const update = enterOverview(world);
+        expect(update.world.quakeState.activeSlot).toBeNull();
+        expect(update.world.quakeState.slots[0]).toBe(wid(10)); // preserves slots
+    });
+
+    it('preserves quake state when no active slot', () => {
+        const world = makeWorld([1, 2], 0);
+        const update = enterOverview(world);
+        expect(update.world.quakeState.activeSlot).toBeNull();
+    });
+});
+
 describe('cancelOverview', () => {
     it('restores pre-overview focus and viewport from interaction state', () => {
         const world = makeWorld([1, 2, 3], 0);

@@ -6,8 +6,9 @@ import {
     classifyPermissionPayload, parseAllowResponse,
     addNotification, respondToNotification, getResponse as domainGetResponse,
     registerSession, setSessionStatus, clearSession,
-    shouldSuppressNotification, getWindowForSession as domainGetWindowForSession,
+    getWindowForSession as domainGetWindowForSession,
     getWindowStatusMap as domainGetWindowStatusMap,
+    getPendingEntries as domainGetPendingEntries,
 } from '../domain/notification.js';
 import type { DomainNotification, NotificationState } from '../domain/notification.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
@@ -81,16 +82,24 @@ export class NotificationCoordinator {
         const o = this._notificationOverlay, d = this._deps;
         return new NotificationFocusMode({
             getWorld: () => d.getWorld(), setWorld: (w) => d.setWorld(w),
-            getPendingEntries: () => o?.getPendingEntries() ?? [],
+            getPendingEntries: () => this._domainPendingEntries(),
             getWindowForSession: (sid) => this.getWindowForSession(sid),
             getMetaWindow: (wid) => d.getMetaWindow(wid) as Meta.Window | undefined,
             respondToEntry: (id, action) => o?.respond(id, action),
             visitSession: (sid) => d.visitSession(sid),
-            getMonitor: () => d.getMonitor(), isOverviewActive: () => d.isOverviewActive(),
+            getMonitor: () => d.getMonitor(),
             registerEntriesChanged: (cb) => { if (o) o.onEntriesChanged = cb; },
             unregisterEntriesChanged: () => { if (o) o.onEntriesChanged = null; },
             ...this._questionDeps(),
         });
+    }
+
+    private _domainPendingEntries(): Array<{ id: string; notification: import('../domain/notification-types.js').OverlayNotification }> {
+        const world = this._deps.getWorld();
+        if (!world) return [];
+        return domainGetPendingEntries(world.notificationState).map(n => ({
+            id: n.id, notification: this._domainToOverlay(n),
+        }));
     }
 
     private _questionDeps() {
@@ -164,8 +173,10 @@ export class NotificationCoordinator {
 
             const classification = classifyPermissionPayload(payload);
             const type = classification.isQuestion ? 'question' : 'permission';
+            const focusModeWasActive = this._isFocusModeActive();
             this._addToDomainState(id, sessionId, payload, type);
             this._showPermissionUI(id, payload, classification);
+            this._enterFocusModeIfDomainActivated(focusModeWasActive);
             return JSON.stringify({ id });
         } catch (e) {
             return `{"error":"${String(e)}"}`;
@@ -195,25 +206,36 @@ export class NotificationCoordinator {
             payload.workspace_name = this._workspaceNameForSession(sessionId);
             const id = `notif-${GLib.uuid_string_random()}`;
 
-            if (this._shouldSuppressForFocused(sessionId)) return JSON.stringify({ id });
             this._addToDomainState(id, sessionId, payload, 'notification');
-            this._notificationOverlay?.showNotification(id, payload);
+            if (this._domainHasNotification(id)) {
+                this._notificationOverlay?.showNotification(id, payload);
+            }
             return JSON.stringify({ id });
         } catch (e) {
             return `{"error":"${String(e)}"}`;
         }
     }
 
-    private _shouldSuppressForFocused(sessionId: string): boolean {
-        const world = this._deps.getWorld();
-        return !!world && shouldSuppressNotification(world.notificationState, sessionId, world.focusedWindow);
+    private _domainHasNotification(id: string): boolean {
+        return this._deps.getWorld()?.notificationState.notifications.has(id) ?? false;
+    }
+
+    private _isFocusModeActive(): boolean {
+        return this._deps.getWorld()?.notificationState.focusMode.active ?? false;
+    }
+
+    /** React to domain having activated focus mode during addNotification. */
+    private _enterFocusModeIfDomainActivated(wasPreviouslyActive: boolean): void {
+        if (!wasPreviouslyActive && this._isFocusModeActive()) {
+            this._notificationFocusMode?.enter();
+        }
     }
 
     private _addToDomainState(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question'): void {
         const world = this._deps.getWorld();
         if (!world) return;
         const domainNotif = this._buildDomainNotification(id, sessionId, payload, type);
-        const ns = addNotification(world.notificationState, domainNotif);
+        const ns = addNotification(world.notificationState, domainNotif, world.focusedWindow);
         this._deps.setWorld(updateNotificationState(world, ns));
     }
 
@@ -287,6 +309,22 @@ export class NotificationCoordinator {
         const windowId = domainGetWindowForSession(world.notificationState, sessionId);
         if (!windowId) return null;
         return workspaceNameForWindow(world, windowId);
+    }
+
+    /** Project domain notification to overlay notification format. */
+    private _domainToOverlay(n: DomainNotification): import('../domain/notification-types.js').OverlayNotification {
+        return {
+            id: n.id,
+            sessionId: n.sessionId,
+            workspaceName: n.workspaceName,
+            type: n.type,
+            title: n.title,
+            message: n.message,
+            command: n.command,
+            toolName: n.toolName,
+            timestamp: n.timestamp,
+            questions: n.questions,
+        };
     }
 
     /** Build a domain notification from a payload. */

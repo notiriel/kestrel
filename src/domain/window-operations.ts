@@ -25,6 +25,7 @@ import {
 } from './workspace.js';
 
 function moveHorizontal(world: World, delta: -1 | 1): WorldUpdate {
+    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) return buildUpdate(world);
 
     const ws = currentWorkspace(world);
@@ -45,6 +46,7 @@ export function moveLeft(world: World): WorldUpdate { return moveHorizontal(worl
  * At bottom of stack: move to workspace below.
  */
 export function moveDown(world: World): WorldUpdate {
+    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) return buildUpdate(world);
 
     const ws = currentWorkspace(world);
@@ -72,6 +74,7 @@ export function moveDown(world: World): WorldUpdate {
  * At top of stack: move to workspace above.
  */
 export function moveUp(world: World): WorldUpdate {
+    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) return buildUpdate(world);
 
     const ws = currentWorkspace(world);
@@ -143,6 +146,7 @@ function moveVertical(
  * Toggle the focused column's slotSpan between 1 and config.columnCount.
  */
 export function toggleSize(world: World): WorldUpdate {
+    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) return buildUpdate(world);
 
     const ws = currentWorkspace(world);
@@ -162,6 +166,7 @@ export function toggleSize(world: World): WorldUpdate {
  * If in a multi-window column, unstack (pop out to own column).
  */
 export function toggleStack(world: World): WorldUpdate {
+    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) return buildUpdate(world);
 
     const ws = currentWorkspace(world);

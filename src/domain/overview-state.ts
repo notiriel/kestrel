@@ -78,10 +78,12 @@ export function cancelOverviewInteraction(state: OverviewInteractionState): {
 // --- Filter ---
 
 export function appendFilter(state: OverviewInteractionState, char: string): OverviewInteractionState {
+    if (state.renaming) return state;
     return { ...state, filterText: state.filterText + char };
 }
 
 export function backspaceFilter(state: OverviewInteractionState): OverviewInteractionState {
+    if (state.renaming) return state;
     if (state.filterText.length === 0) return state;
     return { ...state, filterText: state.filterText.slice(0, -1) };
 }

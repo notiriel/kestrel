@@ -1,12 +1,15 @@
 import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
+import type { OverlayNotification } from '../domain/notification-types.js';
 import type { QuestionState } from '../ui-components/notification-adapter-types.js';
 import { QuestionCard } from '../ui-components/question-card.js';
 import {
     enterFocusMode, exitFocusMode, navigateFocusMode,
     removeFromFocusMode, syncFocusModeEntries,
+    resolveKeyAction,
+    canSubmitQuestion,
 } from '../domain/notification.js';
+import type { NotificationType } from '../domain/notification.js';
 import {
     FOCUS_CARD_WIDTH,
     buildFocusModeBackdrop, buildPreviewContainer, buildCardContainer,
@@ -39,7 +42,6 @@ interface FocusModeDeps {
     respondToEntry(id: string, action: string): void;
     visitSession(sessionId: string): void;
     getMonitor(): { x: number; y: number; width: number; height: number };
-    isOverviewActive(): boolean;
     registerEntriesChanged(cb: () => void): void;
     unregisterEntriesChanged(): void;
     // Question support
@@ -96,23 +98,37 @@ export class NotificationFocusMode {
                 this._exit();
                 return;
             }
-            if (this._deps.isOverviewActive()) return;
-
-            const entries = this._deps.getPendingEntries();
-            if (entries.length === 0) return;
-
-            this._enter(entries);
+            this._tryEnter();
         } catch (e) {
             console.error('[Kestrel] Error toggling notification focus mode:', e);
         }
+    }
+
+    /** Enter focus mode if not already active. No-op if active, in overview, or no entries. */
+    enter(): void {
+        try {
+            if (this.isActive) return;
+            this._tryEnter();
+        } catch (e) {
+            console.error('[Kestrel] Error entering notification focus mode:', e);
+        }
+    }
+
+    private _tryEnter(): void {
+        const entries = this._deps.getPendingEntries();
+        if (entries.length === 0) return;
+        this._enter(entries);
     }
 
     private _enter(entries: Array<{ id: string; notification: OverlayNotification }>): void {
         const entryIds = entries.map(e => e.id);
         this._updateDomainState(w => ({
             ...w,
-            notificationState: enterFocusMode(w.notificationState, entryIds),
+            notificationState: enterFocusMode(w.notificationState, entryIds, w.overviewActive),
         }));
+
+        // Check if domain actually activated focus mode (it won't during overview)
+        if (!this.isActive) return;
 
         const monitor = this._deps.getMonitor();
         this._buildBackdrop(monitor);
@@ -535,12 +551,12 @@ export class NotificationFocusMode {
         const keyActions: Record<number, () => void> = {
             [Clutter.KEY_Up]: () => this._navigate(-1),
             [Clutter.KEY_Down]: () => this._navigate(1),
-            [Clutter.KEY_1]: () => this._handleAction1(),
-            [Clutter.KEY_KP_1]: () => this._handleAction1(),
-            [Clutter.KEY_2]: () => this._handleAction2(),
-            [Clutter.KEY_KP_2]: () => this._handleAction2(),
-            [Clutter.KEY_3]: () => this._handleAction3(),
-            [Clutter.KEY_KP_3]: () => this._handleAction3(),
+            [Clutter.KEY_1]: () => this._handleAction(1),
+            [Clutter.KEY_KP_1]: () => this._handleAction(1),
+            [Clutter.KEY_2]: () => this._handleAction(2),
+            [Clutter.KEY_KP_2]: () => this._handleAction(2),
+            [Clutter.KEY_3]: () => this._handleAction(3),
+            [Clutter.KEY_KP_3]: () => this._handleAction(3),
             [Clutter.KEY_Escape]: () => this._exit(),
         };
         const action = keyActions[symbol];
@@ -607,21 +623,24 @@ export class NotificationFocusMode {
     }
 
     private _handleQuestionSubmitAction(
-        entryId: string, qs: QuestionState, keyNumber: number,
+        entryId: string, _qs: QuestionState, keyNumber: number,
     ): void {
         if (keyNumber === 1) {
-            const allAnswered = qs.questions.every(
-                (_: QuestionDefinition, i: number) => (qs.answers.get(i) ?? []).length > 0,
-            );
-            if (allAnswered) {
-                this._deps.questionSend(entryId);
-                this._removeCurrentEntry();
-            }
+            this._trySubmitQuestion(entryId);
         } else if (keyNumber === 2) {
             this._deps.questionDismiss(entryId);
             this._removeCurrentEntry();
         } else if (keyNumber === 3) {
             this._deps.questionVisit(entryId);
+            this._removeCurrentEntry();
+        }
+    }
+
+    private _trySubmitQuestion(entryId: string): void {
+        const world = this._deps.getWorld();
+        const domainNotif = world?.notificationState.notifications.get(entryId);
+        if (domainNotif && canSubmitQuestion(domainNotif)) {
+            this._deps.questionSend(entryId);
             this._removeCurrentEntry();
         }
     }
@@ -739,55 +758,25 @@ export class NotificationFocusMode {
         this._showEntry(fm.currentIndex, direction);
     }
 
-    private _handleAction1(): void {
+    private _handleAction(keyNumber: 1 | 2 | 3): void {
         const fm = this._getFocusMode();
         const entryId = fm.entryIds[fm.currentIndex];
         if (!entryId) return;
 
-        const entries = this._deps.getPendingEntries();
-        const entry = entries.find(e => e.id === entryId);
+        const entry = this._deps.getPendingEntries().find(e => e.id === entryId);
         if (!entry) return;
 
-        if (entry.notification.type === 'permission') {
-            this._performAction(entryId, 'allow');
-        } else {
-            // Visit: navigate to session, then exit
-            if (entry.notification.sessionId) {
-                this._deps.visitSession(entry.notification.sessionId);
-            }
-            this._performAction(entryId, 'visit');
-        }
+        const action = resolveKeyAction(entry.notification.type as NotificationType, keyNumber);
+        if (!action) return;
+
+        this._applyResolvedAction(entryId, action, entry.notification.sessionId);
     }
 
-    private _handleAction2(): void {
-        const fm = this._getFocusMode();
-        const entryId = fm.entryIds[fm.currentIndex];
-        if (!entryId) return;
-
-        const entries = this._deps.getPendingEntries();
-        const entry = entries.find(e => e.id === entryId);
-        if (!entry) return;
-
-        if (entry.notification.type === 'permission') {
-            this._performAction(entryId, 'always');
-        } else {
-            this._performAction(entryId, 'dismiss');
+    private _applyResolvedAction(entryId: string, action: string, sessionId?: string): void {
+        if (action === 'visit' && sessionId) {
+            this._deps.visitSession(sessionId);
         }
-    }
-
-    private _handleAction3(): void {
-        const fm = this._getFocusMode();
-        const entryId = fm.entryIds[fm.currentIndex];
-        if (!entryId) return;
-
-        const entries = this._deps.getPendingEntries();
-        const entry = entries.find(e => e.id === entryId);
-        if (!entry) return;
-
-        // Only permissions have action 3 (Deny)
-        if (entry.notification.type === 'permission') {
-            this._performAction(entryId, 'deny');
-        }
+        this._performAction(entryId, action);
     }
 
     private _performAction(entryId: string, action: string): void {

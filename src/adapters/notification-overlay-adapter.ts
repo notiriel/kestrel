@@ -33,7 +33,6 @@ interface NotifEntry {
     notification: OverlayNotification;
     delegate: NotificationCardDelegate;
     cardExpanded: boolean;
-    response: string | null;
 }
 
 export class NotificationOverlayAdapter implements NotificationPort {
@@ -195,11 +194,6 @@ export class NotificationOverlayAdapter implements NotificationPort {
         });
     }
 
-    getResponse(id: string): string | null {
-        const entry = this._entries.get(id);
-        return entry?.response ?? null;
-    }
-
     /** Get question state for an entry (for focus mode). */
     getQuestionState(id: string): QuestionState | null {
         const entry = this._entries.get(id);
@@ -239,13 +233,11 @@ export class NotificationOverlayAdapter implements NotificationPort {
         this.getQuestionCard(id)?.visit();
     }
 
-    /** Returns pending (unresponded) entries sorted by timestamp. */
+    /** Returns pending entries sorted by timestamp. All entries in _entries are pending. */
     getPendingEntries(): Array<{ id: string; notification: OverlayNotification }> {
         const result: Array<{ id: string; notification: OverlayNotification }> = [];
         for (const [id, entry] of this._entries) {
-            if (entry.response === null) {
-                result.push({ id, notification: entry.notification });
-            }
+            result.push({ id, notification: entry.notification });
         }
         result.sort((a, b) => a.notification.timestamp - b.notification.timestamp);
         return result;
@@ -330,7 +322,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
         card.translation_x = CARD_RIGHT_OFFSET + 60;
         this._connectCardHoverEvents(card);
 
-        const entry: NotifEntry = { notification, delegate, cardExpanded: false, response: null };
+        const entry: NotifEntry = { notification, delegate, cardExpanded: false };
         this._entries.set(id, entry);
         this._container?.insert_child_below(card, this._countBadge);
         this._updateCountBadge();
@@ -442,7 +434,6 @@ export class NotificationOverlayAdapter implements NotificationPort {
         const entry = this._entries.get(id);
         if (!entry) return;
 
-        entry.response = action;
         this.onRespond?.(id, action);
         this._dismissCard(id);
         this.onEntriesChanged?.();
@@ -474,7 +465,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
 
     private _isPendingInteractive(entry: NotifEntry): boolean {
         const t = entry.notification.type;
-        return (t === 'permission' || t === 'question') && entry.response === null;
+        return t === 'permission' || t === 'question';
     }
 
     private _animateAndRemoveEntry(entry: NotifEntry): void {

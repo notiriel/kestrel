@@ -31,7 +31,7 @@ export class NavigationHandler {
     handleSimpleCommand(domainFn: (world: World) => WorldUpdate, label: string): void {
         try {
             const world = this._deps.getWorld();
-            if (!world || world.overviewActive) return;
+            if (!world) return;
             if (!this._deps.checkGuard(label)) return;
 
             const update = domainFn(world);
@@ -48,7 +48,7 @@ export class NavigationHandler {
     handleVerticalFocus(domainFn: (world: World) => WorldUpdate, label: string): void {
         try {
             const world = this._deps.getWorld();
-            if (!world || world.overviewActive) return;
+            if (!world) return;
             if (!this._deps.checkGuard(label)) return;
 
             const oldScrollX = world.viewport.scrollX;
@@ -65,7 +65,7 @@ export class NavigationHandler {
     handleVerticalMove(domainFn: (world: World) => WorldUpdate, label: string): void {
         try {
             const world = this._deps.getWorld();
-            if (!world || world.overviewActive) return;
+            if (!world) return;
             if (!this._deps.checkGuard(label)) return;
 
             const sourceWsId = getActiveWsId(world);

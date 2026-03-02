@@ -22,6 +22,9 @@ import {
     shouldSuppressNotification,
     getWindowForSession,
     getWindowStatusMap,
+    getWorkspaceClaudeStatus,
+    resolveKeyAction,
+    canSubmitQuestion,
     enterFocusMode,
     exitFocusMode,
     navigateFocusMode,
@@ -34,6 +37,9 @@ import type {
     ParsedQuestion,
 } from '../../src/domain/notification.js';
 import type { WindowId } from '../../src/domain/types.js';
+import { createWorkspace, createColumn, addColumn } from '../../src/domain/workspace.js';
+import { createTiledWindow } from '../../src/domain/window.js';
+import type { WorkspaceId } from '../../src/domain/types.js';
 
 function makeDomainNotification(overrides: Partial<DomainNotification> = {}): DomainNotification {
     return {
@@ -654,6 +660,177 @@ describe('Notification domain model', () => {
             let s = enterFocusMode(state, ['a', 'b', 'c']);
             s = syncFocusModeEntries(s, ['c', 'b', 'a']); // all still pending
             expect(s.focusMode.entryIds).toEqual(['a', 'b', 'c']); // original order preserved
+        });
+    });
+
+    describe('addNotification auto-enters focus mode', () => {
+        const win1 = 'win-1' as WindowId;
+        const win2 = 'win-2' as WindowId;
+
+        it('enters focus mode when permission arrives for focused window', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({ id: 'p1', sessionId: 'sess-1', type: 'permission' });
+            s = addNotification(s, notif, win1);
+            expect(s.focusMode.active).toBe(true);
+            expect(s.focusMode.entryIds).toContain('p1');
+        });
+
+        it('enters focus mode when question arrives for focused window', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeQuestionNotification({ id: 'q1', sessionId: 'sess-1' });
+            s = addNotification(s, notif, win1);
+            expect(s.focusMode.active).toBe(true);
+            expect(s.focusMode.entryIds).toContain('q1');
+        });
+
+        it('does not enter focus mode for plain notifications', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({ id: 'n1', sessionId: 'sess-1', type: 'notification' });
+            s = addNotification(s, notif, win1);
+            expect(s.focusMode.active).toBe(false);
+        });
+
+        it('does not enter focus mode when session window is not focused', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({ id: 'p1', sessionId: 'sess-1', type: 'permission' });
+            s = addNotification(s, notif, win2);
+            expect(s.focusMode.active).toBe(false);
+        });
+
+        it('does not enter focus mode when no window is focused', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({ id: 'p1', sessionId: 'sess-1', type: 'permission' });
+            s = addNotification(s, notif, null);
+            expect(s.focusMode.active).toBe(false);
+        });
+
+        it('does not enter focus mode when already active', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = enterFocusMode(s, ['existing']);
+            const notif = makeDomainNotification({ id: 'p1', sessionId: 'sess-1', type: 'permission' });
+            s = addNotification(s, notif, win1);
+            // Focus mode stays active with original entries (not re-entered)
+            expect(s.focusMode.entryIds).toEqual(['existing']);
+        });
+
+        it('does not enter focus mode when focusedWindowId not provided', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({ id: 'p1', sessionId: 'sess-1', type: 'permission' });
+            s = addNotification(s, notif);
+            expect(s.focusMode.active).toBe(false);
+        });
+    });
+
+    describe('getWorkspaceClaudeStatus', () => {
+        const win1 = 'win-1' as WindowId;
+        const win2 = 'win-2' as WindowId;
+        const wsid = 'ws-0' as WorkspaceId;
+
+        it('returns null when no windows have status', () => {
+            let ws = createWorkspace(wsid);
+            ws = addColumn(ws, createColumn(createTiledWindow(win1)));
+            expect(getWorkspaceClaudeStatus(state, ws)).toBeNull();
+        });
+
+        it('returns the highest priority status', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionStatus(s, 'sess-1', 'done');
+            s = registerSession(s, 'sess-2', win2);
+            s = setSessionStatus(s, 'sess-2', 'needs-input');
+
+            let ws = createWorkspace(wsid);
+            ws = addColumn(ws, createColumn(createTiledWindow(win1)));
+            ws = addColumn(ws, createColumn(createTiledWindow(win2)));
+            expect(getWorkspaceClaudeStatus(s, ws)).toBe('needs-input');
+        });
+
+        it('returns working over done', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionStatus(s, 'sess-1', 'working');
+            let ws = createWorkspace(wsid);
+            ws = addColumn(ws, createColumn(createTiledWindow(win1)));
+            expect(getWorkspaceClaudeStatus(s, ws)).toBe('working');
+        });
+    });
+
+    describe('resolveKeyAction', () => {
+        it('maps permission keys correctly', () => {
+            expect(resolveKeyAction('permission', 1)).toBe('allow');
+            expect(resolveKeyAction('permission', 2)).toBe('always');
+            expect(resolveKeyAction('permission', 3)).toBe('deny');
+        });
+
+        it('maps notification keys correctly', () => {
+            expect(resolveKeyAction('notification', 1)).toBe('visit');
+            expect(resolveKeyAction('notification', 2)).toBe('dismiss');
+            expect(resolveKeyAction('notification', 3)).toBeNull();
+        });
+    });
+
+    describe('canSubmitQuestion', () => {
+        it('returns true when all questions have answers', () => {
+            const notif = makeQuestionNotification();
+            notif.questionState.answers.set(0, ['Red']);
+            notif.questionState.answers.set(1, ['Small']);
+            expect(canSubmitQuestion(notif)).toBe(true);
+        });
+
+        it('returns false when some questions have no answers', () => {
+            const notif = makeQuestionNotification();
+            notif.questionState.answers.set(0, ['Red']);
+            // question 1 has no answer
+            expect(canSubmitQuestion(notif)).toBe(false);
+        });
+
+        it('returns false when answers array is empty', () => {
+            const notif = makeQuestionNotification();
+            notif.questionState.answers.set(0, []);
+            notif.questionState.answers.set(1, ['Small']);
+            expect(canSubmitQuestion(notif)).toBe(false);
+        });
+    });
+
+    describe('addNotification suppression', () => {
+        const win1 = 'win-1' as WindowId;
+
+        it('suppresses notification-type when session window is focused', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({
+                id: 'n1', sessionId: 'sess-1', type: 'notification',
+            });
+            s = addNotification(s, notif, win1);
+            expect(s.notifications.has('n1')).toBe(false);
+        });
+
+        it('does not suppress permission-type when session window is focused', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({
+                id: 'p1', sessionId: 'sess-1', type: 'permission',
+            });
+            s = addNotification(s, notif, win1);
+            expect(s.notifications.has('p1')).toBe(true);
+        });
+
+        it('does not suppress notification-type when different window is focused', () => {
+            const win2 = 'win-2' as WindowId;
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({
+                id: 'n1', sessionId: 'sess-1', type: 'notification',
+            });
+            s = addNotification(s, notif, win2);
+            expect(s.notifications.has('n1')).toBe(true);
+        });
+    });
+
+    describe('enterFocusMode overview guard', () => {
+        it('is no-op when overviewActive is true', () => {
+            const s = enterFocusMode(state, ['a', 'b'], true);
+            expect(s.focusMode.active).toBe(false);
+        });
+
+        it('activates when overviewActive is false', () => {
+            const s = enterFocusMode(state, ['a', 'b'], false);
+            expect(s.focusMode.active).toBe(true);
         });
     });
 });

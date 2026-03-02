@@ -129,6 +129,26 @@ describe('OverviewInteractionState — filtered navigation', () => {
     });
 });
 
+describe('OverviewInteractionState — renaming guard', () => {
+    it('appendFilter is no-op when renaming', () => {
+        let state = createOverviewInteractionState();
+        state = startRename(state);
+        const result = appendFilter(state, 'x');
+        expect(result).toBe(state);
+        expect(result.filterText).toBe('');
+    });
+
+    it('backspaceFilter is no-op when renaming', () => {
+        let state = createOverviewInteractionState();
+        state = appendFilter(state, 'a');
+        state = appendFilter(state, 'b');
+        state = startRename(state);
+        const result = backspaceFilter(state);
+        expect(result).toBe(state);
+        expect(result.filterText).toBe('ab');
+    });
+});
+
 describe('OverviewInteractionState — rename', () => {
     it('startRename sets renaming true', () => {
         const state = createOverviewInteractionState();

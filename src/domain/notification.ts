@@ -6,6 +6,8 @@
 
 import type { WindowId } from './types.js';
 import type { ClaudeStatus } from './notification-types.js';
+import type { Workspace } from './workspace.js';
+import { allWindows } from './workspace.js';
 
 // --- Types ---
 export type NotificationStatus = 'pending' | 'responded' | 'dismissed' | 'expired';
@@ -106,10 +108,36 @@ export function parseQuestion(q: {
 
 // --- Lifecycle ---
 
-export function addNotification(state: NotificationState, notification: DomainNotification): NotificationState {
+export function addNotification(
+    state: NotificationState,
+    notification: DomainNotification,
+    focusedWindowId?: WindowId | null,
+): NotificationState {
+    // Suppress fire-and-forget notifications when the session's window is focused
+    if (
+        notification.type === 'notification' &&
+        focusedWindowId &&
+        state.sessionWindows.get(notification.sessionId) === focusedWindowId
+    ) {
+        return state;
+    }
+
     const notifications = new Map(state.notifications);
     notifications.set(notification.id, notification);
-    return { ...state, notifications };
+    let newState = { ...state, notifications };
+
+    // Auto-enter focus mode for interactive notifications on the focused window
+    if (
+        (notification.type === 'permission' || notification.type === 'question') &&
+        !newState.focusMode.active &&
+        focusedWindowId &&
+        newState.sessionWindows.get(notification.sessionId) === focusedWindowId
+    ) {
+        const pendingIds = getPendingEntries(newState).map(n => n.id);
+        newState = enterFocusMode(newState, pendingIds);
+    }
+
+    return newState;
 }
 
 export function respondToNotification(state: NotificationState, id: string, response: string): NotificationState {
@@ -444,10 +472,48 @@ export function classifyPermissionPayload(payload: Record<string, unknown>): {
     return { isQuestion: false, questions: [] };
 }
 
+// --- Workspace status ---
+
+/** Get the highest-priority Claude status across all windows in a workspace. */
+export function getWorkspaceClaudeStatus(state: NotificationState, ws: Workspace): ClaudeStatus | null {
+    const priority: Record<string, number> = { 'needs-input': 3, 'working': 2, 'done': 1 };
+    let best: ClaudeStatus | null = null;
+    for (const win of allWindows(ws)) {
+        const status = state.windowStatuses.get(win.id);
+        if (status && (priority[status] ?? 0) > (priority[best ?? ''] ?? 0)) {
+            best = status;
+        }
+    }
+    return best;
+}
+
+// --- Key action mapping ---
+
+/** Map a key number (1-3) to an action string based on notification type. */
+export function resolveKeyAction(type: NotificationType, keyNumber: 1 | 2 | 3): string | null {
+    if (type === 'permission') {
+        const map: Record<number, string> = { 1: 'allow', 2: 'always', 3: 'deny' };
+        return map[keyNumber] ?? null;
+    }
+    // notification type
+    const map: Record<number, string | null> = { 1: 'visit', 2: 'dismiss', 3: null };
+    return map[keyNumber] ?? null;
+}
+
+// --- Question validation ---
+
+/** Check if all questions in a notification have at least one answer. */
+export function canSubmitQuestion(notification: DomainNotification): boolean {
+    return notification.questions.every(
+        (_q, i) => (notification.questionState.answers.get(i) ?? []).length > 0,
+    );
+}
+
 // --- Focus mode ---
 
-/** Enter focus mode with a list of entry IDs. */
-export function enterFocusMode(state: NotificationState, entryIds: string[]): NotificationState {
+/** Enter focus mode with a list of entry IDs. No-op when overview is active. */
+export function enterFocusMode(state: NotificationState, entryIds: string[], overviewActive: boolean = false): NotificationState {
+    if (overviewActive) return state;
     return { ...state, focusMode: { active: true, entryIds: [...entryIds], currentIndex: 0 } };
 }
 

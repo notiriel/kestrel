@@ -10,6 +10,7 @@ import {
     releaseQuakeWindow,
     isQuakeWindow,
     computeQuakeGeometry,
+    getUnoccupiedQuakeSlots,
 } from '../../src/domain/quake.js';
 import { computeScene } from '../../src/domain/scene.js';
 
@@ -64,6 +65,12 @@ describe('assignQuakeWindow', () => {
             ws.columns.flatMap(c => c.windows.map(win => win.id)),
         );
         expect(allWins).not.toContain(wid(1));
+    });
+
+    it('is no-op when slot is already occupied', () => {
+        const { world: w1 } = assignQuakeWindow(world, 0, wid(1));
+        const { world: w2 } = assignQuakeWindow(w1, 0, wid(2));
+        expect(w2.quakeState.slots[0]).toBe(wid(1)); // unchanged
     });
 
     it('does not change other slots', () => {
@@ -194,6 +201,37 @@ describe('computeQuakeGeometry', () => {
         expect(geo.width).toBe(1920);
         expect(geo.height).toBe(540);
         expect(geo.x).toBe(0);
+    });
+});
+
+describe('getUnoccupiedQuakeSlots', () => {
+    let world: World;
+
+    beforeEach(() => {
+        world = createWorld(config, monitor);
+    });
+
+    it('returns configured slots with no window assigned', () => {
+        const result = getUnoccupiedQuakeSlots(world);
+        expect(result).toEqual([
+            { slotIndex: 0, appId: 'org.gnome.Terminal.desktop' },
+            { slotIndex: 1, appId: 'org.gnome.Nautilus.desktop' },
+        ]);
+    });
+
+    it('excludes slots that have a window assigned', () => {
+        world = assignQuakeWindow(world, 0, wid(1)).world;
+        const result = getUnoccupiedQuakeSlots(world);
+        expect(result).toEqual([
+            { slotIndex: 1, appId: 'org.gnome.Nautilus.desktop' },
+        ]);
+    });
+
+    it('returns empty when all configured slots are occupied', () => {
+        world = assignQuakeWindow(world, 0, wid(1)).world;
+        world = assignQuakeWindow(world, 1, wid(2)).world;
+        const result = getUnoccupiedQuakeSlots(world);
+        expect(result).toEqual([]);
     });
 });
 

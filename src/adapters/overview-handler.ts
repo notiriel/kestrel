@@ -147,12 +147,10 @@ export class OverviewHandler {
 
     private _switchToFilteredWorkspace(world: World, targetWsIndex: number): void {
         const update = switchToWorkspace(world, targetWsIndex);
-        const overviewWorld = { ...update.world, overviewActive: true };
-        this._deps.setWorld(overviewWorld);
+        this._deps.setWorld(update.world);
 
-        const scene = computeScene(overviewWorld);
         this._deps.getCloneAdapter()?.updateOverviewFocus(
-            scene, targetWsIndex, this._overviewTransform!,
+            update.scene, targetWsIndex, this._overviewTransform!,
         );
     }
 
@@ -395,8 +393,9 @@ export class OverviewHandler {
         try {
             const world = this._deps.getWorld();
             if (!world) return;
-            if (world.overviewInteractionState.renaming) return;
-            this._deps.setWorld({ ...world, overviewInteractionState: appendFilter(world.overviewInteractionState, text) });
+            const newState = appendFilter(world.overviewInteractionState, text);
+            if (newState === world.overviewInteractionState) return;
+            this._deps.setWorld({ ...world, overviewInteractionState: newState });
             this._applyFilter();
         } catch (e) {
             console.error('[Kestrel] Error handling text input:', e);
@@ -407,9 +406,9 @@ export class OverviewHandler {
         try {
             const world = this._deps.getWorld();
             if (!world) return;
-            if (world.overviewInteractionState.renaming) return;
-            if (world.overviewInteractionState.filterText.length === 0) return;
-            this._deps.setWorld({ ...world, overviewInteractionState: backspaceFilter(world.overviewInteractionState) });
+            const newState = backspaceFilter(world.overviewInteractionState);
+            if (newState === world.overviewInteractionState) return;
+            this._deps.setWorld({ ...world, overviewInteractionState: newState });
             this._applyFilter();
         } catch (e) {
             console.error('[Kestrel] Error handling backspace:', e);
@@ -480,7 +479,7 @@ export class OverviewHandler {
     private _jumpToFirstMatchIfNeeded(world: World, filteredIndices: number[]): void {
         if (filteredIndices.includes(world.viewport.workspaceIndex)) return;
         const update = switchToWorkspace(world, filteredIndices[0]!);
-        this._deps.setWorld({ ...update.world, overviewActive: true });
+        this._deps.setWorld(update.world);
     }
 
     private _renderFilteredOverview(transform: OverviewTransform, filteredIndices: number[]): void {
