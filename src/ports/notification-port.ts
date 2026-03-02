@@ -1,11 +1,12 @@
+import type { NotificationOverlayScene } from '../domain/notification-scene.js';
+import type { DomainNotification } from '../domain/notification.js';
+
 export interface NotificationInitOptions {
     onVisitSession?: (sessionId: string) => void;
 }
 
 export interface NotificationPort {
     init(options?: NotificationInitOptions): void;
-    showPermission(id: string, payload: Record<string, unknown>): void;
-    showNotification(id: string, payload: Record<string, unknown>): void;
-    showQuestion(id: string, payload: Record<string, unknown>): void;
+    applyOverlayScene(scene: NotificationOverlayScene, notifications: ReadonlyMap<string, DomainNotification>): void;
     destroy(): void;
 }

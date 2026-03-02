@@ -76,6 +76,44 @@ export function createNotificationState(): NotificationState {
     };
 }
 
+// --- Domain notification factory ---
+
+/** Create a domain notification from structured inputs. Replaces inline construction in coordinator. */
+export function createDomainNotification(
+    id: string,
+    sessionId: string,
+    type: NotificationType,
+    title: string,
+    message: string,
+    options?: {
+        workspaceName?: string;
+        command?: string;
+        toolName?: string;
+        questions?: ParsedQuestion[];
+    },
+): DomainNotification {
+    return {
+        id,
+        sessionId,
+        type,
+        title,
+        message,
+        workspaceName: options?.workspaceName,
+        command: options?.command,
+        toolName: options?.toolName,
+        questions: options?.questions ?? [],
+        status: 'pending',
+        response: null,
+        timestamp: Date.now(),
+        questionState: { currentPage: 0, answers: new Map(), otherTexts: new Map(), otherActive: new Map() },
+    };
+}
+
+/** Format the title for a question notification based on question count. */
+export function formatQuestionTitle(questionCount: number): string {
+    return `Claude asks ${questionCount} question${questionCount !== 1 ? 's' : ''}`;
+}
+
 // --- Question parsing ---
 
 /**

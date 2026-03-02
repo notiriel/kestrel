@@ -1,16 +1,24 @@
 import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { workspaceNameForWindow, updateNotificationState } from '../domain/world.js';
+import { workspaceNameForWindow, updateNotificationState, updateNotificationInteractionState } from '../domain/world.js';
 import type { ClaudeStatus } from '../domain/notification-types.js';
 import {
-    classifyPermissionPayload, parseAllowResponse,
+    classifyPermissionPayload, parseAllowResponse, parseQuestion,
     addNotification, respondToNotification, getResponse as domainGetResponse,
     registerSession, setSessionStatus, clearSession,
     getWindowForSession as domainGetWindowForSession,
     getWindowStatusMap as domainGetWindowStatusMap,
     getPendingEntries as domainGetPendingEntries,
+    createDomainNotification, formatQuestionTitle,
+    selectQuestionOption as domainSelectQuestionOption,
+    navigateQuestion as domainNavigateQuestion,
+    setOtherText as domainSetOtherText,
 } from '../domain/notification.js';
 import type { DomainNotification, NotificationState } from '../domain/notification.js';
+import {
+    computeOverlayScene,
+    expandStack, collapseStack, expandCard, collapseCard,
+} from '../domain/notification-scene.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
 import { StatusOverlayAdapter } from './status-overlay-adapter.js';
 import { NotificationOverlayAdapter } from './notification-overlay-adapter.js';
@@ -19,6 +27,7 @@ import { NotificationFocusMode } from './notification-focus-mode.js';
 import type Clutter from 'gi://Clutter';
 import type Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 interface NotificationCoordinatorDeps {
     getWorld(): World | null;
@@ -54,15 +63,25 @@ export class NotificationCoordinator {
             this._statusOverlay.init(layer, `${this._deps.extensionPath}/data`, () => this._deps.getWorld());
         }
 
-        this._notificationOverlay = new NotificationOverlayAdapter();
-        this._notificationOverlay.onRespond = (id, action) => this._onOverlayRespond(id, action);
-        this._notificationOverlay.init({
+        this._notificationOverlay = this._createNotificationOverlay();
+        this._dbusService = this._createDbusService();
+        this._notificationFocusMode = this._createFocusMode();
+    }
+
+    private _createNotificationOverlay(): NotificationOverlayAdapter {
+        const overlay = new NotificationOverlayAdapter();
+        overlay.onRespond = (id, action) => this._onOverlayRespond(id, action);
+        overlay.onExpandStack = () => this._onExpandStack();
+        overlay.onCollapseStack = () => this._onCollapseStack();
+        overlay.onExpandCard = (id) => this._onExpandCard(id);
+        overlay.onCollapseCard = (id) => this._onCollapseCard(id);
+        overlay.onSelectOption = (id, qi, oi) => this._syncQuestionToDomain(id, ns => domainSelectQuestionOption(ns, id, qi, oi));
+        overlay.onSetOtherText = (id, qi, text) => this._syncQuestionToDomain(id, ns => domainSetOtherText(ns, id, qi, text));
+        overlay.init({
             onVisitSession: (sid) => this._deps.visitSession(sid),
             extensionPath: this._deps.extensionPath,
         });
-
-        this._dbusService = this._createDbusService();
-        this._notificationFocusMode = this._createFocusMode();
+        return overlay;
     }
 
     private _createDbusService(): KestrelDBusService {
@@ -107,13 +126,24 @@ export class NotificationCoordinator {
         return {
             getQuestionState: (id: string) => o?.getQuestionState(id) ?? null,
             getQuestionCard: (id: string) => o?.getQuestionCard(id) ?? null,
-            questionNavigate: (id: string, delta: number) => o?.questionNavigate(id, delta),
+            questionNavigate: (id: string, delta: number) => {
+                o?.questionNavigate(id, delta);
+                this._syncQuestionToDomain(id, ns => domainNavigateQuestion(ns, id, delta));
+            },
             questionSelectOption: (id: string, qi: number, oi: number) => o?.questionSelectOption(id, qi, oi),
             questionSend: (id: string) => o?.questionSend(id),
             questionDismiss: (id: string) => o?.questionDismiss(id),
             questionVisit: (id: string) => o?.questionVisit(id),
             extensionPath: d.extensionPath,
         };
+    }
+
+    /** Sync a question interaction operation to domain state. */
+    private _syncQuestionToDomain(id: string, updater: (ns: NotificationState) => NotificationState): void {
+        const world = this._deps.getWorld();
+        if (!world || !world.notificationState.notifications.has(id)) return;
+        const ns = updater(world.notificationState);
+        this._deps.setWorld(updateNotificationState(world, ns));
     }
 
     destroy(): void {
@@ -170,12 +200,8 @@ export class NotificationCoordinator {
             const sessionId = String(payload.session_id ?? '');
             payload.workspace_name = this._workspaceNameForSession(sessionId);
             const id = `notif-${GLib.uuid_string_random()}`;
-
-            const classification = classifyPermissionPayload(payload);
-            const type = classification.isQuestion ? 'question' : 'permission';
-            const focusModeWasActive = this._isFocusModeActive();
-            this._addToDomainState(id, sessionId, payload, type);
-            this._showPermissionUI(id, payload, classification);
+            const { focusModeWasActive } = this._classifyAndAddPermission(id, sessionId, payload);
+            this._applyOverlayScene();
             this._enterFocusModeIfDomainActivated(focusModeWasActive);
             return JSON.stringify({ id });
         } catch (e) {
@@ -183,20 +209,19 @@ export class NotificationCoordinator {
         }
     }
 
-    private _showPermissionUI(id: string, payload: Record<string, unknown>, classification: ReturnType<typeof classifyPermissionPayload>): void {
+    private _classifyAndAddPermission(id: string, sessionId: string, payload: Record<string, unknown>): { focusModeWasActive: boolean } {
+        const classification = classifyPermissionPayload(payload);
+        const focusModeWasActive = this._isFocusModeActive();
         if (classification.isQuestion) {
-            this._showAsQuestion(id, payload, classification.questions);
-        } else {
-            this._notificationOverlay?.showPermission(id, payload);
+            payload.title = formatQuestionTitle(classification.questions.length);
+            payload.message = 'Session wants your input';
         }
-    }
-
-    private _showAsQuestion(id: string, payload: Record<string, unknown>, questions: ReturnType<typeof classifyPermissionPayload>['questions']): void {
-        payload.questions = questions;
-        const qCount = questions.length;
-        payload.title = `Claude asks ${qCount} question${qCount !== 1 ? 's' : ''}`;
-        payload.message = 'Session wants your input';
-        this._notificationOverlay?.showQuestion(id, payload);
+        const type = classification.isQuestion ? 'question' : 'permission';
+        const parsedQuestions = classification.isQuestion
+            ? classification.questions.map(q => parseQuestion(q))
+            : undefined;
+        this._addToDomainState(id, sessionId, payload, type, parsedQuestions);
+        return { focusModeWasActive };
     }
 
     handleNotification(jsonPayload: string): string {
@@ -208,7 +233,7 @@ export class NotificationCoordinator {
 
             this._addToDomainState(id, sessionId, payload, 'notification');
             if (this._domainHasNotification(id)) {
-                this._notificationOverlay?.showNotification(id, payload);
+                this._applyOverlayScene();
             }
             return JSON.stringify({ id });
         } catch (e) {
@@ -231,10 +256,10 @@ export class NotificationCoordinator {
         }
     }
 
-    private _addToDomainState(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question'): void {
+    private _addToDomainState(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question', parsedQuestions?: import('../domain/notification.js').ParsedQuestion[]): void {
         const world = this._deps.getWorld();
         if (!world) return;
-        const domainNotif = this._buildDomainNotification(id, sessionId, payload, type);
+        const domainNotif = this._buildDomainNotification(id, sessionId, payload, type, parsedQuestions);
         const ns = addNotification(world.notificationState, domainNotif, world.focusedWindow);
         this._deps.setWorld(updateNotificationState(world, ns));
     }
@@ -255,12 +280,92 @@ export class NotificationCoordinator {
         if (!world) return;
         const ns = respondToNotification(world.notificationState, id, action);
         this._deps.setWorld(updateNotificationState(world, ns));
+        this._applyOverlayScene();
     }
 
     private _resolveResponse(id: string): string | null {
         const world = this._deps.getWorld();
         if (!world) return null;
         return domainGetResponse(world.notificationState, id);
+    }
+
+    // --- Expand/collapse callbacks from adapter ---
+
+    private _onExpandStack(): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        const newState = expandStack(world.notificationInteractionState);
+        this._deps.setWorld(updateNotificationInteractionState(world, newState));
+        // Also expand the first card
+        const pending = domainGetPendingEntries(world.notificationState);
+        if (pending.length > 0) {
+            this._onExpandCard(pending[0]!.id);
+            return;
+        }
+        this._applyOverlayScene();
+    }
+
+    private _onCollapseStack(): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        const newState = collapseStack(world.notificationInteractionState);
+        this._deps.setWorld(updateNotificationInteractionState(world, newState));
+        // Collapse all card visuals
+        for (const id of world.notificationState.notifications.keys()) {
+            this._notificationOverlay?.collapseCardVisual(id);
+        }
+        this._applyOverlayScene();
+    }
+
+    private _onExpandCard(id: string): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        const newState = expandCard(world.notificationInteractionState, id);
+        this._deps.setWorld(updateNotificationInteractionState(world, newState));
+        this._notificationOverlay?.expandCardVisual(id);
+        this._applyOverlayScene();
+    }
+
+    private _onCollapseCard(id: string): void {
+        const world = this._deps.getWorld();
+        if (!world) return;
+        const newState = collapseCard(world.notificationInteractionState, id);
+        this._deps.setWorld(updateNotificationInteractionState(world, newState));
+        this._notificationOverlay?.collapseCardVisual(id);
+        this._applyOverlayScene();
+    }
+
+    // --- Scene computation + application ---
+
+    private _applyOverlayScene(): void {
+        const world = this._deps.getWorld();
+        if (!world || !this._notificationOverlay) return;
+
+        // Gather expanded card heights from adapter
+        const expandedHeights = new Map<string, number>();
+        for (const id of world.notificationInteractionState.expandedCardIds) {
+            expandedHeights.set(id, this._notificationOverlay.getExpandedCardHeight(id));
+        }
+
+        const monitor = this._deps.getMonitor();
+        const panelHeight = this._getPanelHeight();
+        const scene = computeOverlayScene(
+            world.notificationState,
+            world.notificationInteractionState,
+            monitor,
+            panelHeight,
+            expandedHeights,
+        );
+
+        this._notificationOverlay.applyOverlayScene(scene, world.notificationState.notifications);
+    }
+
+    private _getPanelHeight(): number {
+        try {
+            return Main.panel.height ?? 32;
+        } catch {
+            return 32;
+        }
     }
 
     // --- Keybinding ---
@@ -328,14 +433,14 @@ export class NotificationCoordinator {
     }
 
     /** Build a domain notification from a payload. */
-    private _buildDomainNotification(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question'): DomainNotification {
+    private _buildDomainNotification(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question', parsedQuestions?: import('../domain/notification.js').ParsedQuestion[]): DomainNotification {
         const opt = (k: string) => payload[k] ? String(payload[k]) : undefined;
         const defaultTitle = type === 'permission' ? 'Permission Request' : 'Notification';
-        return {
-            id, sessionId, type, questions: [], status: 'pending', response: null, timestamp: Date.now(),
-            workspaceName: opt('workspace_name'), title: String(payload.title ?? defaultTitle),
-            message: String(payload.message ?? ''), command: opt('command'), toolName: opt('tool_name'),
-            questionState: { currentPage: 0, answers: new Map(), otherTexts: new Map(), otherActive: new Map() },
-        };
+        return createDomainNotification(id, sessionId, type, String(payload.title ?? defaultTitle), String(payload.message ?? ''), {
+            workspaceName: opt('workspace_name'),
+            command: opt('command'),
+            toolName: opt('tool_name'),
+            questions: parsedQuestions,
+        });
     }
 }

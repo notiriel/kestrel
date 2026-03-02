@@ -30,6 +30,3 @@ export function buildStatusIcon(
 export function buildStatusStyle(status: ClaudeStatus): string {
     return `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`;
 }
-
-/** Default icon size for status badges. */
-export const STATUS_ICON_SIZE = ICON_SIZE;

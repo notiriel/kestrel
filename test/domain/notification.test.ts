@@ -833,4 +833,43 @@ describe('Notification domain model', () => {
             expect(s.focusMode.active).toBe(true);
         });
     });
+
+    describe('selectQuestionOption → canSubmitQuestion integration', () => {
+        it('canSubmitQuestion returns true after selecting all answers via domain', () => {
+            const notif = makeQuestionNotification();
+            let s = addNotification(state, notif);
+
+            // Select option on each question via domain functions
+            s = selectQuestionOption(s, 'notif-1', 0, 0); // q0: 'Red'
+            s = selectQuestionOption(s, 'notif-1', 1, 1); // q1: 'Large'
+
+            const updated = s.notifications.get('notif-1')!;
+            expect(canSubmitQuestion(updated)).toBe(true);
+        });
+
+        it('canSubmitQuestion returns false when only some questions answered via domain', () => {
+            const notif = makeQuestionNotification();
+            let s = addNotification(state, notif);
+
+            // Only answer first question
+            s = selectQuestionOption(s, 'notif-1', 0, 0);
+
+            const updated = s.notifications.get('notif-1')!;
+            expect(canSubmitQuestion(updated)).toBe(false);
+        });
+
+        it('canSubmitQuestion returns true after selecting Other with text via domain', () => {
+            const notif = makeQuestionNotification();
+            let s = addNotification(state, notif);
+
+            // q0: select "Other" then set text
+            s = selectQuestionOption(s, 'notif-1', 0, 2); // Other
+            s = setOtherText(s, 'notif-1', 0, 'Custom color');
+            // q1: select regular option
+            s = selectQuestionOption(s, 'notif-1', 1, 0);
+
+            const updated = s.notifications.get('notif-1')!;
+            expect(canSubmitQuestion(updated)).toBe(true);
+        });
+    });
 });

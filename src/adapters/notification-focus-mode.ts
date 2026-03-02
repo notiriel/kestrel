@@ -10,6 +10,7 @@ import {
     canSubmitQuestion,
 } from '../domain/notification.js';
 import type { NotificationType } from '../domain/notification.js';
+import { computeFocusModeScene, type FocusModeScene } from '../domain/notification-scene.js';
 import {
     FOCUS_CARD_WIDTH,
     buildFocusModeBackdrop, buildPreviewContainer, buildCardContainer,
@@ -31,7 +32,6 @@ interface Easeable {
 
 const ANIM_DURATION = 250;
 const SLIDE_OFFSET = 60;
-const CLONE_SCALE = 0.8;
 
 interface FocusModeDeps {
     getWorld(): World | null;
@@ -104,10 +104,10 @@ export class NotificationFocusMode {
         }
     }
 
-    /** Enter focus mode if not already active. No-op if active, in overview, or no entries. */
+    /** Enter focus mode UI. Called by coordinator after domain already activated focus mode. */
     enter(): void {
         try {
-            if (this.isActive) return;
+            if (this._backdrop) return;
             this._tryEnter();
         } catch (e) {
             console.error('[Kestrel] Error entering notification focus mode:', e);
@@ -148,6 +148,7 @@ export class NotificationFocusMode {
     private _buildBackdrop(monitor: { x: number; y: number; width: number; height: number }): void {
         this._backdrop = buildFocusModeBackdrop(monitor);
         const halfW = Math.floor(monitor.width / 2);
+        const scene = this._computeScene();
 
         this._previewContainer = buildPreviewContainer(monitor, halfW);
         this._backdrop.add_child(this._previewContainer);
@@ -158,7 +159,7 @@ export class NotificationFocusMode {
         this._cardContainer.add_child(this._counterLabel);
         this._hintLabel = buildHintLabel();
         this._backdrop.add_child(this._hintLabel);
-        this._hintLabel.set_position(Math.round((monitor.width - 320) / 2), monitor.height - 50);
+        this._hintLabel.set_position(Math.round((monitor.width - 320) / 2), scene.hintY);
 
         Main.layoutManager.addTopChrome(this._backdrop, {
             affectsStruts: false,
@@ -206,6 +207,32 @@ export class NotificationFocusMode {
     private _getFocusMode() {
         const world = this._deps.getWorld();
         return world?.notificationState.focusMode ?? { active: false, entryIds: [], currentIndex: 0 };
+    }
+
+    /** Compute focus mode scene from current domain state. */
+    private _computeScene(cardHeight?: number): FocusModeScene {
+        const world = this._deps.getWorld();
+        if (!world) {
+            return { active: false, card: null, preview: { windowId: null, x: 0, y: 0, width: 0, height: 0, scale: 0, showPlaceholder: true }, counter: { text: '', x: 0, y: 0, width: 0 }, hintY: 0 };
+        }
+        const monitor = this._deps.getMonitor();
+        const windowGeos = this._gatherWindowGeometries();
+        return computeFocusModeScene(world.notificationState, monitor, windowGeos, cardHeight);
+    }
+
+    /** Gather frame rects for all session windows. */
+    private _gatherWindowGeometries(): Map<WindowId, { x: number; y: number; width: number; height: number }> {
+        const geos = new Map<WindowId, { x: number; y: number; width: number; height: number }>();
+        const world = this._deps.getWorld();
+        if (!world) return geos;
+        for (const [, windowId] of world.notificationState.sessionWindows) {
+            const metaWindow = this._deps.getMetaWindow(windowId);
+            if (metaWindow) {
+                const rect = metaWindow.get_frame_rect();
+                geos.set(windowId, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+            }
+        }
+        return geos;
     }
 
     private _exit(): void {
@@ -297,12 +324,11 @@ export class NotificationFocusMode {
             return;
         }
 
-        const monitor = this._deps.getMonitor();
         this._destroyFocusModeQuestionCard();
         this._removeOldCard(direction);
-        this._createAndShowCard(entryData.notification, direction, monitor);
+        this._createAndShowCard(entryData.notification, direction);
         this._updateCounter();
-        this._positionCounter(monitor);
+        this._positionCounter();
         this._updatePreview(entryData.notification.sessionId, direction);
     }
 
@@ -331,17 +357,16 @@ export class NotificationFocusMode {
     private _createAndShowCard(
         notification: OverlayNotification,
         direction: 'up' | 'down' | 'none',
-        monitor: { x: number; y: number; width: number; height: number },
     ): void {
-        const halfW = Math.floor(monitor.width / 2);
         const card = this._buildFocusCard(notification);
         this._currentCard = card;
         this._cardContainer!.add_child(card);
 
-        const cardX = Math.round((halfW - FOCUS_CARD_WIDTH) / 2);
         const [, cardNatH] = card.get_preferred_height(FOCUS_CARD_WIDTH);
-        const cardY = Math.round((monitor.height - cardNatH) / 2);
-        card.set_position(cardX, cardY);
+        const scene = this._computeScene(cardNatH);
+        if (scene.card) {
+            card.set_position(scene.card.x, scene.card.y);
+        }
         this._animateSlideIn(card, direction);
     }
 
@@ -357,29 +382,25 @@ export class NotificationFocusMode {
         });
     }
 
-    private _positionCounter(monitor: { x: number; y: number; width: number; height: number }): void {
+    private _positionCounter(): void {
         if (!this._counterLabel || !this._currentCard) return;
-        const halfW = Math.floor(monitor.width / 2);
-        const cardX = Math.round((halfW - FOCUS_CARD_WIDTH) / 2);
         const [, cardNatH] = this._currentCard.get_preferred_height(FOCUS_CARD_WIDTH);
-        const cardY = Math.round((monitor.height - cardNatH) / 2);
-        this._counterLabel.set_position(cardX, cardY + cardNatH + 16);
-        this._counterLabel.width = FOCUS_CARD_WIDTH;
+        const scene = this._computeScene(cardNatH);
+        this._counterLabel.set_position(scene.counter.x, scene.counter.y);
+        this._counterLabel.width = scene.counter.width;
     }
 
     private _updatePreview(sessionId: string | undefined, direction: 'up' | 'down' | 'none'): void {
         if (!this._previewContainer) return;
 
-        const monitor = this._deps.getMonitor();
-        const halfW = Math.floor(monitor.width / 2);
-
         this._teardownOldPreview(direction);
 
         const resolved = this._resolvePreviewActor(sessionId);
-        if (resolved) {
-            this._createPreviewClone(resolved.actor, resolved.frameRect, halfW, monitor.height, direction, sessionId);
+        const scene = this._computeScene();
+        if (resolved && !scene.preview.showPlaceholder) {
+            this._createPreviewClone(resolved.actor, scene, direction, sessionId);
         } else {
-            this._showPlaceholder(sessionId ?? '');
+            this._showPlaceholder(sessionId ?? '', scene);
         }
     }
 
@@ -435,9 +456,7 @@ export class NotificationFocusMode {
 
     private _createPreviewClone(
         actor: Meta.WindowActor,
-        frameRect: { x: number; y: number; width: number; height: number },
-        halfW: number,
-        monitorHeight: number,
+        scene: FocusModeScene,
         direction: 'up' | 'down' | 'none',
         sessionId: string | undefined,
     ): void {
@@ -446,10 +465,8 @@ export class NotificationFocusMode {
         this._currentSourceActor = actor;
         this._connectSourceDestroyForPreview(actor, sessionId);
 
-        const scaledW = Math.round(frameRect.width * CLONE_SCALE);
-        const scaledH = Math.round(frameRect.height * CLONE_SCALE);
-        clone.set_size(scaledW, scaledH);
-        clone.set_position(Math.round((halfW - scaledW) / 2), Math.round((monitorHeight - scaledH) / 2));
+        clone.set_size(scene.preview.width, scene.preview.height);
+        clone.set_position(scene.preview.x, scene.preview.y);
 
         this._previewContainer!.add_child(clone);
         this._animateSlideIn(clone, direction);
@@ -463,19 +480,18 @@ export class NotificationFocusMode {
                 try { this._previewClone.destroy(); } catch { /* gone */ }
                 this._previewClone = null;
             }
-            this._showPlaceholder(sessionId ?? '');
+            const scene = this._computeScene();
+            this._showPlaceholder(sessionId ?? '', scene);
         });
     }
 
-    private _showPlaceholder(sessionId: string): void {
+    private _showPlaceholder(sessionId: string, scene: FocusModeScene): void {
         if (!this._previewContainer) return;
-        const monitor = this._deps.getMonitor();
-        const halfW = Math.floor(monitor.width / 2);
 
         const label = buildPlaceholderLabel(!!sessionId);
         this._previewPlaceholder = label;
         this._previewContainer.add_child(label);
-        label.set_position(Math.round((halfW - 200) / 2), Math.round(monitor.height / 2));
+        label.set_position(scene.preview.x, scene.preview.y);
         (label as unknown as Easeable).ease({
             opacity: 255,
             duration: ANIM_DURATION,
@@ -736,15 +752,14 @@ export class NotificationFocusMode {
 
     private _repositionCard(): void {
         if (!this._currentCard || !this._cardContainer) return;
-        const monitor = this._deps.getMonitor();
-        const halfW = Math.floor(monitor.width / 2);
-        const cardX = Math.round((halfW - FOCUS_CARD_WIDTH) / 2);
         const [, cardNatH] = this._currentCard.get_preferred_height(FOCUS_CARD_WIDTH);
-        const cardY = Math.round((monitor.height - cardNatH) / 2);
-        this._currentCard.set_position(cardX, cardY);
+        const scene = this._computeScene(cardNatH);
+        if (scene.card) {
+            this._currentCard.set_position(scene.card.x, scene.card.y);
+        }
         if (this._counterLabel) {
-            this._counterLabel.set_position(cardX, cardY + cardNatH + 16);
-            this._counterLabel.width = FOCUS_CARD_WIDTH;
+            this._counterLabel.set_position(scene.counter.x, scene.counter.y);
+            this._counterLabel.width = scene.counter.width;
         }
     }
 
@@ -826,8 +841,8 @@ export class NotificationFocusMode {
 
     private _updateCounter(): void {
         if (!this._counterLabel) return;
-        const fm = this._getFocusMode();
-        this._counterLabel.text = `${fm.currentIndex + 1} / ${fm.entryIds.length}`;
+        const scene = this._computeScene();
+        this._counterLabel.text = scene.counter.text;
     }
 
     destroy(): void {

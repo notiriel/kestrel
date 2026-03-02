@@ -168,6 +168,9 @@ export class QuestionCard implements NotificationCardDelegate {
         this._applyQuestionState(updated.questionState);
         this._rebuildPage();
 
+        // Notify creator for domain sync
+        this._options.onSelectOption?.(this._notification.id, questionIndex, optionIndex);
+
         // Auto-advance for single-select (not for "Other")
         const isOther = optionIndex === qDef.options.length;
         if (shouldAutoAdvance(qDef, isOther) && this._state.currentPage < this._questions.length) {
@@ -185,6 +188,9 @@ export class QuestionCard implements NotificationCardDelegate {
 
         this._applyQuestionState(updated.questionState);
         this._rebuildPage();
+
+        // Notify creator for domain sync
+        this._options.onSetOtherText?.(this._notification.id, questionIndex, text);
     }
 
     send(): void {

@@ -35,6 +35,8 @@ import type { OverviewInteractionState } from './overview-state.js';
 import { createOverviewInteractionState } from './overview-state.js';
 import type { NotificationState } from './notification.js';
 import { createNotificationState, dismissNotificationsForWindow, unregisterWindow } from './notification.js';
+import type { NotificationInteractionState } from './notification-scene.js';
+import { createNotificationInteractionState } from './notification-scene.js';
 import { createQuakeState, isQuakeWindow, releaseQuakeWindow } from './quake.js';
 
 export interface World {
@@ -46,6 +48,7 @@ export interface World {
     readonly overviewActive: boolean;
     readonly overviewInteractionState: OverviewInteractionState;
     readonly notificationState: NotificationState;
+    readonly notificationInteractionState: NotificationInteractionState;
     readonly quakeState: QuakeState;
 }
 
@@ -71,8 +74,14 @@ export function createWorld(config: KestrelConfig, monitor: MonitorInfo): World 
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
+        notificationInteractionState: createNotificationInteractionState(),
         quakeState: createQuakeState(),
     };
+}
+
+/** Replace the notification interaction state in a world. */
+export function updateNotificationInteractionState(world: World, state: NotificationInteractionState): World {
+    return { ...world, notificationInteractionState: state };
 }
 
 export function updateConfig(world: World, config: KestrelConfig): WorldUpdate {
@@ -507,6 +516,7 @@ export function restoreWorld(
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
+        notificationInteractionState: createNotificationInteractionState(),
         quakeState: createQuakeState(),
     };
 

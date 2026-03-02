@@ -2,14 +2,14 @@ import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
 import { safeDisconnect } from './signal-utils.js';
-import { STATUS_COLORS, STATUS_ICON_SIZE, buildStatusIcon, buildStatusStyle } from '../ui-components/status-badge-builders.js';
+import { buildStatusIcon, buildStatusStyle, STATUS_COLORS } from '../ui-components/status-badge-builders.js';
+import { computeStatusBadgeScenes, type StatusBadgeScene } from '../domain/notification-scene.js';
 import St from 'gi://St';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
 
 import type { ClaudeStatus } from '../domain/notification-types.js';
 
-const ICON_PADDING = 10;
 const PROBE_PATTERN = /^kestrel_probe_(.+)$/;
 
 interface TitleSignalEntry {
@@ -112,28 +112,24 @@ export class StatusOverlayAdapter {
         transform: OverviewTransform,
         clonePositions: Map<WindowId, ClonePosition>,
     ): void {
-        if (!this._layer || !this._iconGFile) return;
-        const statuses = this._getWorldStatuses();
-        if (!statuses) return;
-
-        for (const [windowId, status] of statuses) {
-            this._showStatusOverlay(windowId, status, clonePositions, transform);
+        const badges = this._computeBadges(transform, clonePositions);
+        for (const badge of badges) {
+            this._applyBadgeScene(badge);
         }
     }
 
-    private _getWorldStatuses(): ReadonlyMap<WindowId, ClaudeStatus> | null {
-        return this._getWorld?.()?.notificationState.windowStatuses ?? null;
+    private _computeBadges(transform: OverviewTransform, clonePositions: Map<WindowId, ClonePosition>): readonly StatusBadgeScene[] {
+        if (!this._layer || !this._iconGFile) return [];
+        const world = this._getWorld?.();
+        if (!world) return [];
+        return computeStatusBadgeScenes(world.notificationState, clonePositions, transform, this._layer.height);
     }
 
-    private _showStatusOverlay(
-        windowId: WindowId, status: ClaudeStatus,
-        clonePositions: Map<WindowId, ClonePosition>,
-        transform: OverviewTransform,
-    ): void {
-        const pos = clonePositions.get(windowId);
-        if (!pos) return;
-        const overlay = this._getOrCreateOverlay(windowId, status);
-        this._positionOverlay(overlay, pos, transform);
+    private _applyBadgeScene(badge: StatusBadgeScene): void {
+        const overlay = this._getOrCreateOverlay(badge.windowId, badge.status);
+        overlay.set_position(badge.x, badge.y);
+        overlay.set_size(badge.size, badge.size);
+        overlay.visible = badge.visible;
     }
 
     private _getOrCreateOverlay(windowId: WindowId, status: ClaudeStatus): St.Icon {
@@ -146,16 +142,6 @@ export class StatusOverlayAdapter {
             overlay.style = buildStatusStyle(status);
         }
         return overlay;
-    }
-
-    private _positionOverlay(overlay: St.Icon, pos: ClonePosition, transform: OverviewTransform): void {
-        const { scale, offsetX, offsetY } = transform;
-        const x = (pos.x + pos.width - STATUS_ICON_SIZE - ICON_PADDING) * scale + offsetX;
-        const y = (pos.wsIndex * this._layer!.height + pos.y + ICON_PADDING) * scale + offsetY;
-
-        overlay.set_position(Math.round(x), Math.round(y));
-        overlay.set_size(Math.round(STATUS_ICON_SIZE * scale), Math.round(STATUS_ICON_SIZE * scale));
-        overlay.visible = true;
     }
 
     exitOverview(): void {
