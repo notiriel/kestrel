@@ -101,7 +101,7 @@ Pure TypeScript with no `gi://` imports. Fully testable with Vitest.
 | `world.ts` | Aggregate root. Functions: `createWorld`, `addWindow`, `removeWindow`, `setFocus`, `buildUpdate`, `updateMonitor`, `updateConfig`, `enterFullscreen`, `exitFullscreen`, `widenWindow`, `switchToWorkspace`, `filterWorkspaces`, `restoreWorld`, `adjustViewport`, `ensureTrailingEmpty`, `pruneEmptyWorkspaces`, `renameCurrentWorkspace` |
 | `scene.ts` | `computeScene(world)` pure function producing `SceneModel` from `World`. Iterates columns and computes per-window positions including stacked window y/height within columns. Also `diffScene()` for diagnostics. Types: `CloneScene`, `RealWindowScene`, `FocusIndicatorScene`, `WorkspaceContainerScene`, `WorkspaceStripScene` |
 | `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — iterates columns and computes pixel positions, splitting height equally for stacked windows within a column (internal to scene computation and viewport adjustment) |
-| `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp`, `forceWorkspaceUp`, `forceWorkspaceDown` — pure functions taking `World`, returning `WorldUpdate`. Vertical focus is overloaded: navigates within stack first, then switches workspace |
+| `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp`, `forceWorkspaceUp`, `forceWorkspaceDown` — pure functions taking `World`, returning `WorldUpdate`. Vertical focus is overloaded: navigates within stack first, then switches workspace. No `overviewActive` guards — keybinding action mode (`Shell.ActionMode.NORMAL`) prevents navigation during overview |
 | `window-operations.ts` | `moveRight`, `moveLeft`, `moveDown`, `moveUp`, `toggleSize`, `toggleStack` |
 | `workspace.ts` | `Workspace` type and `Column` type. Column operations: `addColumn`, `removeWindowFromColumn`, `columnNeighbor`, `swapColumns`, `slotIndexOf`, `columnAtSlot`, `insertColumnAt`, `replaceWindowInColumn`, `columnOf`, `positionInColumn`, `stackWindowLeft`, `unstackWindow`, `reorderInColumn` |
 | `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (fullscreen state) |
@@ -154,8 +154,8 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 
 | File | Purpose |
 |------|---------|
-| `navigation-handler.ts` | `handleSimpleCommand` (linear focus/move), `handleVerticalFocus` (workspace switch via `applyUpdateWithScroll`), `handleVerticalMove` (cross-workspace window move via `applyUpdateWithScroll`) |
-| `overview-handler.ts` | Overview enter/exit/navigate/filter/click/drag/rename |
+| `navigation-handler.ts` | `handleSimpleCommand` (linear focus/move), `handleVerticalFocus` (workspace switch with scroll transfer), `handleVerticalMove` (cross-workspace window move). All delegate to `WorldHolder.applyUpdate()` which multicasts to scene subscribers |
+| `overview-handler.ts` | Overview enter/exit/navigate/filter/click/drag/rename. Routes updates through `WorldHolder.applyUpdate()` — scene subscribers detect overview state and route to `updateOverviewFocus` instead of normal layout |
 | `window-lifecycle-handler.ts` | Window add/remove/fullscreen/maximize — domain updates + adapter sync |
 
 **Notification system:**
@@ -180,7 +180,7 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 
 | File | Purpose |
 |------|---------|
-| `world-holder.ts` | Holds current `World` state, fires panel update on change |
+| `world-holder.ts` | Observer hub: holds `World` state, multicasts `WorldUpdate` to `SceneSubscriber`s (clone, window, focus, quake) and `WorldSubscriber`s (panel indicator). Handlers call `applyUpdate()` instead of directly invoking adapters |
 | `settlement-retry.ts` | Exponential-backoff layout retry for async window configures (primarily Wayland). Delays: `[100, 150, 200, 300, 400, 500, 750, 1000]` ms |
 | `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
@@ -220,28 +220,33 @@ The fundamental data flow is unidirectional:
 Reality -(signals)-> Adapters -(domain calls)-> Domain -(WorldUpdate)-> Adapters -(animate)-> Reality
 ```
 
-All domain operations return `WorldUpdate { world, scene }`. The domain computes the complete desired physical state as a `SceneModel`. Adapters apply the scene by setting actor properties and animating transitions.
+All domain operations return `WorldUpdate { world, scene }`. The domain computes the complete desired physical state as a `SceneModel`. Handlers pass updates to `WorldHolder.applyUpdate()`, which multicasts to registered `SceneSubscriber`s (clone layout, window positioning, focus activation, quake) and `WorldSubscriber`s (panel indicator). Subscribers apply the scene by setting actor properties and animating transitions.
 
-**The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output.
+**The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output. Scene subscribers registered in `extension.ts` handle overview-aware routing: during overview mode, clone updates are routed to `updateOverviewFocus` while window and focus subscribers are suppressed.
 
 Operations like workspace pruning happen immediately in the domain. If a workspace empties, the domain removes it and adjusts all indices in the same operation. The adapter must reconcile its visual state (e.g., clone containers) to match.
 
 ```mermaid
 sequenceDiagram
     participant GNOME as GNOME Shell
-    participant Adapter as Adapter Layer
+    participant Handler as Handler
     participant Domain as Domain Core
     participant Scene as Scene Computation
+    participant WH as WorldHolder
+    participant Subs as Scene Subscribers
 
-    GNOME->>Adapter: Signal fires (key press, window event)
-    Adapter->>Domain: Call domain function (e.g. focusRight(world))
+    GNOME->>Handler: Signal fires (key press, window event)
+    Handler->>Domain: Call domain function (e.g. focusRight(world))
     Domain->>Domain: Compute new World state
     Domain->>Scene: computeScene(world)
     Scene-->>Domain: SceneModel (positions, visibility, transforms)
-    Domain-->>Adapter: WorldUpdate { world, scene }
-    Adapter->>Adapter: Apply scene to Clutter actors
-    Adapter->>Adapter: Animate transitions (Clutter.ease)
-    Adapter->>GNOME: Visual state updated
+    Domain-->>Handler: WorldUpdate { world, scene }
+    Handler->>WH: applyUpdate(update, options)
+    WH->>WH: Store new World
+    WH->>Subs: Multicast onSceneChanged(scene, options)
+    Subs->>Subs: Apply scene to Clutter actors
+    Subs->>Subs: Animate transitions (Clutter.ease)
+    Subs->>GNOME: Visual state updated
 ```
 
 ## 3. Key Data Types
@@ -520,8 +525,9 @@ sequenceDiagram
     participant NavH as NavigationHandler
     participant Guard as ReconciliationGuard
     participant Domain
-    participant WinAdapt as WindowAdapter
+    participant WH as WorldHolder
     participant Clone as CloneAdapter
+    participant WinAdapt as WindowAdapter
     participant Focus as FocusAdapter
 
     User->>KB: Super+Right
@@ -530,10 +536,11 @@ sequenceDiagram
     NavH->>Guard: Check reconciliation lock
     NavH->>Domain: focusRight(world)
     Domain-->>NavH: WorldUpdate { world, scene }
-    NavH->>NavH: Set new world
-    NavH->>WinAdapt: applyScene(scene.realWindows)
-    NavH->>Clone: applyScene(scene.clones, scene.focusIndicator)
-    NavH->>Focus: focusInternal(focusedWindowId)
+    NavH->>WH: applyUpdate(update, options)
+    WH->>WH: Store new world
+    WH->>Clone: onSceneChanged(scene, options)
+    WH->>WinAdapt: onSceneChanged(scene, options)
+    WH->>Focus: onSceneChanged(scene, options)
 ```
 
 ### Vertical Move (Cross-Workspace)

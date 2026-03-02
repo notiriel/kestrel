@@ -146,7 +146,7 @@ B is focused. WS2 has D, E.
 
 | File | Purpose |
 |------|---------|
-| `world-holder.ts` | Holds current `World` state, fires panel update on change |
+| `world-holder.ts` | Observer hub: holds `World` state, multicasts updates to `SceneSubscriber`s and `WorldSubscriber`s |
 | `settlement-retry.ts` | Exponential-backoff layout retry for async window configures (primarily Wayland) |
 | `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
