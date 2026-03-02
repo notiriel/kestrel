@@ -3,8 +3,8 @@
 </div>
 
 <p align="center">
-  <strong>Your desktop, redesigned for the age of AI agents.</strong><br>
-  <sub>A GNOME Shell extension for supervising multiple AI coding sessions from a single panoramic view.</sub>
+  <strong>Context engineering for humans in an agentic multitasking world.</strong><br>
+  <sub>A GNOME Shell extension that gives each project its own workspace — agent, browser, files — in a scrollable strip you supervise at a glance.</sub>
 </p>
 
 <p align="center">
@@ -19,11 +19,11 @@
 
 ## The Problem
 
-You're running five Claude Code sessions in parallel. Each one is coding, asking for permissions, producing results. Alt-Tab through five terminals? You'll miss a permission request. Scatter them across virtual desktops? You'll lose track. Your OS was designed for a world where you do one thing at a time. You're directing a fleet.
+Agentic tasks keep getting longer. You're no longer writing code — you're supervising multiple AI agents working across multiple projects in parallel. The idle time between interactions grows, so you context-switch constantly. But your OS was designed for a world where you do one thing at a time. Alt-Tab through five terminals? You lose track. Scatter them across virtual desktops? You miss a permission request. Everything stalls silently.
 
 ## What Kestrel Does
 
-Kestrel arranges your windows in a horizontal strip you scroll through — a command strip where every agent session is visible at a glance. Status badges show who's working, who's done, who needs you. Permission requests surface inline. Workspaces stack vertically for context separation. You see everything. You miss nothing.
+Kestrel gives each project its own workspace — agent terminal, browser, reference files — arranged in a horizontal strip you scroll through. Status badges show which agents are working, waiting, or done. Permission requests surface inline. Workspaces stack vertically for context separation. You see everything, switch effortlessly, and miss nothing.
 
 ```
             ← scroll →

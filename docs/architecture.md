@@ -1,6 +1,8 @@
 # Kestrel Technical Architecture
 
-This document describes how the Kestrel GNOME Shell extension codebase is structured and why. It is the primary technical reference for contributors and maintainers.
+Kestrel is a GNOME Shell extension that facilitates context engineering for humans in an agentic multitasking world — giving each project and its context (agent terminal, browser, files) a separate workspace in a scrollable strip, making task-switching effortless and keeping an overview easy.
+
+This document describes how the codebase is structured and why. It is the primary technical reference for contributors and maintainers.
 
 ## 1. Layer Overview
 

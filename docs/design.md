@@ -1,6 +1,8 @@
 # Kestrel Product Design
 
-Kestrel is a GNOME Shell extension that replaces GNOME's default window management with a scrolling tiling model. Windows are arranged on a two-dimensional plane; navigation is viewport movement through that plane.
+Kestrel is a GNOME Shell extension that facilitates context engineering for humans in an agentic multitasking world. As agentic tasks grow longer, developers supervise multiple AI agents working in parallel across multiple projects. Kestrel gives each project and its context — agent terminal, browser, files — a separate workspace in a scrollable strip, making task-switching effortless and keeping an overview easy.
+
+It replaces GNOME's default window management with a scrolling tiling model. Windows are arranged on a two-dimensional plane; navigation is viewport movement through that plane.
 
 ## Core Concept: The World
 

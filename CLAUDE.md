@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Vision
+
+Kestrel exists to support agentic development across multiple projects simultaneously. As agentic tasks grow longer, developers spend less time writing code directly and more time supervising multiple AI agents working in parallel. The idle time between interactions grows, and context-switching between projects becomes the bottleneck. Kestrel gives each project and its context — agent terminal, browser, files — a separate workspace in a scrollable strip, making task-switching effortless and keeping an overview easy. It is an attempt to facilitate context engineering for humans in an agentic multitasking world.
+
 ## Build & Test Commands
 
 ```bash
