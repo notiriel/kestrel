@@ -77,17 +77,18 @@ describe('NavigationHandler', () => {
             expect(deps.applyUpdate).not.toHaveBeenCalled();
         });
 
-        it('no-ops when overview is active (domain returns unchanged world)', () => {
+        it('navigates normally when overview is active (keybinding action mode prevents this in practice)', () => {
             const world = { ...buildWorld(1, 2), overviewActive: true };
             const deps = createDeps(world);
             const handler = new NavigationHandler(deps);
 
             handler.handleSimpleCommand(focusLeft, 'focus-left');
 
-            // Domain guard returns the same world unchanged
+            // Navigation functions no longer guard on overviewActive — protection
+            // comes from Shell.ActionMode.NORMAL preventing keybindings during modal
             const [update] = (deps.applyUpdate as ReturnType<typeof vi.fn>).mock.calls[0]!;
-            expect(update.world.focusedWindow).toBe(world.focusedWindow);
             expect(update.world.overviewActive).toBe(true);
+            expect(deps.applyUpdate).toHaveBeenCalledOnce();
         });
 
         it('no-ops when guard returns false', () => {

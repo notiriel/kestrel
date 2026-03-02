@@ -323,34 +323,3 @@ describe('horizontal navigation with stacks', () => {
     });
 });
 
-describe('overviewActive guard', () => {
-    it('focusRight is no-op when overview is active', () => {
-        const world = { ...makeWorld([1, 2, 3], 0), overviewActive: true };
-        const update = focusRight(world);
-        expect(update.world).toBe(world);
-    });
-
-    it('focusLeft is no-op when overview is active', () => {
-        const world = { ...makeWorld([1, 2, 3], 2), overviewActive: true };
-        const update = focusLeft(world);
-        expect(update.world).toBe(world);
-    });
-
-    it('focusDown is no-op when overview is active', () => {
-        const world = { ...makeMultiWorld([[1], [2], []], 0, 1), overviewActive: true };
-        const update = focusDown(world);
-        expect(update.world).toBe(world);
-    });
-
-    it('focusUp is no-op when overview is active', () => {
-        const world = { ...makeMultiWorld([[1], [2], []], 1, 2), overviewActive: true };
-        const update = focusUp(world);
-        expect(update.world).toBe(world);
-    });
-
-    it('forceWorkspaceDown is no-op when overview is active', () => {
-        const world = { ...makeMultiWorld([[1], [2], []], 0, 1), overviewActive: true };
-        const update = forceWorkspaceDown(world);
-        expect(update.world).toBe(world);
-    });
-});

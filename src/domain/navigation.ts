@@ -4,7 +4,6 @@ import { currentWorkspace, buildUpdate, adjustViewport } from './world.js';
 import { columnOf, columnNeighbor, positionInColumn, slotIndexOf, columnAtSlot, findWindowInWorkspace } from './workspace.js';
 
 function focusHorizontal(world: World, delta: -1 | 1): WorldUpdate {
-    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) return buildUpdate(world);
 
     const ws = currentWorkspace(world);
@@ -41,7 +40,6 @@ export function focusLeft(world: World): WorldUpdate { return focusHorizontal(wo
  * At bottom of stack (or single-window column): switch to workspace below.
  */
 export function focusDown(world: World): WorldUpdate {
-    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) {
         return forceWorkspaceDown(world);
     }
@@ -66,7 +64,6 @@ export function focusDown(world: World): WorldUpdate {
  * At top of stack (or single-window column): switch to workspace above.
  */
 export function focusUp(world: World): WorldUpdate {
-    if (world.overviewActive) return buildUpdate(world);
     if (!world.focusedWindow) {
         return forceWorkspaceUp(world);
     }
@@ -88,7 +85,6 @@ export function focusUp(world: World): WorldUpdate {
 
 /** Always switch to workspace below, regardless of stack position. */
 export function forceWorkspaceDown(world: World): WorldUpdate {
-    if (world.overviewActive) return buildUpdate(world);
     const targetIndex = world.viewport.workspaceIndex + 1;
     if (targetIndex >= world.workspaces.length) return buildUpdate(world);
     return focusVertical(world, targetIndex);
@@ -96,7 +92,6 @@ export function forceWorkspaceDown(world: World): WorldUpdate {
 
 /** Always switch to workspace above, regardless of stack position. */
 export function forceWorkspaceUp(world: World): WorldUpdate {
-    if (world.overviewActive) return buildUpdate(world);
     const targetIndex = world.viewport.workspaceIndex - 1;
     if (targetIndex < 0) return buildUpdate(world);
     return focusVertical(world, targetIndex);

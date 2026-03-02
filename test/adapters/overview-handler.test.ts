@@ -32,6 +32,7 @@ function createMockInputAdapter() {
         activate: vi.fn(),
         deactivate: vi.fn(),
         destroy: vi.fn(),
+        setKeyPassthrough: vi.fn(),
     };
 }
 
@@ -44,6 +45,7 @@ function createDeps(world: World | null = null) {
     const deps: OverviewDeps = {
         getWorld: vi.fn(() => currentWorld),
         setWorld: vi.fn((w: World) => { currentWorld = w; }),
+        applyUpdate: vi.fn((update) => { currentWorld = update.world; }),
         focusWindow: vi.fn(),
         getCloneAdapter: vi.fn(() => clonePort),
         getWindowAdapter: vi.fn(() => windowPort),
@@ -67,7 +69,7 @@ describe('OverviewHandler', () => {
 
             handler.handleToggle();
 
-            expect(deps.setWorld).toHaveBeenCalled();
+            expect(deps.applyUpdate).toHaveBeenCalled();
             expect(clonePort.enterOverview).toHaveBeenCalledOnce();
             expect(inputAdapter.activate).toHaveBeenCalledOnce();
             expect(handler.isActive).toBe(true);
@@ -93,7 +95,7 @@ describe('OverviewHandler', () => {
 
             handler.handleToggle();
 
-            expect(deps.setWorld).not.toHaveBeenCalled();
+            expect(deps.applyUpdate).not.toHaveBeenCalled();
             expect(clonePort.enterOverview).not.toHaveBeenCalled();
         });
     });
@@ -108,8 +110,8 @@ describe('OverviewHandler', () => {
             handler.handleToggle(); // enter
 
             // After entering, domain should have overviewActive = true
-            const setWorldCalls = (deps.setWorld as ReturnType<typeof vi.fn>).mock.calls;
-            const updatedWorld = setWorldCalls[0]![0] as World;
+            const applyUpdateCalls = (deps.applyUpdate as ReturnType<typeof vi.fn>).mock.calls;
+            const updatedWorld = applyUpdateCalls[0]![0].world as World;
             expect(updatedWorld.overviewActive).toBe(true);
         });
 
@@ -144,56 +146,52 @@ describe('OverviewHandler', () => {
     });
 
     describe('navigate', () => {
-        it('calls domain navigation and updates overview focus', () => {
-            const { deps, clonePort, inputAdapter } = createDeps(buildWorld(1, 2));
+        it('calls domain navigation and applies update', () => {
+            const { deps, inputAdapter } = createDeps(buildWorld(1, 2));
             const handler = new OverviewHandler(deps);
 
             handler.handleToggle(); // enter
-            clonePort.updateOverviewFocus.mockClear();
+            (deps.applyUpdate as ReturnType<typeof vi.fn>).mockClear();
 
             // Trigger navigation via the callback
             const callbacks = inputAdapter.activate.mock.calls[0]![0];
             callbacks.onNavigate('left');
 
-            expect(deps.setWorld).toHaveBeenCalled();
-            expect(clonePort.updateOverviewFocus).toHaveBeenCalledOnce();
+            expect(deps.applyUpdate).toHaveBeenCalledOnce();
         });
 
         it('handles all four directions', () => {
-            const { deps, clonePort, inputAdapter } = createDeps(buildWorld(1, 2));
+            const { deps, inputAdapter } = createDeps(buildWorld(1, 2));
             const handler = new OverviewHandler(deps);
 
             handler.handleToggle();
             const callbacks = inputAdapter.activate.mock.calls[0]![0];
 
             for (const dir of ['left', 'right', 'up', 'down'] as const) {
-                clonePort.updateOverviewFocus.mockClear();
                 callbacks.onNavigate(dir);
-                // Should not throw, setWorld should be called each time
+                // Should not throw, applyUpdate should be called each time
             }
 
-            // setWorld called: 1 for enter + 4 for navigations = 5
-            expect(deps.setWorld).toHaveBeenCalledTimes(5);
+            // applyUpdate called: 1 for enter + 4 for navigations = 5
+            expect(deps.applyUpdate).toHaveBeenCalledTimes(5);
         });
     });
 
     describe('confirm', () => {
         it('exits overview and tears down visual', () => {
-            const { deps, clonePort, windowPort, inputAdapter } = createDeps(buildWorld(1, 2));
+            const { deps, clonePort, inputAdapter } = createDeps(buildWorld(1, 2));
             const handler = new OverviewHandler(deps);
 
             handler.handleToggle(); // enter
             handler.handleConfirm();
 
-            // Domain should clear overviewActive
-            const lastSetWorld = (deps.setWorld as ReturnType<typeof vi.fn>).mock.calls;
-            const exitWorld = lastSetWorld[lastSetWorld.length - 1]![0] as World;
+            // Domain should clear overviewActive via applyUpdate
+            const applyUpdateCalls = (deps.applyUpdate as ReturnType<typeof vi.fn>).mock.calls;
+            const exitWorld = applyUpdateCalls[applyUpdateCalls.length - 1]![0].world as World;
             expect(exitWorld.overviewActive).toBe(false);
 
             expect(clonePort.exitOverview).toHaveBeenCalledOnce();
-            expect(windowPort.applyScene).toHaveBeenCalledOnce();
             expect(inputAdapter.deactivate).toHaveBeenCalledOnce();
-            expect(deps.focusWindow).toHaveBeenCalled();
             expect(handler.isActive).toBe(false);
         });
     });
@@ -213,9 +211,9 @@ describe('OverviewHandler', () => {
 
             handler.handleCancel();
 
-            // After cancel, should restore original focus and viewport
-            const lastSetWorld = (deps.setWorld as ReturnType<typeof vi.fn>).mock.calls;
-            const cancelWorld = lastSetWorld[lastSetWorld.length - 1]![0] as World;
+            // After cancel, should restore original focus and viewport via applyUpdate
+            const applyUpdateCalls = (deps.applyUpdate as ReturnType<typeof vi.fn>).mock.calls;
+            const cancelWorld = applyUpdateCalls[applyUpdateCalls.length - 1]![0].world as World;
             expect(cancelWorld.overviewActive).toBe(false);
             expect(cancelWorld.focusedWindow).toBe(wid(2)); // restored original focus
             expect(cancelWorld.viewport.workspaceIndex).toBe(0);

@@ -9,11 +9,13 @@ import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.
 import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename } from '../domain/overview-state.js';
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
+import type { SceneApplyOptions } from './world-holder.js';
 import type { OverviewInputAdapter } from './overview-input-adapter.js';
 
 export interface OverviewDeps {
     getWorld(): World | null;
     setWorld(world: World): void;
+    applyUpdate(update: WorldUpdate, options: SceneApplyOptions): void;
     focusWindow(windowId: WindowId | null): void;
     getCloneAdapter(): (OverviewRenderPort & CloneRenderPort & Partial<OverviewFilterPort> & Pick<CloneLifecyclePort, 'syncWorkspaces'>) | null;
     getWindowAdapter(): WindowPort | null;
@@ -41,6 +43,10 @@ export class OverviewHandler {
         return this._overviewTransform !== null;
     }
 
+    get overviewTransform(): OverviewTransform | null {
+        return this._overviewTransform;
+    }
+
     handleToggle(): void {
         try {
             const world = this._deps.getWorld();
@@ -61,11 +67,13 @@ export class OverviewHandler {
         if (!world) return;
 
         const update = enterOverview(world);
-        this._deps.setWorld(update.world);
 
         const numWs = this._countNonEmpty(update.world);
         this._overviewTransform = this._computeTransform(update.world, numWs);
         this._notifyEnter(this._overviewTransform, update.scene, numWs);
+
+        // applyUpdate after enter setup so scene subscribers see isActive=true
+        this._deps.applyUpdate(update, { animate: true });
 
         this._activateOverviewInput();
     }
@@ -114,8 +122,7 @@ export class OverviewHandler {
             left: focusLeft, right: focusRight, up: focusUp, down: focusDown,
         };
         const update = navFns[direction]!(world);
-        this._deps.setWorld(update.world);
-        this._renderOverviewUpdate(update);
+        this._deps.applyUpdate(update, { animate: false });
     }
 
     private _navigateFilteredVertical(world: World, direction: string): boolean {
@@ -147,11 +154,7 @@ export class OverviewHandler {
 
     private _switchToFilteredWorkspace(world: World, targetWsIndex: number): void {
         const update = switchToWorkspace(world, targetWsIndex);
-        this._deps.setWorld(update.world);
-
-        this._deps.getCloneAdapter()?.updateOverviewFocus(
-            update.scene, targetWsIndex, this._overviewTransform!,
-        );
+        this._deps.applyUpdate(update, { animate: false });
     }
 
     handleConfirm(animate: boolean = true): void {
@@ -163,8 +166,9 @@ export class OverviewHandler {
             this._preDragWorld = null;
 
             const update = exitOverview(world);
-            this._deps.setWorld(update.world);
             this._exitVisual(update.scene, animate);
+            // applyUpdate after exit visual so scene subscribers see isActive=false
+            this._deps.applyUpdate(update, { animate });
         } catch (e) {
             console.error('[Kestrel] Error handling overview confirm:', e);
         }
@@ -208,24 +212,16 @@ export class OverviewHandler {
         const revertWorld = this._preDragWorld;
         this._dragSubject = null;
         this._preDragWorld = null;
-        this._deps.setWorld(revertWorld);
-        this._renderDragRevert(revertWorld);
-        return true;
-    }
-
-    private _renderDragRevert(revertWorld: World): void {
-        if (!this._overviewTransform) return;
-        const wsIndex = revertWorld.viewport.workspaceIndex;
         const scene = computeScene(revertWorld);
-        this._deps.getCloneAdapter()?.updateOverviewFocus(
-            scene, wsIndex, this._overviewTransform,
-        );
+        this._deps.applyUpdate({ world: revertWorld, scene }, { animate: false });
+        return true;
     }
 
     private _cancelNormal(world: World): void {
         const update = cancelOverview(world);
-        this._deps.setWorld(update.world);
         this._exitVisual(update.scene);
+        // applyUpdate after exit visual so scene subscribers see isActive=false
+        this._deps.applyUpdate(update, { animate: true });
     }
 
     private _handleClick(x: number, y: number): void {
@@ -236,6 +232,7 @@ export class OverviewHandler {
             const hitWindowId = this._hitTest(world, x, y);
             if (!hitWindowId) return;
 
+            // setWorld to store the focused world, then handleConfirm exits overview
             const update = setFocus(world, hitWindowId);
             this._deps.setWorld(update.world);
             this.handleConfirm();
@@ -262,8 +259,7 @@ export class OverviewHandler {
         this._dragSubject = hitWindowId;
         this._preDragWorld = world;
         const update = setFocus(world, hitWindowId);
-        this._deps.setWorld(update.world);
-        this._renderOverviewUpdate(update);
+        this._deps.applyUpdate(update, { animate: false });
     }
 
     private _handleDragMove(x: number, _y: number): void {
@@ -302,8 +298,7 @@ export class OverviewHandler {
         const neighbor = wsClones[idx + 1]!;
         if (reverseX <= neighbor.x + neighbor.width / 2) return false;
         const update = moveRight(world);
-        this._deps.setWorld(update.world);
-        this._renderOverviewUpdate(update);
+        this._deps.applyUpdate(update, { animate: false });
         return true;
     }
 
@@ -312,8 +307,7 @@ export class OverviewHandler {
         const neighbor = wsClones[idx - 1]!;
         if (reverseX >= neighbor.x + neighbor.width / 2) return false;
         const update = moveLeft(world);
-        this._deps.setWorld(update.world);
-        this._renderOverviewUpdate(update);
+        this._deps.applyUpdate(update, { animate: false });
         return true;
     }
 
@@ -378,15 +372,6 @@ export class OverviewHandler {
     private _isInsideWindow(win: { x: number; y: number; width: number; height: number }, rx: number, localY: number): boolean {
         return rx >= win.x && rx <= win.x + win.width &&
             localY >= win.y && localY <= win.y + win.height;
-    }
-
-    private _renderOverviewUpdate(update: WorldUpdate): void {
-        if (!this._overviewTransform) return;
-        this._deps.getCloneAdapter()?.updateOverviewFocus(
-            update.scene,
-            update.world.viewport.workspaceIndex,
-            this._overviewTransform,
-        );
     }
 
     private _handleTextInput(text: string): void {
@@ -479,7 +464,7 @@ export class OverviewHandler {
     private _jumpToFirstMatchIfNeeded(world: World, filteredIndices: number[]): void {
         if (filteredIndices.includes(world.viewport.workspaceIndex)) return;
         const update = switchToWorkspace(world, filteredIndices[0]!);
-        this._deps.setWorld(update.world);
+        this._deps.applyUpdate(update, { animate: false });
     }
 
     private _renderFilteredOverview(transform: OverviewTransform, filteredIndices: number[]): void {
@@ -540,7 +525,9 @@ export class OverviewHandler {
         this._overviewInputAdapter?.deactivate();
         this._overviewInputAdapter = null;
         this._clearFilterUI();
-        this._applyExitScene(scene, animate);
+        this._applyExitClone(scene, animate);
+        this._notifyExit();
+        // Clear transform so isActive becomes false before applyUpdate broadcasts
         this._overviewTransform = null;
     }
 
@@ -557,13 +544,6 @@ export class OverviewHandler {
     private _clearRenameUI(): void {
         this._deps.getCloneAdapter()?.cancelRename?.();
         this._overviewInputAdapter?.setKeyPassthrough?.(false);
-    }
-
-    private _applyExitScene(scene: SceneModel, animate: boolean): void {
-        this._applyExitClone(scene, animate);
-        this._notifyExit();
-        this._deps.getWindowAdapter()?.applyScene(scene);
-        this._deps.focusWindow(this._deps.getWorld()!.focusedWindow);
     }
 
     private _applyExitClone(scene: SceneModel, animate: boolean): void {

@@ -148,6 +148,17 @@ export default class KestrelExtension extends Extension {
             this._sceneSubscribers = [
                 {
                     onSceneChanged: (scene, opts) => {
+                        if (this._overviewHandler?.isActive) {
+                            // During overview, route to overview focus update instead of normal layout
+                            const world = this._worldHolder.world;
+                            const transform = this._overviewHandler.overviewTransform;
+                            if (world && transform) {
+                                this._cloneAdapter?.updateOverviewFocus(
+                                    scene, world.viewport.workspaceIndex, transform,
+                                );
+                            }
+                            return;
+                        }
                         if (opts.scrollTransfer) {
                             this._cloneAdapter?.setScrollForWorkspace(opts.scrollTransfer.workspaceId, opts.scrollTransfer.oldScrollX);
                         }
@@ -156,11 +167,13 @@ export default class KestrelExtension extends Extension {
                 },
                 {
                     onSceneChanged: (scene, opts) => {
+                        if (this._overviewHandler?.isActive) return;
                         this._windowAdapter?.applyScene(scene, opts.nudgeUnsettled ?? false);
                     },
                 },
                 {
                     onSceneChanged: (scene) => {
+                        if (this._overviewHandler?.isActive) return;
                         this._focusAdapter?.focusInternal(scene.focusedWindowId);
                     },
                 },
@@ -221,6 +234,7 @@ export default class KestrelExtension extends Extension {
             this._overviewHandler = new OverviewHandler({
                 getWorld: () => this._worldHolder.world,
                 setWorld: (w) => { this._setWorld(w); },
+                applyUpdate: (update, options) => this._worldHolder.applyUpdate(update, options),
                 focusWindow: (id) => this._focusAdapter?.focusInternal(id),
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
