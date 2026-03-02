@@ -1,9 +1,9 @@
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import { buildHelpCard } from './help-builders.js';
-import type { ShortcutSection } from './help-builders.js';
+import { buildHelpCard, buildHelpCardData } from './help-builders.js';
 
 interface Easeable {
     ease(params: Record<string, unknown>): void;
@@ -11,50 +11,16 @@ interface Easeable {
 
 const ANIMATION_DURATION = 200;
 
-const SHORTCUTS: ShortcutSection[] = [
-    {
-        heading: 'Navigation',
-        entries: [
-            ['Super + Left / Right', 'Focus window'],
-            ['Super + Up / Down', 'Focus workspace'],
-        ],
-    },
-    {
-        heading: 'Window Management',
-        entries: [
-            ['Super + Shift + Left / Right', 'Move window'],
-            ['Super + Shift + Up / Down', 'Move to workspace'],
-            ['Super + F', 'Toggle window size'],
-            ['Super + N', 'New window'],
-            ['Super + Backspace', 'Close window'],
-        ],
-    },
-    {
-        heading: 'Workspaces',
-        entries: [
-            ['Super + <', 'Switch workspace'],
-            ['Super + Shift + <', 'Rename workspace'],
-        ],
-    },
-    {
-        heading: 'System',
-        entries: [
-            ['Super + -', 'Overview'],
-            ['Super + W / E / R / T / Z', 'Quake console slots 1–5'],
-            ['Super + .', 'Notifications'],
-            ["Super + '", 'This help'],
-        ],
-    },
-];
-
 export class HelpOverlayAdapter {
     private _backdrop: St.Widget | null = null;
     private _container: St.BoxLayout | null = null;
     private _visible: boolean = false;
     private _extensionPath: string;
+    private _settings: Gio.Settings;
 
-    constructor(extensionPath: string) {
+    constructor(extensionPath: string, settings: Gio.Settings) {
         this._extensionPath = extensionPath;
+        this._settings = settings;
     }
 
     toggle(): void {
@@ -128,7 +94,8 @@ export class HelpOverlayAdapter {
         if (!monitor) return;
 
         this._backdrop = this._createBackdrop(monitor);
-        this._container = buildHelpCard(this._extensionPath, SHORTCUTS);
+        const { sections, dismissHint } = buildHelpCardData(this._settings);
+        this._container = buildHelpCard(this._extensionPath, sections, dismissHint);
         this._wireCardEvents();
 
         this._backdrop.add_child(this._container);

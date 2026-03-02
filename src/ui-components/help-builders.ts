@@ -12,9 +12,109 @@ const TEXT = '#e8ede9';
 const HERO_HEIGHT = 192;
 const HERO_WIDTH = Math.round(HERO_HEIGHT * (243 / 117)); // ~400
 
-export interface ShortcutSection {
+interface ShortcutSection {
     heading: string;
     entries: Array<[string, string]>;
+}
+
+// --- Accelerator formatting helpers ---
+
+const KEY_DISPLAY_MAP: Record<string, string> = {
+    apostrophe: "'",
+    period: '.',
+    minus: '-',
+    BackSpace: 'Backspace',
+    Return: 'Enter',
+    space: 'Space',
+};
+
+function formatAccelerator(accel: string): string {
+    const modifiers: string[] = [];
+    const modRe = /<([^>]+)>/g;
+    let match;
+    while ((match = modRe.exec(accel)) !== null) {
+        modifiers.push(match[1]);
+    }
+    let key = accel.replace(/<[^>]+>/g, '');
+    key = KEY_DISPLAY_MAP[key] ?? (key.length === 1 ? key.toUpperCase() : key);
+    const parts = [...modifiers, key];
+    return parts.join(' + ');
+}
+
+function readAccel(settings: Gio.Settings, key: string): string {
+    const strv = settings.get_strv(key);
+    if (!strv || strv.length === 0 || !strv[0]) return '(unbound)';
+    return formatAccelerator(strv[0]);
+}
+
+function parseModsAndKey(formatted: string): { mods: string; key: string } {
+    const idx = formatted.lastIndexOf(' + ');
+    if (idx === -1) return { mods: '', key: formatted };
+    return { mods: formatted.substring(0, idx), key: formatted.substring(idx + 3) };
+}
+
+function formatPair(settings: Gio.Settings, keyA: string, keyB: string): string {
+    const a = readAccel(settings, keyA);
+    const b = readAccel(settings, keyB);
+    const pa = parseModsAndKey(a);
+    const pb = parseModsAndKey(b);
+    if (pa.mods && pa.mods === pb.mods) {
+        return `${pa.mods} + ${pa.key} / ${pb.key}`;
+    }
+    return `${a} / ${b}`;
+}
+
+function formatQuakeGroup(settings: Gio.Settings): string {
+    const keys = [1, 2, 3, 4, 5].map(i => readAccel(settings, `quake-slot-${i}-toggle`));
+    const parsed = keys.map(parseModsAndKey);
+    const allSameMods = parsed.every(p => p.mods && p.mods === parsed[0].mods);
+    if (allSameMods) {
+        return `${parsed[0].mods} + ${parsed.map(p => p.key).join(' / ')}`;
+    }
+    return keys.join(', ');
+}
+
+/** Build the full help card data from live GSettings. */
+export function buildHelpCardData(settings: Gio.Settings): { sections: ShortcutSection[]; dismissHint: string } {
+    const sections: ShortcutSection[] = [
+        {
+            heading: 'Navigation',
+            entries: [
+                [formatPair(settings, 'focus-left', 'focus-right'), 'Focus window'],
+                [formatPair(settings, 'focus-down', 'focus-up'), 'Focus workspace'],
+            ],
+        },
+        {
+            heading: 'Window Management',
+            entries: [
+                [formatPair(settings, 'move-left', 'move-right'), 'Move window'],
+                [formatPair(settings, 'move-down', 'move-up'), 'Move to workspace'],
+                [readAccel(settings, 'toggle-size'), 'Toggle window size'],
+                [readAccel(settings, 'new-window'), 'New window'],
+                [readAccel(settings, 'close-window'), 'Close window'],
+            ],
+        },
+        {
+            heading: 'Workspaces',
+            entries: [
+                ['F2 (in overview)', 'Rename workspace'],
+            ],
+        },
+        {
+            heading: 'System',
+            entries: [
+                [readAccel(settings, 'kestrel-toggle-overview'), 'Overview'],
+                [formatQuakeGroup(settings), 'Quake console slots 1–5'],
+                [readAccel(settings, 'toggle-notifications'), 'Notifications'],
+                [readAccel(settings, 'toggle-help'), 'This help'],
+            ],
+        },
+    ];
+
+    const helpKey = readAccel(settings, 'toggle-help');
+    const dismissHint = `Press Escape, ${helpKey} or click outside to close`;
+
+    return { sections, dismissHint };
 }
 
 function buildHero(extensionPath: string): St.Bin | null {
@@ -42,9 +142,9 @@ function buildTitle(): St.Label {
     });
 }
 
-function buildDismissHint(): St.Label {
+function buildDismissHint(text: string): St.Label {
     return new St.Label({
-        text: "Press Escape, Super+' or click outside to close",
+        text,
         style: `font-size: 11px; color: ${TEXT_DIM}; margin-top: 20px;`,
         x_align: Clutter.ActorAlign.CENTER,
     });
@@ -101,6 +201,7 @@ function buildShortcutSection(section: ShortcutSection): St.BoxLayout {
 export function buildHelpCard(
     extensionPath: string,
     sections: ShortcutSection[],
+    dismissHintText: string,
 ): St.BoxLayout {
     const card = new St.BoxLayout({
         vertical: true,
@@ -117,7 +218,7 @@ export function buildHelpCard(
 
     card.add_child(buildTitle());
     card.add_child(buildColumns(sections));
-    card.add_child(buildDismissHint());
+    card.add_child(buildDismissHint(dismissHintText));
 
     return card;
 }

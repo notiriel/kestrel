@@ -446,7 +446,7 @@ stateDiagram-v2
     Open --> Closed: Enter / Super+Minus confirm
     Open --> Cancelled: Escape
     Cancelled --> Closed: restore pre-overview state
-    Open --> Renaming: Super+R
+    Open --> Renaming: F2
     Renaming --> Open: Enter saves / Escape cancels
     Open --> ClickFocus: click on window clone
     ClickFocus --> Closed: setFocus + confirm exit

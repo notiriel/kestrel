@@ -55,10 +55,10 @@ User has 5 workspaces: "Frontend", "Backend", "DevOps", "Design", "Docs"
 
 ---
 
-## 2. Workspace Rename (Super+R in overview)
+## 2. Workspace Rename (F2 in overview)
 
 ### Entry
-While overview is active, user presses **Super+R**. An inline text entry appears over the focused workspace's name label.
+While overview is active, user presses **F2**. An inline text entry appears over the focused workspace's name label.
 
 ### Behavior
 - The entry is pre-filled with the current workspace name, fully selected
@@ -76,7 +76,7 @@ User stays in overview and can continue navigating, filtering, or pressing Enter
 ```
 1. Super+M          → overview opens
 2. Down arrow       → focus moves to "Workspace 2"
-3. Super+R          → rename entry appears with "Workspace 2" selected
+3. F2               → rename entry appears with "Workspace 2" selected
 4. Types "Backend"  → entry now shows "Backend"
 5. Enter            → workspace renamed, label updates, back to normal overview
 6. Enter            → exits overview on "Backend" workspace
@@ -103,7 +103,7 @@ User stays in overview and can continue navigating, filtering, or pressing Enter
 | Overview | Escape | Clear filter (or cancel overview if filter empty) |
 | Overview | Enter | Confirm — exit overview on focused workspace |
 | Overview | Arrows | Navigate normally (constrained to filtered workspaces) |
-| Overview | Super+R | Start rename on focused workspace |
+| Overview | F2 | Start rename on focused workspace |
 | Rename active | Enter | Save name |
 | Rename active | Escape | Cancel rename |
 

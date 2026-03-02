@@ -170,7 +170,7 @@ export default class KestrelExtension extends Extension {
             this._notificationCoordinator.init();
 
             // Help overlay (Super+')
-            this._helpOverlay = new HelpOverlayAdapter(this.path);
+            this._helpOverlay = new HelpOverlayAdapter(this.path, settings);
 
             // 5. Create collaborators
             this._overviewHandler = new OverviewHandler({

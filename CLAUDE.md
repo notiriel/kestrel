@@ -229,6 +229,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 
 ## Conventions
 
+- **Keybinding changes**: When adding, removing, or changing any keybinding, update all of: the handler code, `src/ui-components/help-overlay.ts`, `docs/design.md`, and `docs/architecture.md`.
 - All signal handlers wrapped in try/catch to avoid crashing GNOME Shell
 - All signal IDs and timeout IDs tracked for cleanup in `destroy()` methods
 - Console logs prefixed with `[Kestrel]`

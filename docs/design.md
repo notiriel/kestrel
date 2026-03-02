@@ -360,7 +360,7 @@ Fuzzy match scoring:
 
 ### Workspace Rename
 
-Press Super+R in overview mode to open an inline text entry on the focused workspace name.
+Press F2 in overview mode to open an inline text entry on the focused workspace name.
 
 - Pre-filled with the current name, fully selected.
 - Enter saves the name; Escape cancels.

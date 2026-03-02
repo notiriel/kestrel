@@ -326,8 +326,7 @@ export class OverviewInputAdapter {
         state: number,
         callbacks: OverviewInputCallbacks,
     ): boolean {
-        if (symbol !== Clutter.KEY_r && symbol !== Clutter.KEY_R) return false;
-        if (!(state & Clutter.ModifierType.MOD4_MASK)) return false;
+        if (symbol !== Clutter.KEY_F2) return false;
 
         if (callbacks.onRename) callbacks.onRename();
         return true;
