@@ -6,7 +6,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/adapters/**', 'src/ports/**', 'src/ui-components/**', 'src/ambient.d.ts', 'src/extension.ts', 'src/prefs.ts'],
+      exclude: ['src/adapters/**', 'src/ports/**', 'src/ui-components/**', 'src/ambient.d.ts', 'src/extension.ts', 'src/prefs.ts', 'src/prefs/**'],
       thresholds: {
         lines: 80,
         functions: 80,

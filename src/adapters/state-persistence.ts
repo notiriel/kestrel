@@ -30,6 +30,7 @@ interface SavedState {
     focusedWindow: string | null;
     viewportWorkspaceIndex: number;
     viewportScrollX: number;
+    quakeWindowIds?: string[];
 }
 
 export class StatePersistence implements StatePersistencePort {
@@ -60,23 +61,28 @@ export class StatePersistence implements StatePersistencePort {
 
     save(world: World): void {
         try {
-            const state = {
+            const state: SavedState = {
                 version: 3,
-                workspaces: world.workspaces.map(ws => ({
-                    columns: ws.columns.map(col => ({
-                        windowIds: col.windows.map(w => w.id),
-                        slotSpan: col.slotSpan,
-                    })),
-                    name: ws.name,
-                })),
+                workspaces: this._serializeWorkspaces(world),
                 focusedWindow: world.focusedWindow,
                 viewportWorkspaceIndex: world.viewport.workspaceIndex,
                 viewportScrollX: world.viewport.scrollX,
+                quakeWindowIds: world.quakeState.slots.filter((id): id is WindowId => id !== null),
             };
             this._settings.set_string('saved-state', JSON.stringify(state));
         } catch (e) {
             console.error('[Kestrel] Error saving state:', e);
         }
+    }
+
+    private _serializeWorkspaces(world: World): SavedWorkspaceV3[] {
+        return world.workspaces.map(ws => ({
+            columns: ws.columns.map(col => ({
+                windowIds: col.windows.map(w => w.id),
+                slotSpan: col.slotSpan,
+            })),
+            name: ws.name,
+        }));
     }
 
     tryRestore(config: KestrelConfig, monitor: MonitorInfo): World | null {
@@ -130,20 +136,21 @@ export class StatePersistence implements StatePersistencePort {
     }
 
     private _buildWorkspaceData(state: SavedState, existingWindowIds: Set<string>): RestoreWorkspaceData[] {
+        const quakeIds = new Set(state.quakeWindowIds ?? []);
         return state.workspaces.map(savedWs => {
             if (state.version === 3) {
-                return this._buildV3WorkspaceData(savedWs as SavedWorkspaceV3, existingWindowIds);
+                return this._buildV3WorkspaceData(savedWs as SavedWorkspaceV3, existingWindowIds, quakeIds);
             }
             // Migrate v1/v2: each window becomes a single-window column
-            return this._migrateV1V2WorkspaceData(savedWs as SavedWorkspaceV1V2, existingWindowIds);
+            return this._migrateV1V2WorkspaceData(savedWs as SavedWorkspaceV1V2, existingWindowIds, quakeIds);
         });
     }
 
-    private _buildV3WorkspaceData(savedWs: SavedWorkspaceV3, existingWindowIds: Set<string>): RestoreWorkspaceData {
+    private _buildV3WorkspaceData(savedWs: SavedWorkspaceV3, existingWindowIds: Set<string>, quakeIds: Set<string>): RestoreWorkspaceData {
         const columns: RestoreColumnData[] = [];
         for (const savedCol of savedWs.columns) {
             const windows = savedCol.windowIds
-                .filter(id => existingWindowIds.has(id))
+                .filter(id => existingWindowIds.has(id) && !quakeIds.has(id))
                 .map(id => createTiledWindow(id as WindowId));
             if (windows.length > 0) {
                 columns.push({ windows, slotSpan: savedCol.slotSpan });
@@ -152,13 +159,13 @@ export class StatePersistence implements StatePersistencePort {
         return { columns, name: savedWs.name ?? null };
     }
 
-    private _migrateV1V2WorkspaceData(savedWs: SavedWorkspaceV1V2, existingWindowIds: Set<string>): RestoreWorkspaceData {
+    private _migrateV1V2WorkspaceData(savedWs: SavedWorkspaceV1V2, existingWindowIds: Set<string>, quakeIds: Set<string>): RestoreWorkspaceData {
         const columns: RestoreColumnData[] = savedWs.windowIds
             .map((idStr, i) => ({
                 id: idStr,
                 slotSpan: (savedWs.slotSpans[i] ?? 1),
             }))
-            .filter(({ id }) => existingWindowIds.has(id))
+            .filter(({ id }) => existingWindowIds.has(id) && !quakeIds.has(id))
             .map(({ id, slotSpan }) => ({
                 windows: [createTiledWindow(id as WindowId)],
                 slotSpan,

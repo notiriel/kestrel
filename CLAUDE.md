@@ -174,6 +174,16 @@ B is focused. WS2 has D, E.
 
 **Entry point**: `src/extension.ts` — Composition root. `KestrelExtension` extends the GNOME `Extension` base class and wires domain + adapters in `enable()`/`disable()`.
 
+**Preferences** (`src/prefs.ts` + `src/prefs/`): Settings UI running in a separate process. 4-page tabbed `Adw.PreferencesWindow` exposing all 38 settings. No domain/adapter imports — communicates via GSettings only.
+
+| File | Purpose |
+|------|---------|
+| `prefs.ts` | Entry point: 4-page layout (Layout, Keybindings, Quake Console, Advanced) |
+| `prefs/reset-helpers.ts` | Reset detection, per-row/per-group reset buttons, full reset dialog |
+| `prefs/color-row.ts` | Color picker row with `Gtk.ColorDialogButton` |
+| `prefs/shortcut-row.ts` | Keybinding capture widget with conflict detection |
+| `prefs/app-chooser-row.ts` | Desktop app dropdown via `Gio.AppInfo` |
+
 ## Claude Code Plugin
 
 `kestrel-plugin/` — Claude Code integration via shell hooks that communicate with the extension over session DBus (`io.kestrel.Extension` at `/io/kestrel/Extension`).
