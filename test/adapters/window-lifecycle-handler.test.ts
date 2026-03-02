@@ -14,8 +14,9 @@ vi.mock('../../src/adapters/safe-window.js', () => ({
 import { WindowLifecycleHandler, type WindowLifecycleDeps } from '../../src/adapters/window-lifecycle-handler.js';
 import { createWorld, addWindow } from '../../src/domain/world.js';
 import { assignQuakeWindow } from '../../src/domain/quake.js';
-import type { WindowId } from '../../src/domain/types.js';
+import type { WindowId, WorldUpdate } from '../../src/domain/types.js';
 import type { World } from '../../src/domain/world.js';
+import type { SceneApplyOptions } from '../../src/adapters/world-holder.js';
 
 const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const MONITOR = { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };
@@ -37,9 +38,7 @@ function createMockDeps(world: World): { deps: WindowLifecycleDeps; mocks: Recor
     const mocks = {
         setWorld: vi.fn((w: World) => { currentWorld = w; }),
         checkGuard: vi.fn().mockReturnValue(true),
-        applyScene: vi.fn(),
-        applyUpdateWithScroll: vi.fn(),
-        focusWindow: vi.fn(),
+        applyUpdate: vi.fn((update: WorldUpdate) => { currentWorld = update.world; }),
         log: vi.fn(),
         cloneAdapter: {
             init: vi.fn(), updateWorkArea: vi.fn(), syncWorkspaces: vi.fn(),
@@ -63,16 +62,13 @@ function createMockDeps(world: World): { deps: WindowLifecycleDeps; mocks: Recor
         matchQuakeSlot: vi.fn().mockReturnValue(null),
         trackQuakeWindow: vi.fn(),
         untrackQuakeWindow: vi.fn(),
-        applyQuakeScene: vi.fn(),
     };
 
     const deps: WindowLifecycleDeps = {
         getWorld: () => currentWorld,
         setWorld: mocks.setWorld,
         checkGuard: mocks.checkGuard,
-        applyScene: mocks.applyScene,
-        applyUpdateWithScroll: mocks.applyUpdateWithScroll,
-        focusWindow: mocks.focusWindow,
+        applyUpdate: mocks.applyUpdate,
         log: mocks.log,
         getCloneAdapter: () => mocks.cloneAdapter,
         getWindowAdapter: () => mocks.windowAdapter,
@@ -83,7 +79,6 @@ function createMockDeps(world: World): { deps: WindowLifecycleDeps; mocks: Recor
         matchQuakeSlot: mocks.matchQuakeSlot,
         trackQuakeWindow: mocks.trackQuakeWindow,
         untrackQuakeWindow: mocks.untrackQuakeWindow,
-        applyQuakeScene: mocks.applyQuakeScene,
     };
 
     return { deps, mocks };
@@ -102,8 +97,10 @@ describe('WindowLifecycleHandler', () => {
             expect(mocks.focusAdapter.track).toHaveBeenCalledWith('w-1', expect.anything());
             expect(mocks.cloneAdapter.addClone).toHaveBeenCalled();
             expect(mocks.setWorld).toHaveBeenCalled();
-            expect(mocks.applyScene).toHaveBeenCalled();
-            expect(mocks.focusWindow).toHaveBeenCalledWith('w-1');
+            expect(mocks.applyUpdate).toHaveBeenCalled();
+            // Focus is now handled by subscribers, so check that applyUpdate was called with the right world
+            const [update] = mocks.applyUpdate.mock.calls[0]! as [WorldUpdate, SceneApplyOptions];
+            expect(update.world.focusedWindow).toBe('w-1');
             expect(mocks.startSettlement).toHaveBeenCalled();
         });
 
@@ -128,7 +125,7 @@ describe('WindowLifecycleHandler', () => {
 
             expect(mocks.windowAdapter.track).toHaveBeenCalledWith('w-99', expect.anything());
             expect(mocks.cloneAdapter.addClone).toHaveBeenCalled();
-            expect(mocks.applyScene).toHaveBeenCalledWith(expect.anything(), false);
+            expect(mocks.applyUpdate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ animate: false }));
             expect(mocks.startSettlement).toHaveBeenCalled();
         });
 
@@ -185,7 +182,7 @@ describe('WindowLifecycleHandler', () => {
             handler.handleWindowReady('w-1' as WindowId, mockMetaWindow() as any);
 
             expect(mocks.trackQuakeWindow).toHaveBeenCalledWith('w-1', expect.anything());
-            expect(mocks.applyQuakeScene).toHaveBeenCalled();
+            expect(mocks.applyUpdate).toHaveBeenCalled();
             expect(mocks.cloneAdapter.addClone).not.toHaveBeenCalled();
         });
 
@@ -201,7 +198,8 @@ describe('WindowLifecycleHandler', () => {
 
             expect(mocks.trackQuakeWindow).not.toHaveBeenCalled();
             expect(mocks.cloneAdapter.addClone).toHaveBeenCalled();
-            expect(mocks.focusWindow).toHaveBeenCalledWith('w-2');
+            // Focus is handled via applyUpdate -> subscribers now
+            expect(mocks.applyUpdate).toHaveBeenCalled();
         });
 
         it('unmaximizes restored window that was maximized', () => {
@@ -218,7 +216,7 @@ describe('WindowLifecycleHandler', () => {
     });
 
     describe('handleWindowDestroyed', () => {
-        it('removes window and applies update with scroll', () => {
+        it('removes window and applies update', () => {
             let world = createWorld(CONFIG, MONITOR);
             world = addWindow(world, 'w-1' as WindowId).world;
             const { deps, mocks } = createMockDeps(world);
@@ -231,7 +229,7 @@ describe('WindowLifecycleHandler', () => {
             expect(mocks.focusAdapter.untrack).toHaveBeenCalledWith('w-1');
             expect(mocks.unwatchWindow).toHaveBeenCalledWith('w-1');
             expect(mocks.cloneAdapter.syncWorkspaces).toHaveBeenCalled();
-            expect(mocks.applyUpdateWithScroll).toHaveBeenCalled();
+            expect(mocks.applyUpdate).toHaveBeenCalled();
         });
 
         it('no-ops when world is null', () => {
@@ -256,8 +254,7 @@ describe('WindowLifecycleHandler', () => {
             expect(mocks.cloneAdapter.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
             expect(mocks.windowAdapter.setWindowFullscreen).toHaveBeenCalledWith('w-1', true);
             expect(mocks.setWorld).toHaveBeenCalled();
-            expect(mocks.applyScene).toHaveBeenCalled();
-            expect(mocks.focusWindow).toHaveBeenCalled();
+            expect(mocks.applyUpdate).toHaveBeenCalled();
         });
 
         it('exits fullscreen', () => {
@@ -299,8 +296,7 @@ describe('WindowLifecycleHandler', () => {
             expect(mocks.focusAdapter.getMetaWindow).toHaveBeenCalledWith('w-1');
             expect(metaWindow.unmaximize).toHaveBeenCalledWith(3);
             expect(mocks.setWorld).toHaveBeenCalled();
-            expect(mocks.applyScene).toHaveBeenCalled();
-            expect(mocks.focusWindow).toHaveBeenCalled();
+            expect(mocks.applyUpdate).toHaveBeenCalled();
             expect(mocks.startSettlement).toHaveBeenCalled();
         });
 

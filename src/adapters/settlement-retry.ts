@@ -1,16 +1,15 @@
-import type { WindowId } from '../domain/types.js';
+import type { WorldUpdate } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import { buildUpdate } from '../domain/world.js';
 import type { WindowPort } from '../ports/window-port.js';
-import type { CloneRenderPort } from '../ports/clone-port.js';
+import type { SceneApplyOptions } from './world-holder.js';
 import GLib from 'gi://GLib';
 
 interface SettlementDeps {
     getWorld(): World | null;
     checkGuard(label: string): boolean;
-    focusWindow(windowId: WindowId | null): void;
     getWindowAdapter(): WindowPort | null;
-    getCloneAdapter(): CloneRenderPort | null;
+    applyUpdate(update: WorldUpdate, options: SceneApplyOptions): void;
 }
 
 const SETTLEMENT_DELAYS = [100, 150, 200, 300, 400, 500, 750, 1000];
@@ -57,18 +56,9 @@ export class SettlementRetry {
         if (!world) return;
         if (!this._deps.checkGuard('settlement')) return;
 
-        this._deps.focusWindow(world.focusedWindow);
-        this._applySettlementLayout(world);
-    }
+        this._deps.applyUpdate(buildUpdate(world), { animate: false, nudgeUnsettled: true });
 
-    private _applySettlementLayout(world: World): void {
-        const scene = buildUpdate(world).scene;
-        const winAdapter = this._deps.getWindowAdapter();
-        const cloneAdapter = this._deps.getCloneAdapter();
-        winAdapter?.applyScene(scene, true);
-        cloneAdapter?.applyScene(scene, false);
-
-        if (winAdapter?.hasUnsettledWindows()) {
+        if (this._deps.getWindowAdapter()?.hasUnsettledWindows()) {
             this._step++;
             this._scheduleNext();
         }

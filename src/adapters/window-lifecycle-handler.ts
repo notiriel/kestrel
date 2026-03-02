@@ -1,13 +1,12 @@
 import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/types.js';
-import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
-import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt } from '../domain/world.js';
-import { computeScene } from '../domain/scene.js';
+import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, buildUpdate } from '../domain/world.js';
 import { allWindows } from '../domain/workspace.js';
 import { isQuakeWindow, releaseQuakeWindow, assignQuakeWindow } from '../domain/quake.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { FocusPort } from '../ports/focus-port.js';
+import type { SceneApplyOptions } from './world-holder.js';
 import Meta from 'gi://Meta';
 import { safeWindow } from './safe-window.js';
 
@@ -15,10 +14,7 @@ export interface WindowLifecycleDeps {
     getWorld(): World | null;
     setWorld(world: World): void;
     checkGuard(label: string): boolean;
-    applyScene(scene: SceneModel, animate: boolean): void;
-    applyUpdateWithScroll(update: WorldUpdate, animate: boolean,
-                          oldScrollX: number, oldWsId: WorkspaceId | null): void;
-    focusWindow(windowId: WindowId | null): void;
+    applyUpdate(update: WorldUpdate, options: SceneApplyOptions): void;
     log(msg: string): void;
     getCloneAdapter(): (CloneLifecyclePort & CloneRenderPort) | null;
     getWindowAdapter(): WindowPort | null;
@@ -29,7 +25,6 @@ export interface WindowLifecycleDeps {
     matchQuakeSlot(metaWindow: Meta.Window): number | null;
     trackQuakeWindow(windowId: WindowId, metaWindow: Meta.Window): void;
     untrackQuakeWindow(windowId: WindowId): void;
-    applyQuakeScene(world: World): void;
 }
 
 export class WindowLifecycleHandler {
@@ -72,9 +67,8 @@ export class WindowLifecycleHandler {
 
         this._deps.log(`[Kestrel] quake window matched slot ${quakeSlot}: ${windowId}`);
         const update = assignQuakeWindow(world, quakeSlot, windowId);
-        this._deps.setWorld(update.world);
         this._deps.trackQuakeWindow(windowId, metaWindow);
-        this._deps.applyQuakeScene(update.world);
+        this._deps.applyUpdate(update, { animate: false });
         return true;
     }
 
@@ -85,9 +79,7 @@ export class WindowLifecycleHandler {
         const restoredWsId = findWorkspaceIdForWindow(world, windowId)!;
         this._trackInAdapters(windowId, metaWindow, restoredWsId);
 
-        const scene = computeScene(world);
-        this._deps.applyScene(scene, false);
-        this._deps.focusWindow(world.focusedWindow);
+        this._deps.applyUpdate(buildUpdate(world), { animate: false });
         this._deps.startSettlement();
     }
 
@@ -124,9 +116,8 @@ export class WindowLifecycleHandler {
 
     private _applyNewWindowLayout(update: WorldUpdate, oldScrollX: number): void {
         this._deps.getCloneAdapter()?.syncWorkspaces(update.world.workspaces);
-        this._deps.applyScene(update.scene, false);
+        this._deps.applyUpdate(update, { animate: false });
         this._animateScrollIfChanged(update, oldScrollX);
-        this._deps.focusWindow(update.world.focusedWindow);
         this._deps.startSettlement();
     }
 
@@ -163,7 +154,13 @@ export class WindowLifecycleHandler {
 
         this._untrackFromAdapters(windowId);
         this._deps.getCloneAdapter()?.syncWorkspaces(update.world.workspaces);
-        this._deps.applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
+
+        const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+        const scrollTransfer = (newWsId && newWsId !== oldWsId)
+            ? { workspaceId: newWsId, oldScrollX }
+            : undefined;
+
+        this._deps.applyUpdate(update, { animate: true, scrollTransfer });
     }
 
     private _tryReleaseQuakeWindow(world: World, windowId: WindowId): boolean {
@@ -171,9 +168,8 @@ export class WindowLifecycleHandler {
 
         this._deps.log(`[Kestrel] quake window destroyed: ${windowId}`);
         const update = releaseQuakeWindow(world, windowId);
-        this._deps.setWorld(update.world);
         this._deps.untrackQuakeWindow(windowId);
-        this._deps.applyQuakeScene(update.world);
+        this._deps.applyUpdate(update, { animate: false });
         this._deps.unwatchWindow(windowId);
         return true;
     }
@@ -207,8 +203,7 @@ export class WindowLifecycleHandler {
         this._deps.getCloneAdapter()?.setWindowFullscreen(windowId, isFullscreen);
         this._deps.getWindowAdapter()?.setWindowFullscreen(windowId, isFullscreen);
 
-        this._deps.applyScene(update.scene, true);
-        this._deps.focusWindow(update.world.focusedWindow);
+        this._deps.applyUpdate(update, { animate: true });
     }
 
     handleWindowMaximized(windowId: WindowId): void {
@@ -223,8 +218,7 @@ export class WindowLifecycleHandler {
             const update = widenWindow(world, windowId);
             this._deps.setWorld(update.world);
 
-            this._deps.applyScene(update.scene, true);
-            this._deps.focusWindow(update.world.focusedWindow);
+            this._deps.applyUpdate(update, { animate: true });
             this._deps.startSettlement();
         } catch (e) {
             console.error('[Kestrel] Error handling window maximized:', e);

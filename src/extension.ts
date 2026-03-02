@@ -1,5 +1,5 @@
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
-import type { WindowId, WorkspaceId, MonitorInfo } from './domain/types.js';
+import type { WindowId, MonitorInfo } from './domain/types.js';
 import type { World } from './domain/world.js';
 import { createWorld, setFocus, updateMonitor, updateConfig, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
 import { diffScene, computeScene } from './domain/scene.js';
@@ -34,6 +34,7 @@ import { NavigationHandler } from './adapters/navigation-handler.js';
 import { WindowLifecycleHandler } from './adapters/window-lifecycle-handler.js';
 import { PanelIndicatorAdapter } from './adapters/panel-indicator-adapter.js';
 import { WorldHolder } from './adapters/world-holder.js';
+import type { SceneSubscriber, WorldSubscriber } from './adapters/world-holder.js';
 import { NotificationCoordinator } from './adapters/notification-coordinator.js';
 import { HelpOverlayAdapter } from './ui-components/help-overlay.js';
 import { MouseInputAdapter } from './adapters/mouse-input-adapter.js';
@@ -68,6 +69,8 @@ export default class KestrelExtension extends Extension {
     private _debugMode: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
     private _settingsChangedId: number = 0;
+    private _sceneSubscribers: SceneSubscriber[] = [];
+    private _worldSubscribers: WorldSubscriber[] = [];
 
     enable(): void {
         try {
@@ -131,17 +134,59 @@ export default class KestrelExtension extends Extension {
                     const oldScrollX = this._worldHolder.world.viewport.scrollX;
                     const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
                     const update = switchToWorkspace(this._worldHolder.world, wsIndex);
-                    this._applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
+                    const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+                    const scrollTransfer = (newWsId && newWsId !== oldWsId)
+                        ? { workspaceId: newWsId, oldScrollX }
+                        : undefined;
+                    this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
                 } catch (e) {
                     console.error('[Kestrel] Error switching workspace from panel:', e);
                 }
             });
 
-            // Wire WorldHolder callback for panel indicator updates
-            this._worldHolder.setOnWorldChanged((w) => {
-                this._panelIndicator?.update(w);
-            });
-            // Fire initial update
+            // Register scene subscribers (order matters — clone must be first for scroll transfer)
+            this._sceneSubscribers = [
+                {
+                    onSceneChanged: (scene, opts) => {
+                        if (opts.scrollTransfer) {
+                            this._cloneAdapter?.setScrollForWorkspace(opts.scrollTransfer.workspaceId, opts.scrollTransfer.oldScrollX);
+                        }
+                        this._cloneAdapter?.applyScene(scene, opts.animate);
+                    },
+                },
+                {
+                    onSceneChanged: (scene, opts) => {
+                        this._windowAdapter?.applyScene(scene, opts.nudgeUnsettled ?? false);
+                    },
+                },
+                {
+                    onSceneChanged: (scene) => {
+                        this._focusAdapter?.focusInternal(scene.focusedWindowId);
+                    },
+                },
+                {
+                    onSceneChanged: (scene) => {
+                        this._quakeAdapter?.applyQuakeScene(scene.quakeWindow);
+                    },
+                },
+            ];
+            for (const sub of this._sceneSubscribers) {
+                this._worldHolder.subscribeScene(sub);
+            }
+
+            // Register world subscriber for panel indicator
+            this._worldSubscribers = [
+                {
+                    onWorldChanged: (world) => {
+                        this._panelIndicator?.update(world);
+                    },
+                },
+            ];
+            for (const sub of this._worldSubscribers) {
+                this._worldHolder.subscribeWorld(sub);
+            }
+
+            // Fire initial panel update
             this._panelIndicator.update(this._worldHolder.world!);
 
             // Notification coordinator (status overlay, notification overlay, DBus, focus mode)
@@ -204,21 +249,16 @@ export default class KestrelExtension extends Extension {
             this._settlementRetry = new SettlementRetry({
                 getWorld: () => this._worldHolder.world,
                 checkGuard: (label) => this._guard?.check(label) ?? false,
-                focusWindow: (id) => this._focusAdapter?.focusInternal(id),
                 getWindowAdapter: () => this._windowAdapter,
-                getCloneAdapter: () => this._cloneAdapter,
+                applyUpdate: (update, options) => this._worldHolder.applyUpdate(update, options),
             });
 
             this._navigationHandler = new NavigationHandler({
                 getWorld: () => this._worldHolder.world,
-                setWorld: (w) => { this._setWorld(w); },
                 checkGuard: (label) => this._guard?.check(label) ?? false,
-                focusWindow: (id) => this._focusAdapter?.focusInternal(id),
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
-                applyScene: (scene, animate) => this._applyScene(scene, animate),
-                applyUpdateWithScroll: (update, animate, oldScrollX, oldWsId) =>
-                    this._applyUpdateWithScroll(update, animate, oldScrollX, oldWsId),
+                applyUpdate: (update, options) => this._worldHolder.applyUpdate(update, options),
             });
 
             this._mouseInputAdapter = new MouseInputAdapter({
@@ -238,10 +278,7 @@ export default class KestrelExtension extends Extension {
                 getWorld: () => this._worldHolder.world,
                 setWorld: (w) => { this._setWorld(w); },
                 checkGuard: (label) => this._guard?.check(label) ?? false,
-                applyScene: (scene, animate) => this._applyScene(scene, animate),
-                applyUpdateWithScroll: (update, animate, oldScrollX, oldWsId) =>
-                    this._applyUpdateWithScroll(update, animate, oldScrollX, oldWsId),
-                focusWindow: (id) => this._focusAdapter?.focusInternal(id),
+                applyUpdate: (update, options) => this._worldHolder.applyUpdate(update, options),
                 log: (msg) => this._log(msg),
                 getCloneAdapter: () => this._cloneAdapter,
                 getWindowAdapter: () => this._windowAdapter,
@@ -255,10 +292,6 @@ export default class KestrelExtension extends Extension {
                 },
                 trackQuakeWindow: (wid, metaWindow) => this._quakeAdapter?.track(wid, metaWindow),
                 untrackQuakeWindow: (wid) => this._quakeAdapter?.untrack(wid),
-                applyQuakeScene: (world) => {
-                    const scene = computeScene(world);
-                    this._quakeAdapter?.applyQuakeScene(scene.quakeWindow);
-                },
             });
 
             // 6. Connect keybindings
@@ -448,7 +481,16 @@ export default class KestrelExtension extends Extension {
 
             this._statePersistence = null;
 
-            this._worldHolder.setOnWorldChanged(null);
+            // Unsubscribe all
+            for (const sub of this._sceneSubscribers) {
+                this._worldHolder.unsubscribeScene(sub);
+            }
+            this._sceneSubscribers = [];
+            for (const sub of this._worldSubscribers) {
+                this._worldHolder.unsubscribeWorld(sub);
+            }
+            this._worldSubscribers = [];
+
             this._worldHolder = new WorldHolder();
             if (this._debugMode) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -490,7 +532,7 @@ export default class KestrelExtension extends Extension {
                 );
                 this._setWorld(update.world);
                 this._cloneAdapter?.updateConfig?.(config);
-                this._applyScene(update.scene, true);
+                this._worldHolder.applyUpdate(update, { animate: true });
                 return;
             }
         }
@@ -499,7 +541,7 @@ export default class KestrelExtension extends Extension {
         this._setWorld(update.world);
 
         this._cloneAdapter?.updateConfig?.(config);
-        this._applyScene(update.scene, true);
+        this._worldHolder.applyUpdate(update, { animate: true });
     }
 
     private _setWorld(world: World): void {
@@ -513,7 +555,11 @@ export default class KestrelExtension extends Extension {
         const oldScrollX = this._worldHolder.world.viewport.scrollX;
         const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
         const update = setFocus(this._worldHolder.world, wid);
-        this._applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
+        const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+        const scrollTransfer = (newWsId && newWsId !== oldWsId)
+            ? { workspaceId: newWsId, oldScrollX }
+            : undefined;
+        this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
     }
 
     private _debugState(): string {
@@ -639,7 +685,11 @@ export default class KestrelExtension extends Extension {
             const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
 
             const update = switchToWorkspace(this._worldHolder.world, wsIndex);
-            this._applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
+            const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            const scrollTransfer = (newWsId && newWsId !== oldWsId)
+                ? { workspaceId: newWsId, oldScrollX }
+                : undefined;
+            this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
             return '{"ok":true}';
         } catch (e) {
             return `{"error":"${String(e)}"}`;
@@ -669,24 +719,6 @@ export default class KestrelExtension extends Extension {
         const ws = this._worldHolder.world.workspaces[wsIndex];
         if (!ws) return null;
         return getWorkspaceClaudeStatus(this._worldHolder.world.notificationState, ws);
-    }
-
-    private _applyUpdateWithScroll(
-        update: import('./domain/types.js').WorldUpdate, animate: boolean,
-        oldScrollX: number, oldWsId: WorkspaceId | null,
-    ): void {
-        this._setWorld(update.world);
-        const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
-        if (newWsId && newWsId !== oldWsId) {
-            this._cloneAdapter?.setScrollForWorkspace(newWsId, oldScrollX);
-        }
-        this._applyScene(update.scene, animate);
-        this._focusAdapter?.focusInternal(update.world.focusedWindow);
-    }
-
-    private _applyScene(scene: import('./domain/scene.js').SceneModel, animate: boolean, nudgeUnsettled: boolean = false): void {
-        this._windowAdapter?.applyScene(scene, nudgeUnsettled);
-        this._cloneAdapter?.applyScene(scene, animate);
     }
 
     /** Launch all configured quake apps that don't already have a window assigned. */
@@ -751,8 +783,11 @@ export default class KestrelExtension extends Extension {
             const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
 
             const update = setFocus(this._worldHolder.world, windowId);
-            this._applyUpdateWithScroll(update, true, oldScrollX, oldWsId);
-            this._quakeAdapter?.applyQuakeScene(update.scene.quakeWindow);
+            const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+            const scrollTransfer = (newWsId && newWsId !== oldWsId)
+                ? { workspaceId: newWsId, oldScrollX }
+                : undefined;
+            this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
         } catch (e) {
             console.error('[Kestrel] Error handling external focus:', e);
         }
@@ -772,7 +807,7 @@ export default class KestrelExtension extends Extension {
             this._windowAdapter?.setWorkAreaY(monitor.workAreaY);
             this._windowAdapter?.setMonitorBounds(monitor.stageOffsetX, monitor.totalWidth);
 
-            this._applyScene(update.scene, false);
+            this._worldHolder.applyUpdate(update, { animate: false });
         } catch (e) {
             console.error('[Kestrel] Error handling monitor change:', e);
         }
