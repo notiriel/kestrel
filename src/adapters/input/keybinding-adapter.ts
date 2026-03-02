@@ -2,7 +2,7 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import type { KeybindingPort, KeybindingCallbacks } from '../ports/keybinding-port.js';
+import type { KeybindingPort, KeybindingCallbacks } from '../../ports/keybinding-port.js';
 
 /** Mutter setting whose default ('Super_L') opens the Activities Overview. */
 const MUTTER_SCHEMA = 'org.gnome.mutter';

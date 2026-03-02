@@ -1,16 +1,16 @@
-import type { NotificationPort, NotificationInitOptions } from '../ports/notification-port.js';
-import type { NotificationOverlayScene, NotificationCardScene } from '../domain/notification-scene.js';
-import type { DomainNotification } from '../domain/notification.js';
-import type { OverlayNotification } from '../domain/notification-types.js';
-import type { QuestionState, NotificationCardDelegate } from '../ui-components/notification-adapter-types.js';
-import { PermissionCard } from '../ui-components/permission-card.js';
-import { NotificationCard } from '../ui-components/notification-card.js';
-import { QuestionCard } from '../ui-components/question-card.js';
-import { getCardBehavior } from '../ui-components/card-behavior.js';
+import type { NotificationPort, NotificationInitOptions } from '../../ports/notification-port.js';
+import type { NotificationOverlayScene, NotificationCardScene } from '../../domain/notification-scene.js';
+import type { DomainNotification } from '../../domain/notification.js';
+import type { OverlayNotification } from '../../domain/notification-types.js';
+import type { QuestionState, NotificationCardDelegate } from '../../ui-components/notification-adapter-types.js';
+import { PermissionCard } from '../../ui-components/permission-card.js';
+import { NotificationCard } from '../../ui-components/notification-card.js';
+import { QuestionCard } from '../../ui-components/question-card.js';
+import { getCardBehavior } from '../../ui-components/card-behavior.js';
 import {
     buildNotificationContainer, buildCountBadge, buildCardStyle,
     QUESTION_CARD_WIDTH, CARD_RIGHT_OFFSET,
-} from '../ui-components/notification-overlay-builders.js';
+} from '../../ui-components/notification-overlay-builders.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Graphene from 'gi://Graphene';

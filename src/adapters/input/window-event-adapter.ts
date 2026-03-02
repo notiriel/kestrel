@@ -1,6 +1,6 @@
-import type { WindowId } from '../domain/types.js';
-import type { WindowEventPort, WindowEventCallbacks } from '../ports/window-event-port.js';
-import { safeDisconnect } from './signal-utils.js';
+import type { WindowId } from '../../domain/types.js';
+import type { WindowEventPort, WindowEventCallbacks } from '../../ports/window-event-port.js';
+import { safeDisconnect } from '../signal-utils.js';
 import Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
 

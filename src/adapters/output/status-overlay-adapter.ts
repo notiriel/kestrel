@@ -1,14 +1,14 @@
-import type { WindowId } from '../domain/types.js';
-import type { World } from '../domain/world.js';
-import type { OverviewTransform } from '../ports/clone-port.js';
-import { safeDisconnect } from './signal-utils.js';
-import { buildStatusIcon, buildStatusStyle } from '../ui-components/status-badge-builders.js';
-import { computeStatusBadgeScenes, type StatusBadgeScene } from '../domain/notification-scene.js';
+import type { WindowId } from '../../domain/types.js';
+import type { World } from '../../domain/world.js';
+import type { OverviewTransform } from '../../ports/clone-port.js';
+import { safeDisconnect } from '../signal-utils.js';
+import { buildStatusIcon, buildStatusStyle } from '../../ui-components/status-badge-builders.js';
+import { computeStatusBadgeScenes, type StatusBadgeScene } from '../../domain/notification-scene.js';
 import St from 'gi://St';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
 
-import type { ClaudeStatus } from '../domain/notification-types.js';
+import type { ClaudeStatus } from '../../domain/notification-types.js';
 
 const PROBE_PATTERN = /^kestrel_probe_(.+)$/;
 

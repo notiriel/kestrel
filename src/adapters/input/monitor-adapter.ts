@@ -1,5 +1,5 @@
-import type { MonitorInfo } from '../domain/types.js';
-import type { MonitorPort } from '../ports/monitor-port.js';
+import type { MonitorInfo } from '../../domain/types.js';
+import type { MonitorPort } from '../../ports/monitor-port.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 export class MonitorAdapter implements MonitorPort {

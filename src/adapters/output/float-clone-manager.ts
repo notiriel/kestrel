@@ -1,6 +1,6 @@
-import type { WindowId } from '../domain/types.js';
-import type { FloatClonePort } from '../ports/clone-port.js';
-import { safeDisconnect } from './signal-utils.js';
+import type { WindowId } from '../../domain/types.js';
+import type { FloatClonePort } from '../../ports/clone-port.js';
+import { safeDisconnect } from '../signal-utils.js';
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
 

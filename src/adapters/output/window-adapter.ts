@@ -1,7 +1,7 @@
-import type { WindowId } from '../domain/types.js';
-import type { SceneModel, RealWindowScene } from '../domain/scene.js';
-import type { WindowPort } from '../ports/window-port.js';
-import { safeDisconnect } from './signal-utils.js';
+import type { WindowId } from '../../domain/types.js';
+import type { SceneModel, RealWindowScene } from '../../domain/scene.js';
+import type { WindowPort } from '../../ports/window-port.js';
+import { safeDisconnect } from '../signal-utils.js';
 import Meta from 'gi://Meta';
 
 interface TrackedWindow {

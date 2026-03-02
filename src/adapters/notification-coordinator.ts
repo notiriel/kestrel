@@ -20,8 +20,8 @@ import {
     expandStack, collapseStack, expandCard, collapseCard,
 } from '../domain/notification-scene.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
-import { StatusOverlayAdapter } from './status-overlay-adapter.js';
-import { NotificationOverlayAdapter } from './notification-overlay-adapter.js';
+import { StatusOverlayAdapter } from './output/status-overlay-adapter.js';
+import { NotificationOverlayAdapter } from './output/notification-overlay-adapter.js';
 import { KestrelDBusService } from './dbus-service.js';
 import { NotificationFocusMode } from './notification-focus-mode.js';
 import type Clutter from 'gi://Clutter';

@@ -44,17 +44,27 @@ graph TB
 
     subgraph "Adapters (src/adapters/)"
         direction LR
-        cloneAdapter["clone-adapter.ts"]
-        windowAdapter["window-adapter.ts"]
-        focusAdapter["focus-adapter.ts"]
-        monitorAdapter["monitor-adapter.ts"]
-        keybindingAdapter["keybinding-adapter.ts"]
+        subgraph "input/"
+            monitorAdapter["monitor-adapter.ts"]
+            keybindingAdapter["keybinding-adapter.ts"]
+            windowEventAdapter["window-event-adapter.ts"]
+            conflictDetector["conflict-detector.ts"]
+            overviewInput["overview-input-adapter.ts"]
+            mouseInput["mouse-input-adapter.ts"]
+        end
+        subgraph "output/"
+            cloneAdapter["clone-adapter.ts"]
+            windowAdapter["window-adapter.ts"]
+            focusAdapter["focus-adapter.ts"]
+            notifOverlay["notification-overlay-adapter.ts"]
+            panelIndicator["panel-indicator-adapter.ts"]
+            quakeAdapter["quake-window-adapter.ts"]
+            statusOverlay["status-overlay-adapter.ts"]
+            floatClone["float-clone-manager.ts"]
+        end
         shellAdapter["shell-adapter.ts"]
-        windowEventAdapter["window-event-adapter.ts"]
         statePersistence["state-persistence.ts"]
-        conflictDetector["conflict-detector.ts"]
         notifCoordinator["notification-coordinator.ts"]
-        notifOverlay["notification-overlay-adapter.ts"]
         handlers["Handlers:\nnavigation-handler.ts\noverview-handler.ts\nwindow-lifecycle-handler.ts"]
     end
 
@@ -135,22 +145,31 @@ Interface definitions only. No `gi://` imports. The extension depends on ports, 
 
 GNOME Shell integration via `gi://` imports. Each adapter implements its corresponding port.
 
-**Core adapters:**
+**Input adapters (`src/adapters/input/`)** — detect reality events and call the domain:
+
+| File | Purpose |
+|------|---------|
+| `keybinding-adapter.ts` | Registers GNOME keybindings from schema. Implements `KeybindingPort` |
+| `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
+| `overview-input-adapter.ts` | Keyboard input handler for overview mode |
+| `window-event-adapter.ts` | `window-created`/`destroy`/`first-frame` signals, separates float windows. Implements `WindowEventPort` |
+| `monitor-adapter.ts` | Reads monitor geometry, `monitors-changed` signal. Implements `MonitorPort` |
+| `conflict-detector.ts` | Detects/disables conflicting GNOME extensions. Implements `ConflictDetectorPort` |
+
+**Output adapters (`src/adapters/output/`)** — called by domain (via WorldHolder) to render state:
 
 | File | Purpose |
 |------|---------|
 | `clone-adapter.ts` | `Clutter.Clone` lifecycle, workspace strip, focus indicator, overview zoom. Implements `CloneLifecyclePort`, `CloneRenderPort`, `OverviewRenderPort`, `OverviewFilterPort` |
 | `window-adapter.ts` | Positions real `Meta.Window`s via `move_resize_frame()`, tracks settlement. Implements `WindowPort` |
 | `focus-adapter.ts` | `Meta.Window.activate()`, external focus tracking, new/close window suppression. Implements `FocusPort` |
-| `monitor-adapter.ts` | Reads monitor geometry, `monitors-changed` signal. Implements `MonitorPort` |
-| `keybinding-adapter.ts` | Registers GNOME keybindings from schema. Implements `KeybindingPort` |
-| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations. Implements `ShellPort` |
-| `window-event-adapter.ts` | `window-created`/`destroy`/`first-frame` signals, separates float windows. Implements `WindowEventPort` |
-| `state-persistence.ts` | Saves/restores world state to dconf settings. Implements `StatePersistencePort` |
-| `conflict-detector.ts` | Detects/disables conflicting GNOME extensions. Implements `ConflictDetectorPort` |
 | `quake-window-adapter.ts` | Positions and animates quake overlay windows via `move_resize_frame()` and `Clutter.ease()`, launches apps via `Shell.AppSystem`, matches windows to app IDs via `Shell.WindowTracker` |
+| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch. Implements `PanelIndicatorPort` |
+| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI. Implements `NotificationPort` |
+| `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
+| `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 
-**Handlers** (orchestrate domain calls + adapter updates):
+**Handlers** (orchestrate domain calls + adapter updates, stay at `src/adapters/` root):
 
 | File | Purpose |
 |------|---------|
@@ -163,26 +182,17 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 | File | Purpose |
 |------|---------|
 | `notification-coordinator.ts` | Orchestrates status/permission/notification overlays, DBus, focus mode, Claude session watching |
-| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI. Implements `NotificationPort` |
 | `notification-focus-mode.ts` | Keyboard-driven navigation for permission/question cards |
-| `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
 | `dbus-service.ts` | Exports `io.kestrel.Extension` DBus interface |
 
-**UI adapters:**
+**Root-level adapters and utilities (`src/adapters/`):**
 
 | File | Purpose |
 |------|---------|
-| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch. Implements `PanelIndicatorPort` |
-| `overview-input-adapter.ts` | Keyboard input handler for overview mode |
-| `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
-
-**Utilities:**
-
-| File | Purpose |
-|------|---------|
+| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations. Implements `ShellPort` |
+| `state-persistence.ts` | Saves/restores world state to dconf settings. Implements `StatePersistencePort` |
 | `world-holder.ts` | Observer hub: holds `World` state, multicasts `WorldUpdate` to `SceneSubscriber`s (clone, window, focus, quake) and `WorldSubscriber`s (panel indicator). Handlers call `applyUpdate()` instead of directly invoking adapters |
 | `settlement-retry.ts` | Exponential-backoff layout retry for async window configures (primarily Wayland). Delays: `[100, 150, 200, 300, 400, 500, 750, 1000]` ms |
-| `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
 | `safe-window.ts` | Safe extraction of window information |
 | `signal-utils.ts` | GObject signal management helpers |
@@ -323,20 +333,20 @@ interface QuakeWindowScene {
 
 | Port Interface | Implementing Adapter | Key Responsibilities |
 |----------------|---------------------|---------------------|
-| `CloneLifecyclePort` | `clone-adapter.ts` | Clone creation/destruction, workspace containers |
-| `CloneRenderPort` | `clone-adapter.ts` | Clone positioning, scroll offsets, focus indicator |
-| `OverviewRenderPort` | `clone-adapter.ts` | Overview zoom transform, workspace labels |
-| `OverviewFilterPort` | `clone-adapter.ts` | Filter/sort clones during overview |
-| `WindowPort` | `window-adapter.ts` | Real window positioning via `move_resize_frame()` |
-| `FocusPort` | `focus-adapter.ts` | Window activation, focus suppression |
-| `MonitorPort` | `monitor-adapter.ts` | Monitor geometry, layout change signals |
-| `KeybindingPort` | `keybinding-adapter.ts` | GNOME keybinding registration |
+| `CloneLifecyclePort` | `output/clone-adapter.ts` | Clone creation/destruction, workspace containers |
+| `CloneRenderPort` | `output/clone-adapter.ts` | Clone positioning, scroll offsets, focus indicator |
+| `OverviewRenderPort` | `output/clone-adapter.ts` | Overview zoom transform, workspace labels |
+| `OverviewFilterPort` | `output/clone-adapter.ts` | Filter/sort clones during overview |
+| `WindowPort` | `output/window-adapter.ts` | Real window positioning via `move_resize_frame()` |
+| `FocusPort` | `output/focus-adapter.ts` | Window activation, focus suppression |
+| `MonitorPort` | `input/monitor-adapter.ts` | Monitor geometry, layout change signals |
+| `KeybindingPort` | `input/keybinding-adapter.ts` | GNOME keybinding registration |
 | `ShellPort` | `shell-adapter.ts` | Overview hiding, animation interception |
-| `WindowEventPort` | `window-event-adapter.ts` | Window lifecycle signals (create/destroy) |
+| `WindowEventPort` | `input/window-event-adapter.ts` | Window lifecycle signals (create/destroy) |
 | `StatePersistencePort` | `state-persistence.ts` | World state save/restore to dconf |
-| `ConflictDetectorPort` | `conflict-detector.ts` | Conflicting extension detection |
-| `NotificationPort` | `notification-overlay-adapter.ts` | Permission/notification/question card rendering |
-| `PanelIndicatorPort` | `panel-indicator-adapter.ts` | Top panel workspace indicator |
+| `ConflictDetectorPort` | `input/conflict-detector.ts` | Conflicting extension detection |
+| `NotificationPort` | `output/notification-overlay-adapter.ts` | Permission/notification/question card rendering |
+| `PanelIndicatorPort` | `output/panel-indicator-adapter.ts` | Top panel workspace indicator |
 
 ## 5. Extension Entry Point
 

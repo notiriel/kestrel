@@ -10,7 +10,7 @@ import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, star
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { SceneApplyOptions } from './world-holder.js';
-import type { OverviewInputAdapter } from './overview-input-adapter.js';
+import type { OverviewInputAdapter } from './input/overview-input-adapter.js';
 
 export interface OverviewDeps {
     getWorld(): World | null;

@@ -1,4 +1,4 @@
-import type { ConflictDetectorPort } from '../ports/conflict-detector-port.js';
+import type { ConflictDetectorPort } from '../../ports/conflict-detector-port.js';
 import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Source, Notification, NotificationDestroyedReason } from 'resource:///org/gnome/shell/ui/messageTray.js';

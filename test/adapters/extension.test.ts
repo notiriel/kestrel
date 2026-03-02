@@ -47,7 +47,7 @@ function mockMethods(...names: string[]) {
 // Store the latest mock instance created by each constructor
 const mockInstances: Record<string, any> = {};
 
-vi.mock('../../src/adapters/monitor-adapter.js', () => ({
+vi.mock('../../src/adapters/input/monitor-adapter.js', () => ({
     MonitorAdapter: vi.fn().mockImplementation(() => {
         const inst = {
             readPrimaryMonitor: vi.fn().mockImplementation((_columnCount: number) => ({
@@ -67,14 +67,14 @@ vi.mock('../../src/adapters/shell-adapter.js', () => ({
         return inst;
     }),
 }));
-vi.mock('../../src/adapters/window-event-adapter.js', () => ({
+vi.mock('../../src/adapters/input/window-event-adapter.js', () => ({
     WindowEventAdapter: vi.fn().mockImplementation(() => {
         const inst = mockMethods('connect', 'enumerateExisting', 'destroy');
         mockInstances.windowEvent = inst;
         return inst;
     }),
 }));
-vi.mock('../../src/adapters/clone-adapter.js', () => ({
+vi.mock('../../src/adapters/output/clone-adapter.js', () => ({
     CloneAdapter: vi.fn().mockImplementation(() => {
         const inst = {
             ...mockMethods(
@@ -90,7 +90,7 @@ vi.mock('../../src/adapters/clone-adapter.js', () => ({
         return inst;
     }),
 }));
-vi.mock('../../src/adapters/window-adapter.js', () => ({
+vi.mock('../../src/adapters/output/window-adapter.js', () => ({
     WindowAdapter: vi.fn().mockImplementation(() => {
         const inst = {
             ...mockMethods('setWorkAreaY', 'setMonitorBounds', 'track', 'untrack', 'setWindowFullscreen', 'applyScene', 'destroy'),
@@ -100,22 +100,22 @@ vi.mock('../../src/adapters/window-adapter.js', () => ({
         return inst;
     }),
 }));
-vi.mock('../../src/adapters/focus-adapter.js', () => ({
+vi.mock('../../src/adapters/output/focus-adapter.js', () => ({
     FocusAdapter: vi.fn().mockImplementation(() => {
         const inst = mockMethods('track', 'untrack', 'focus', 'focusInternal', 'getMetaWindow', 'openNewWindow', 'closeWindow', 'connectFocusChanged', 'destroy');
         mockInstances.focus = inst;
         return inst;
     }),
 }));
-vi.mock('../../src/adapters/keybinding-adapter.js', () => ({
+vi.mock('../../src/adapters/input/keybinding-adapter.js', () => ({
     KeybindingAdapter: vi.fn().mockImplementation(() => {
         const inst = mockMethods('connect', 'destroy');
         mockInstances.keybinding = inst;
         return inst;
     }),
 }));
-vi.mock('../../src/adapters/overview-input-adapter.js', () => ({ OverviewInputAdapter: vi.fn() }));
-vi.mock('../../src/adapters/conflict-detector.js', () => ({
+vi.mock('../../src/adapters/input/overview-input-adapter.js', () => ({ OverviewInputAdapter: vi.fn() }));
+vi.mock('../../src/adapters/input/conflict-detector.js', () => ({
     ConflictDetector: vi.fn().mockImplementation(() => {
         const inst = mockMethods('detectConflicts', 'destroy');
         mockInstances.conflictDetector = inst;
@@ -153,7 +153,7 @@ vi.mock('../../src/adapters/notification-coordinator.js', () => ({
         getWindowForSession: vi.fn().mockReturnValue(null),
     })),
 }));
-vi.mock('../../src/adapters/panel-indicator-adapter.js', () => ({
+vi.mock('../../src/adapters/output/panel-indicator-adapter.js', () => ({
     PanelIndicatorAdapter: vi.fn().mockImplementation(() => ({
         init: vi.fn(),
         update: vi.fn(),
@@ -166,14 +166,14 @@ vi.mock('../../src/ui-components/help-overlay.js', () => ({
         destroy: vi.fn(),
     })),
 }));
-vi.mock('../../src/adapters/mouse-input-adapter.js', () => ({
+vi.mock('../../src/adapters/input/mouse-input-adapter.js', () => ({
     MouseInputAdapter: vi.fn().mockImplementation(() => {
         const inst = mockMethods('activate', 'deactivate', 'destroy');
         mockInstances.mouseInput = inst;
         return inst;
     }),
 }));
-vi.mock('../../src/adapters/quake-window-adapter.js', () => ({
+vi.mock('../../src/adapters/output/quake-window-adapter.js', () => ({
     QuakeWindowAdapter: vi.fn().mockImplementation(() => {
         const inst = {
             ...mockMethods('track', 'untrack', 'applyQuakeScene', 'launchApp', 'matchWindowToSlot', 'restoreFocus', 'destroy'),

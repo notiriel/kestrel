@@ -1,10 +1,10 @@
-import type { WindowId, KestrelConfig } from '../domain/types.js';
-import type { QuakeWindowScene } from '../domain/scene.js';
+import type { WindowId, KestrelConfig } from '../../domain/types.js';
+import type { QuakeWindowScene } from '../../domain/scene.js';
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import { rawWindow } from './safe-window.js';
+import { rawWindow } from '../safe-window.js';
 
 interface Easeable {
     ease(params: Record<string, unknown>): void;

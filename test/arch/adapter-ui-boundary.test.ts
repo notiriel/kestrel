@@ -45,27 +45,37 @@ function isExemptLine(line: string): boolean {
  */
 const KNOWN_VIOLATIONS: Record<string, string> = {
     // CloneAdapter: widget creation, animation, GObject subclass — pending CloneRenderer extraction
-    'clone-adapter.ts': 'Pending CloneRenderer extraction (Phase 2b)',
+    'output/clone-adapter.ts': 'Pending CloneRenderer extraction (Phase 2b)',
     // Notification overlay: animation and Graphene — pending builder extraction
-    'notification-overlay-adapter.ts': 'Pending animation extraction to builders',
+    'output/notification-overlay-adapter.ts': 'Pending animation extraction to builders',
     // Focus mode: Clutter.Clone creation and animation — pending builder extraction
     'notification-focus-mode.ts': 'Pending builder extraction',
     // Panel indicator: PanelMenu/PopupMenu construction — pending builder extraction
-    'panel-indicator-adapter.ts': 'Pending builder extraction',
+    'output/panel-indicator-adapter.ts': 'Pending builder extraction',
     // Float clone manager: Clutter actor creation — pending builder extraction
-    'float-clone-manager.ts': 'Pending builder extraction',
+    'output/float-clone-manager.ts': 'Pending builder extraction',
     // Conflict detector: messageTray Source/Notification — pending builder extraction
-    'conflict-detector.ts': 'Pending builder extraction',
+    'input/conflict-detector.ts': 'Pending builder extraction',
     // Status overlay: .style assignments — pending extraction to status-badge-builders
-    'status-overlay-adapter.ts': 'Pending style extraction to builders',
+    'output/status-overlay-adapter.ts': 'Pending style extraction to builders',
     // Quake window adapter: .ease() animation for slide in/out
-    'quake-window-adapter.ts': 'Pending animation extraction to builders',
+    'output/quake-window-adapter.ts': 'Pending animation extraction to builders',
 };
 
 function getAdapterFiles(): string[] {
-    return readdirSync(ADAPTERS_DIR)
-        .filter(f => f.endsWith('.ts'))
-        .sort();
+    const files: string[] = [];
+    for (const entry of readdirSync(ADAPTERS_DIR, { withFileTypes: true })) {
+        if (entry.isFile() && entry.name.endsWith('.ts')) {
+            files.push(entry.name);
+        } else if (entry.isDirectory()) {
+            for (const sub of readdirSync(resolve(ADAPTERS_DIR, entry.name))) {
+                if (sub.endsWith('.ts')) {
+                    files.push(`${entry.name}/${sub}`);
+                }
+            }
+        }
+    }
+    return files.sort();
 }
 
 function scanFile(filePath: string): { line: number; label: string; text: string }[] {

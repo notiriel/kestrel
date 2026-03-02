@@ -101,22 +101,31 @@ B is focused. WS2 has D, E.
 
 `src/adapters/` — GNOME Shell integration via `gi://` imports. Each adapter implements its corresponding port.
 
-**Core adapters:**
+**Input adapters (`src/adapters/input/`)** — detect reality events, call the domain:
+
+| File | Purpose |
+|------|---------|
+| `keybinding-adapter.ts` | Registers GNOME keybindings from settings schema |
+| `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
+| `overview-input-adapter.ts` | Keyboard input handler for overview mode |
+| `window-event-adapter.ts` | Listens for `window-created`/`destroy` signals, waits for `first-frame`, separates float windows |
+| `monitor-adapter.ts` | Reads monitor geometry, listens for layout changes |
+| `conflict-detector.ts` | Detects and disables conflicting GNOME extensions at runtime |
+
+**Output adapters (`src/adapters/output/`)** — called by domain (via WorldHolder) to render state:
 
 | File | Purpose |
 |------|---------|
 | `clone-adapter.ts` | `Clutter.Clone` of `WindowActor`s on custom layer; manages clone lifecycle, workspace containers, layout |
 | `window-adapter.ts` | Positions real `Meta.Window`s via `move_resize_frame()`, tracks settlement |
 | `focus-adapter.ts` | Activates windows via `Meta.Window.activate()`, suppresses feedback loops |
-| `monitor-adapter.ts` | Reads monitor geometry, listens for layout changes |
-| `keybinding-adapter.ts` | Registers GNOME keybindings from settings schema |
-| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations |
-| `window-event-adapter.ts` | Listens for `window-created`/`destroy` signals, waits for `first-frame`, separates float windows |
-| `state-persistence.ts` | Saves/restores world state to dconf settings, reads config from schema |
-| `conflict-detector.ts` | Detects and disables conflicting GNOME extensions at runtime |
 | `quake-window-adapter.ts` | Positions and animates quake overlay windows, launches apps via Shell.AppSystem |
+| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch |
+| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI |
+| `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
+| `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 
-**Handlers (orchestrate domain calls + adapter updates):**
+**Handlers (orchestrate domain calls + adapter updates, at `src/adapters/` root):**
 
 | File | Purpose |
 |------|---------|
@@ -129,26 +138,17 @@ B is focused. WS2 has D, E.
 | File | Purpose |
 |------|---------|
 | `notification-coordinator.ts` | Orchestrates permission cards, notifications, DBus, focus mode, Claude session watching |
-| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI |
 | `notification-focus-mode.ts` | Keyboard-driven navigation for permission/question cards |
-| `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
 | `dbus-service.ts` | Exports `io.kestrel.Extension` DBus interface for Claude Code plugin |
 
-**UI adapters:**
+**Root-level adapters and utilities (`src/adapters/`):**
 
 | File | Purpose |
 |------|---------|
-| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch |
-| `overview-input-adapter.ts` | Keyboard input handler for overview mode |
-| `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
-
-**Utilities:**
-
-| File | Purpose |
-|------|---------|
+| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations |
+| `state-persistence.ts` | Saves/restores world state to dconf settings, reads config from schema |
 | `world-holder.ts` | Observer hub: holds `World` state, multicasts updates to `SceneSubscriber`s and `WorldSubscriber`s |
 | `settlement-retry.ts` | Exponential-backoff layout retry for async window configures (primarily Wayland) |
-| `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
 | `safe-window.ts` | Safe extraction of window information |
 | `signal-utils.ts` | GObject signal management helpers |
@@ -241,7 +241,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 |-----------|----------|
 | `test/domain/` | Unit tests for all domain modules (world, navigation, layout, scene, workspace, window-operations, overview, notifications, fullscreen, fuzzy-match, filter-workspaces, workspace-naming, quake) |
 | `test/adapters/` | Integration tests for handlers and extension (overview-handler, navigation-handler, window-lifecycle-handler, extension) |
-| `test/arch/` | Architecture boundary test — verifies domain files have no `gi://` imports |
+| `test/arch/` | Architecture boundary tests — domain has no `gi://` imports, adapter UI code in ui-components/, input/output adapters don't cross-reference |
 | `test/adapters/mock-ports.ts` | Mock implementations of all ports for adapter testing |
 
 ## Design Docs

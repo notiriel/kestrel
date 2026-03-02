@@ -1,5 +1,5 @@
-import type { WindowId } from '../domain/types.js';
-import type { FocusPort } from '../ports/focus-port.js';
+import type { WindowId } from '../../domain/types.js';
+import type { FocusPort } from '../../ports/focus-port.js';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';

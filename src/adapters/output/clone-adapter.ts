@@ -1,13 +1,13 @@
-import type { WindowId, WorkspaceId, KestrelConfig } from '../domain/types.js';
-import type { SceneModel } from '../domain/scene.js';
-import type { ClonePort, OverviewTransform } from '../ports/clone-port.js';
-import { safeDisconnect } from './signal-utils.js';
+import type { WindowId, WorkspaceId, KestrelConfig } from '../../domain/types.js';
+import type { SceneModel } from '../../domain/scene.js';
+import type { ClonePort, OverviewTransform } from '../../ports/clone-port.js';
+import { safeDisconnect } from '../signal-utils.js';
 import { FloatCloneManager } from './float-clone-manager.js';
-import { easeOrSet } from '../ui-components/animation-helpers.js';
+import { easeOrSet } from '../../ui-components/animation-helpers.js';
 import {
     buildOverviewBackground, buildFilterIndicator, buildRenameEntry,
     buildWorkspaceLabel, buildFocusIndicatorStyle, buildFocusIndicator,
-} from '../ui-components/clone-ui-builders.js';
+} from '../../ui-components/clone-ui-builders.js';
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
