@@ -2,7 +2,7 @@ import type { WindowId } from '../domain/types.js';
 import type { World } from '../domain/world.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
 import { safeDisconnect } from './signal-utils.js';
-import { buildStatusIcon, buildStatusStyle, STATUS_COLORS } from '../ui-components/status-badge-builders.js';
+import { buildStatusIcon, buildStatusStyle } from '../ui-components/status-badge-builders.js';
 import { computeStatusBadgeScenes, type StatusBadgeScene } from '../domain/notification-scene.js';
 import St from 'gi://St';
 import Gio from 'gi://Gio';
@@ -69,42 +69,11 @@ export class StatusOverlayAdapter {
         }
     }
 
-    setWindowStatus(sessionId: string, status: string): void {
-        const world = this._getWorld?.();
-        if (!world) return;
-
-        const windowId = world.notificationState.sessionWindows.get(sessionId);
-        if (!windowId) {
-            console.log(`[Kestrel] setWindowStatus: unknown session ${sessionId}`);
-            return;
-        }
-
-        if (status === 'end') {
-            this._clearOverlay(windowId);
-            return;
-        }
-
-        this._applyOverlayStatus(windowId, status);
-    }
-
     private _clearOverlay(windowId: WindowId): void {
         const overlay = this._overlays.get(windowId);
         if (overlay) {
             overlay.destroy();
             this._overlays.delete(windowId);
-        }
-    }
-
-    private _applyOverlayStatus(windowId: WindowId, status: string): void {
-        const validStatus = status as ClaudeStatus;
-        if (!STATUS_COLORS[validStatus]) {
-            console.log(`[Kestrel] setWindowStatus: unknown status ${status}`);
-            return;
-        }
-
-        const overlay = this._overlays.get(windowId);
-        if (overlay) {
-            overlay.style = buildStatusStyle(validStatus);
         }
     }
 

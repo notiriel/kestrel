@@ -189,9 +189,7 @@ export class NotificationCoordinator {
             ns = setSessionStatus(world.notificationState, sessionId, validStatus);
         }
         this._deps.setWorld(updateNotificationState(world, ns));
-
-        // Also update the status overlay visuals
-        this._statusOverlay?.setWindowStatus(sessionId, status);
+        this._applyOverlayScene();
     }
 
     handlePermissionRequest(jsonPayload: string): string {

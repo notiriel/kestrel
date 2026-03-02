@@ -239,13 +239,17 @@ export function unregisterWindow(state: NotificationState, windowId: WindowId): 
     return { ...state, sessionWindows, windowStatuses };
 }
 
-/** Update window status via session → window lookup. */
+/** Update window status via session → window lookup. Dismisses stale notifications when working. */
 export function setSessionStatus(state: NotificationState, sessionId: string, status: ClaudeStatus): NotificationState {
     const windowId = state.sessionWindows.get(sessionId);
     if (!windowId) return state;
     const windowStatuses = new Map(state.windowStatuses);
     windowStatuses.set(windowId, status);
-    return { ...state, windowStatuses };
+    let result = { ...state, windowStatuses };
+    if (status === 'working') {
+        result = dismissForSession(result, sessionId);
+    }
+    return result;
 }
 
 /** Remove session mapping and window status (for 'end' status). */

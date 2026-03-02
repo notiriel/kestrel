@@ -3,7 +3,7 @@ import Gio from 'gi://Gio';
 
 import type { ClaudeStatus } from '../domain/notification-types.js';
 
-export const STATUS_COLORS: Record<ClaudeStatus, string> = {
+const STATUS_COLORS: Record<ClaudeStatus, string> = {
     'working': '#4CAF50',
     'needs-input': '#F44336',
     'done': '#FF9800',

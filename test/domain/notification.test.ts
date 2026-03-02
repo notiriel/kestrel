@@ -489,6 +489,47 @@ describe('Notification domain model', () => {
             expect(result).toBe(state);
         });
 
+        it('setSessionStatus working dismisses stale notifications for session', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({
+                id: 'n1', sessionId: 'sess-1', type: 'notification',
+            });
+            s = addNotification(s, notif);
+            expect(s.notifications.size).toBe(1);
+
+            s = setSessionStatus(s, 'sess-1', 'working');
+            expect(s.windowStatuses.get(win1)).toBe('working');
+            expect(s.notifications.size).toBe(0);
+        });
+
+        it('setSessionStatus working preserves pending permission cards', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const perm = makeDomainNotification({
+                id: 'p1', sessionId: 'sess-1', type: 'permission', status: 'pending',
+            });
+            const notif = makeDomainNotification({
+                id: 'n1', sessionId: 'sess-1', type: 'notification',
+            });
+            s = addNotification(s, perm);
+            s = addNotification(s, notif);
+            expect(s.notifications.size).toBe(2);
+
+            s = setSessionStatus(s, 'sess-1', 'working');
+            expect(s.notifications.size).toBe(1);
+            expect(s.notifications.has('p1')).toBe(true);
+        });
+
+        it('setSessionStatus done does not dismiss notifications', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const notif = makeDomainNotification({
+                id: 'n1', sessionId: 'sess-1', type: 'notification',
+            });
+            s = addNotification(s, notif);
+
+            s = setSessionStatus(s, 'sess-1', 'done');
+            expect(s.notifications.size).toBe(1);
+        });
+
         it('clearSession removes session mapping and window status', () => {
             let s = registerSession(state, 'sess-1', win1);
             s = setSessionStatus(s, 'sess-1', 'working');
