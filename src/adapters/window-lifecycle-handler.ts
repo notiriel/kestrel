@@ -67,6 +67,8 @@ export class WindowLifecycleHandler {
     private _tryAssignQuakeSlot(world: World, windowId: WindowId, metaWindow: Meta.Window): boolean {
         const quakeSlot = this._deps.matchQuakeSlot(metaWindow);
         if (quakeSlot === null) return false;
+        // Slot already has a window assigned — let this window be tiled normally
+        if (world.quakeState.slots[quakeSlot] !== null) return false;
 
         this._deps.log(`[Kestrel] quake window matched slot ${quakeSlot}: ${windowId}`);
         const update = assignQuakeWindow(world, quakeSlot, windowId);

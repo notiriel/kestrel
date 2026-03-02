@@ -13,6 +13,7 @@ vi.mock('../../src/adapters/safe-window.js', () => ({
 
 import { WindowLifecycleHandler, type WindowLifecycleDeps } from '../../src/adapters/window-lifecycle-handler.js';
 import { createWorld, addWindow } from '../../src/domain/world.js';
+import { assignQuakeWindow } from '../../src/domain/quake.js';
 import type { WindowId } from '../../src/domain/types.js';
 import type { World } from '../../src/domain/world.js';
 
@@ -172,6 +173,35 @@ describe('WindowLifecycleHandler', () => {
             handler.handleWindowReady('w-1' as WindowId, mockMetaWindow() as any);
 
             expect(mocks.cloneAdapter.addClone).not.toHaveBeenCalled();
+        });
+
+        it('assigns window to empty quake slot', () => {
+            const quakeConfig = { ...CONFIG, quakeSlots: [{ appId: 'org.gnome.Terminal.desktop' }] };
+            const world = createWorld(quakeConfig, MONITOR);
+            const { deps, mocks } = createMockDeps(world);
+            mocks.matchQuakeSlot.mockReturnValue(0);
+            const handler = new WindowLifecycleHandler(deps);
+
+            handler.handleWindowReady('w-1' as WindowId, mockMetaWindow() as any);
+
+            expect(mocks.trackQuakeWindow).toHaveBeenCalledWith('w-1', expect.anything());
+            expect(mocks.applyQuakeScene).toHaveBeenCalled();
+            expect(mocks.cloneAdapter.addClone).not.toHaveBeenCalled();
+        });
+
+        it('tiles window normally when quake slot is already occupied', () => {
+            const quakeConfig = { ...CONFIG, quakeSlots: [{ appId: 'org.gnome.Terminal.desktop' }] };
+            let world = createWorld(quakeConfig, MONITOR);
+            world = assignQuakeWindow(world, 0, 'w-existing' as WindowId).world;
+            const { deps, mocks } = createMockDeps(world);
+            mocks.matchQuakeSlot.mockReturnValue(0);
+            const handler = new WindowLifecycleHandler(deps);
+
+            handler.handleWindowReady('w-2' as WindowId, mockMetaWindow() as any);
+
+            expect(mocks.trackQuakeWindow).not.toHaveBeenCalled();
+            expect(mocks.cloneAdapter.addClone).toHaveBeenCalled();
+            expect(mocks.focusWindow).toHaveBeenCalledWith('w-2');
         });
 
         it('unmaximizes restored window that was maximized', () => {
