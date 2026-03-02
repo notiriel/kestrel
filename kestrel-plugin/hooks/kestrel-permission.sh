@@ -19,6 +19,25 @@ if [ "$TOOL_NAME" = "AskUserQuestion" ]; then
     exit 0
 fi
 
+# Skip ExitPlanMode — hook-based allow doesn't exit plan mode (upstream bug),
+# and the terminal UI has the proper multi-choice widget. Fire a notification
+# so the user knows even when the session isn't the focused window.
+if [ "$TOOL_NAME" = "ExitPlanMode" ]; then
+    log "skipping ExitPlanMode — sending notification and falling through to terminal UI"
+    SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
+    NOTIFY_PAYLOAD=$(jq -n -c --arg sid "$SESSION_ID" '{
+        session_id: $sid,
+        type: "notification",
+        title: "Plan Mode",
+        message: "Wants to exit plan mode",
+    }')
+    gdbus call --session --dest org.gnome.Shell \
+        --object-path /io/kestrel/Extension \
+        --method io.kestrel.Extension.HandleNotification \
+        "$NOTIFY_PAYLOAD" >/dev/null 2>&1 || true
+    exit 0
+fi
+
 # If screen is locked, fall through to terminal UI — user can't see the overlay
 SCREEN_LOCKED=$(gdbus call --session --dest org.gnome.ScreenSaver \
     --object-path /org/gnome/ScreenSaver \
