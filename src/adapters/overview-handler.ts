@@ -1,7 +1,8 @@
-import type { WindowId, WorldUpdate } from '../domain/types.js';
+import type { WindowId, WorkspaceColorId, WorldUpdate } from '../domain/types.js';
+import { nextWorkspaceColor } from '../domain/types.js';
 import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
-import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace } from '../domain/world.js';
+import { setFocus, filterWorkspaces, renameCurrentWorkspace, setCurrentWorkspaceColor, switchToWorkspace } from '../domain/world.js';
 import { computeScene } from '../domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
@@ -102,6 +103,7 @@ export class OverviewHandler {
             onTextInput: (text) => this._handleTextInput(text),
             onBackspace: () => this._handleBackspace(),
             onRename: () => this._handleRename(),
+            onColorPick: () => this._handleColorPick(),
         });
     }
 
@@ -186,10 +188,13 @@ export class OverviewHandler {
         const world = this._deps.getWorld();
         if (!world) return;
 
-        if (this._cancelRename(world)) return;
-        if (this._cancelFilter(world)) return;
+        if (this._cancelActiveOverviewAction(world)) return;
         if (this._cancelDrag()) return;
         this._cancelNormal(world);
+    }
+
+    private _cancelActiveOverviewAction(world: World): boolean {
+        return this._cancelRename(world) || this._cancelFilter(world);
     }
 
     private _cancelRename(world: World): boolean {
@@ -232,7 +237,6 @@ export class OverviewHandler {
             const hitWindowId = this._hitTest(world, x, y);
             if (!hitWindowId) return;
 
-            // setWorld to store the focused world, then handleConfirm exits overview
             const update = setFocus(world, hitWindowId);
             this._deps.setWorld(update.world);
             this.handleConfirm();
@@ -521,6 +525,34 @@ export class OverviewHandler {
         this._deps.getCloneAdapter()?.syncWorkspaces(renamed.workspaces);
     }
 
+    private _handleColorPick(): void {
+        try {
+            this._cycleWorkspaceColor();
+        } catch (e) {
+            console.error('[Kestrel] Error handling color pick:', e);
+        }
+    }
+
+    /** Cycle workspace color through the palette: null → blue → purple → … → coral → null */
+    private _cycleWorkspaceColor(): void {
+        const world = this._deps.getWorld();
+        if (!world || !this._overviewTransform) return;
+
+        const wsIndex = world.viewport.workspaceIndex;
+        const current = world.workspaces[wsIndex]?.color ?? null;
+        const next = nextWorkspaceColor(current);
+        const w = setCurrentWorkspaceColor(world, next);
+        this._deps.setWorld(w);
+        this._applyColorCycleVisual(w, wsIndex, next);
+    }
+
+    private _applyColorCycleVisual(w: World, wsIndex: number, color: WorkspaceColorId): void {
+        const scene = computeScene(w);
+        const adapter = this._deps.getCloneAdapter();
+        adapter?.updateOverviewFocus(scene, wsIndex, this._overviewTransform!);
+        adapter?.showColorPicker?.(wsIndex, color, this._overviewTransform!);
+    }
+
     private _exitVisual(scene: SceneModel, animate: boolean = true): void {
         this._overviewInputAdapter?.deactivate();
         this._overviewInputAdapter = null;
@@ -534,16 +566,21 @@ export class OverviewHandler {
     /** Clear filter UI elements without touching domain state (already cleared by exitOverview/cancelOverview) */
     private _clearFilterUI(): void {
         this._clearFilterIndicator();
-        this._clearRenameUI();
+        this._clearOverviewPopups();
     }
 
     private _clearFilterIndicator(): void {
         this._deps.getCloneAdapter()?.updateFilterIndicator?.('');
     }
 
-    private _clearRenameUI(): void {
-        this._deps.getCloneAdapter()?.cancelRename?.();
+    private _clearOverviewPopups(): void {
+        this._clearClonePopups();
         this._overviewInputAdapter?.setKeyPassthrough?.(false);
+    }
+
+    private _clearClonePopups(): void {
+        this._deps.getCloneAdapter()?.cancelRename?.();
+        this._deps.getCloneAdapter()?.hideColorPicker?.();
     }
 
     private _applyExitClone(scene: SceneModel, animate: boolean): void {

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow, removeWindow, setFocus, restoreWorld, workspaceNameForWindow, renameCurrentWorkspace, switchToWorkspace } from '../../src/domain/world.js';
+import { resolveWorkspaceColor } from '../../src/domain/types.js';
+import { createWorld, addWindow, removeWindow, setFocus, restoreWorld, workspaceNameForWindow, renameCurrentWorkspace, setCurrentWorkspaceColor, workspaceColorForWindow, switchToWorkspace } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
 import { createTiledWindow } from '../../src/domain/window.js';
@@ -454,6 +455,91 @@ describe('World', () => {
             const { world: result } = removeWindow(w, wid(1));
             expect(result.notificationState.sessionWindows.has('sess-1')).toBe(false);
             expect(result.notificationState.windowStatuses.has(wid(1))).toBe(false);
+        });
+    });
+
+    describe('workspace color', () => {
+        it('setCurrentWorkspaceColor sets color on current workspace', () => {
+            const w = setCurrentWorkspaceColor(world, 'blue');
+            expect(w.workspaces[0]!.color).toBe('blue');
+        });
+
+        it('setCurrentWorkspaceColor to null clears color', () => {
+            let w = setCurrentWorkspaceColor(world, 'rose');
+            w = setCurrentWorkspaceColor(w, null);
+            expect(w.workspaces[0]!.color).toBeNull();
+        });
+
+        it('workspaceColorForWindow returns color of containing workspace', () => {
+            let w = addWindow(world, wid(1)).world;
+            w = setCurrentWorkspaceColor(w, 'teal');
+            expect(workspaceColorForWindow(w, wid(1))).toBe('teal');
+        });
+
+        it('workspaceColorForWindow returns null for unknown window', () => {
+            expect(workspaceColorForWindow(world, wid(99))).toBeNull();
+        });
+
+        it('color defaults to null on new workspace', () => {
+            expect(world.workspaces[0]!.color).toBeNull();
+        });
+
+        it('color persists through addWindow', () => {
+            let w = setCurrentWorkspaceColor(world, 'amber');
+            w = addWindow(w, wid(1)).world;
+            expect(w.workspaces[0]!.color).toBe('amber');
+        });
+
+        it('color persists through ensureTrailingEmpty', () => {
+            let w = setCurrentWorkspaceColor(world, 'coral');
+            w = addWindow(w, wid(1)).world;
+            // addWindow calls ensureTrailingEmpty, so trailing ws is fresh (null color)
+            expect(w.workspaces[0]!.color).toBe('coral');
+            expect(w.workspaces[1]!.color).toBeNull();
+        });
+
+        it('color persists through workspace pruning', () => {
+            let w = addWindow(world, wid(1)).world;
+            w = setCurrentWorkspaceColor(w, 'purple');
+            // Switch to ws1 (trailing empty), add window there
+            w = switchToWorkspace(w, 1).world;
+            w = addWindow(w, wid(2)).world;
+            // ws0 should still have purple
+            expect(w.workspaces[0]!.color).toBe('purple');
+        });
+
+        it('color persists through restoreWorld', () => {
+            const data = [
+                { columns: [{ windows: [{ id: wid(1), fullscreen: false }], slotSpan: 1 }], name: 'Test', color: 'rose' as const },
+            ];
+            const restored = restoreWorld(config, monitor, data, 0, 0, wid(1));
+            expect(restored.workspaces[0]!.color).toBe('rose');
+        });
+    });
+
+    describe('resolveWorkspaceColor', () => {
+        it('null returns config default colors', () => {
+            const result = resolveWorkspaceColor(null, config);
+            expect(result.border).toBe(config.focusBorderColor);
+            expect(result.bg).toBe(config.focusBgColor);
+            expect(result.solid).toBe(config.focusBorderColor);
+        });
+
+        it('known color returns palette entry', () => {
+            const result = resolveWorkspaceColor('blue', config);
+            expect(result.border).toBe('rgba(130,170,220,0.8)');
+            expect(result.bg).toBe('rgba(130,170,220,0.05)');
+            expect(result.solid).toBe('#82aadccc');
+        });
+
+        it('all palette colors resolve successfully', () => {
+            const ids = ['blue', 'purple', 'rose', 'amber', 'teal', 'coral'] as const;
+            for (const id of ids) {
+                const result = resolveWorkspaceColor(id, config);
+                expect(result.border).toBeTruthy();
+                expect(result.bg).toBeTruthy();
+                expect(result.solid).toBeTruthy();
+            }
         });
     });
 });

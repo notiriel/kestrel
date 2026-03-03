@@ -653,8 +653,8 @@ export default class KestrelExtension extends Extension {
 
             // Build actual focus indicator
             const actualFocus: FocusIndicatorScene = focusState
-                ? focusState
-                : { visible: false, x: 0, y: 0, width: 0, height: 0 };
+                ? { ...focusState, color: expected.focusIndicator.color }
+                : { visible: false, x: 0, y: 0, width: 0, height: 0, color: null };
 
             // Build actual workspace strip
             const actualStrip: WorkspaceStripScene = stripState

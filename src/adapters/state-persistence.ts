@@ -1,4 +1,4 @@
-import type { WindowId, KestrelConfig, MonitorInfo } from '../domain/types.js';
+import type { WindowId, WorkspaceColorId, KestrelConfig, MonitorInfo } from '../domain/types.js';
 import type { World, RestoreWorkspaceData, RestoreColumnData } from '../domain/world.js';
 import type { StatePersistencePort } from '../ports/state-persistence-port.js';
 import { restoreWorld } from '../domain/world.js';
@@ -15,6 +15,7 @@ interface SavedColumn {
 interface SavedWorkspaceV3 {
     columns: SavedColumn[];
     name: string | null;
+    color?: string | null;
 }
 
 /** Version 1/2 saved format: flat windows */
@@ -82,6 +83,7 @@ export class StatePersistence implements StatePersistencePort {
                 slotSpan: col.slotSpan,
             })),
             name: ws.name,
+            color: ws.color,
         }));
     }
 
@@ -156,7 +158,7 @@ export class StatePersistence implements StatePersistencePort {
                 columns.push({ windows, slotSpan: savedCol.slotSpan });
             }
         }
-        return { columns, name: savedWs.name ?? null };
+        return { columns, name: savedWs.name ?? null, color: (savedWs.color as WorkspaceColorId) ?? null };
     }
 
     private _migrateV1V2WorkspaceData(savedWs: SavedWorkspaceV1V2, existingWindowIds: Set<string>, quakeIds: Set<string>): RestoreWorkspaceData {

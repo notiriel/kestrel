@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WindowId } from '../../src/domain/types.js';
+import { nextWorkspaceColor } from '../../src/domain/types.js';
 import {
     createOverviewInteractionState,
     enterOverviewInteraction,
@@ -245,5 +246,25 @@ describe('OverviewInteractionState — hit testing', () => {
             null, MONITOR_HEIGHT, LABEL_WIDTH,
         );
         expect(result).toBeNull();
+    });
+});
+
+describe('nextWorkspaceColor', () => {
+    it('cycles null → blue', () => {
+        expect(nextWorkspaceColor(null)).toBe('blue');
+    });
+
+    it('cycles coral → null (wraps around)', () => {
+        expect(nextWorkspaceColor('coral')).toBeNull();
+    });
+
+    it('cycles through all colors back to null', () => {
+        let color = nextWorkspaceColor(null);
+        const seen: string[] = [];
+        while (color !== null) {
+            seen.push(color);
+            color = nextWorkspaceColor(color);
+        }
+        expect(seen).toEqual(['blue', 'purple', 'rose', 'amber', 'teal', 'coral']);
     });
 });

@@ -1,4 +1,5 @@
-import type { WindowId, WorkspaceId, KestrelConfig } from '../../domain/types.js';
+import type { WindowId, WorkspaceId, KestrelConfig, WorkspaceColorId } from '../../domain/types.js';
+import { resolveWorkspaceColor } from '../../domain/types.js';
 import type { SceneModel } from '../../domain/scene.js';
 import type { ClonePort, OverviewTransform } from '../../ports/clone-port.js';
 import { safeDisconnect } from '../signal-utils.js';
@@ -8,7 +9,9 @@ import {
     buildOverviewBackground, buildFilterIndicator, buildRenameEntry,
     buildWorkspaceLabel, buildFocusIndicatorStyle, buildFocusIndicator,
 } from '../../ui-components/clone-ui-builders.js';
+import { buildColorPicker } from '../../ui-components/color-picker-builders.js';
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 import Meta from 'gi://Meta';
@@ -87,6 +90,10 @@ export class CloneAdapter implements ClonePort {
     private _focusBorderColor: string = 'rgba(125,214,164,0.8)';
     private _focusBorderRadius: number = 8;
     private _focusBgColor: string = 'rgba(125,214,164,0.05)';
+    private _config: KestrelConfig | null = null;
+    private _currentColorId: WorkspaceColorId = null;
+    private _colorPicker: St.BoxLayout | null = null;
+    private _colorPickerTimeoutId: number = 0;
 
     init(workAreaY: number, monitorHeight: number, config?: KestrelConfig): void {
         this._workAreaY = workAreaY;
@@ -97,6 +104,7 @@ export class CloneAdapter implements ClonePort {
     }
 
     private _applyConfig(config: KestrelConfig): void {
+        this._config = config;
         this._focusBorderWidth = config.focusBorderWidth;
         this._focusBorderColor = config.focusBorderColor;
         this._focusBorderRadius = config.focusBorderRadius;
@@ -119,6 +127,7 @@ export class CloneAdapter implements ClonePort {
     }
 
     updateConfig(config: KestrelConfig): void {
+        this._config = config;
         this._focusBorderWidth = config.focusBorderWidth;
         this._focusBorderColor = config.focusBorderColor;
         this._focusBorderRadius = config.focusBorderRadius;
@@ -133,6 +142,16 @@ export class CloneAdapter implements ClonePort {
 
     private _buildFocusStyle(): string {
         return buildFocusIndicatorStyle(this._focusBorderWidth, this._focusBorderColor, this._focusBorderRadius, this._focusBgColor);
+    }
+
+    /** Apply workspace color to focus indicator style. Instant, no animation. */
+    private _applyFocusColor(colorId: WorkspaceColorId): void {
+        if (colorId === this._currentColorId || !this._config || !this._focusIndicator) return;
+        this._currentColorId = colorId;
+        const resolved = resolveWorkspaceColor(colorId, this._config);
+        this._focusIndicator.style = buildFocusIndicatorStyle(
+            this._focusBorderWidth, resolved.border, this._focusBorderRadius, resolved.bg,
+        );
     }
 
     updateWorkArea(workAreaY: number, monitorHeight?: number): void {
@@ -411,6 +430,7 @@ export class CloneAdapter implements ClonePort {
             return;
         }
 
+        this._applyFocusColor(fi.color);
         this._focusIndicator.visible = true;
         easeOrSet(this._focusIndicator, { x: fi.x, y: fi.y, width: fi.width, height: fi.height, opacity: 255 }, duration, easeMode);
     }
@@ -540,6 +560,7 @@ export class CloneAdapter implements ClonePort {
             this._filterIndicator.visible = false;
         }
         this.cancelRename();
+        this.hideColorPicker();
         for (const wc of this._workspaceContainers.values()) {
             wc.container.visible = true;
         }
@@ -577,6 +598,8 @@ export class CloneAdapter implements ClonePort {
         transform: OverviewTransform,
     ): void {
         if (!this._focusIndicator) return;
+
+        this._applyFocusColor(scene.focusIndicator.color);
 
         const focusedClone = scene.clones.find(c => c.windowId === scene.focusedWindowId);
         if (!focusedClone) {
@@ -825,6 +848,54 @@ export class CloneAdapter implements ClonePort {
         if (wc) wc.nameLabel.visible = true;
     }
 
+    /** Show or update the color picker indicator next to the current workspace. */
+    showColorPicker(
+        wsIndex: number,
+        currentColor: WorkspaceColorId,
+        transform: OverviewTransform,
+    ): void {
+        if (!this._layer) return;
+        this._destroyColorPickerWidget();
+
+        this._colorPicker = buildColorPicker(currentColor);
+
+        const visualPos = this._filteredPositionMap.get(wsIndex) ?? wsIndex;
+        const containerY = visualPos * this._monitorHeight;
+        const pickerX = transform.offsetX + 8;
+        const pickerY = transform.offsetY + containerY * transform.scale + (this._monitorHeight * transform.scale) / 2 - 12;
+
+        this._colorPicker.set_position(pickerX, pickerY);
+        this._layer.add_child(this._colorPicker);
+        this._resetColorPickerTimeout();
+    }
+
+    hideColorPicker(): void {
+        this._clearColorPickerTimeout();
+        this._destroyColorPickerWidget();
+    }
+
+    private _destroyColorPickerWidget(): void {
+        if (!this._colorPicker) return;
+        this._colorPicker.destroy();
+        this._colorPicker = null;
+    }
+
+    private _resetColorPickerTimeout(): void {
+        this._clearColorPickerTimeout();
+        this._colorPickerTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, () => {
+            this._destroyColorPickerWidget();
+            this._colorPickerTimeoutId = 0;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    private _clearColorPickerTimeout(): void {
+        if (this._colorPickerTimeoutId) {
+            GLib.source_remove(this._colorPickerTimeoutId);
+            this._colorPickerTimeoutId = 0;
+        }
+    }
+
     getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; visible: boolean; workspaceId: WorkspaceId; wsIndex: number }> {
         const positions = new Map<WindowId, { x: number; y: number; width: number; height: number; visible: boolean; workspaceId: WorkspaceId; wsIndex: number }>();
         for (const [windowId, entry] of this._clones) {
@@ -911,6 +982,7 @@ export class CloneAdapter implements ClonePort {
             this._overviewBg = null;
         }
         this.cancelRename();
+        this.hideColorPicker();
         if (this._filterIndicator) {
             this._filterIndicator.destroy();
             this._filterIndicator = null;
