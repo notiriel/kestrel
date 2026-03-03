@@ -762,6 +762,62 @@ describe('Notification domain model', () => {
         });
     });
 
+    describe('windowStatusTimestamps', () => {
+        const win1 = 'win-1' as WindowId;
+        const win2 = 'win-2' as WindowId;
+
+        it('registerSession stores timestamp when setting initial done status', () => {
+            const before = Date.now();
+            const s = registerSession(state, 'sess-1', win1);
+            const after = Date.now();
+            const ts = s.windowStatusTimestamps.get(win1);
+            expect(ts).toBeDefined();
+            expect(ts).toBeGreaterThanOrEqual(before);
+            expect(ts).toBeLessThanOrEqual(after);
+        });
+
+        it('registerSession does not overwrite existing timestamp', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const originalTs = s.windowStatusTimestamps.get(win1)!;
+            // Register another session to the same window
+            s = registerSession(s, 'sess-2', win1);
+            expect(s.windowStatusTimestamps.get(win1)).toBe(originalTs);
+        });
+
+        it('setSessionStatus updates timestamp on status change', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            const initialTs = s.windowStatusTimestamps.get(win1)!;
+            // Small delay to ensure different timestamp
+            s = setSessionStatus(s, 'sess-1', 'working');
+            const workingTs = s.windowStatusTimestamps.get(win1)!;
+            expect(workingTs).toBeGreaterThanOrEqual(initialTs);
+        });
+
+        it('setSessionStatus is no-op for unknown session (no timestamp change)', () => {
+            const result = setSessionStatus(state, 'unknown', 'working');
+            expect(result.windowStatusTimestamps.size).toBe(0);
+        });
+
+        it('unregisterWindow removes timestamp', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = registerSession(s, 'sess-2', win2);
+            s = unregisterWindow(s, win1);
+            expect(s.windowStatusTimestamps.has(win1)).toBe(false);
+            expect(s.windowStatusTimestamps.has(win2)).toBe(true);
+        });
+
+        it('clearSession removes timestamp', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = clearSession(s, 'sess-1');
+            expect(s.windowStatusTimestamps.has(win1)).toBe(false);
+        });
+
+        it('clearSession is no-op for unknown session (no timestamp change)', () => {
+            const result = clearSession(state, 'unknown');
+            expect(result.windowStatusTimestamps.size).toBe(0);
+        });
+    });
+
     describe('getWorkspaceClaudeStatus', () => {
         const win1 = 'win-1' as WindowId;
         const win2 = 'win-2' as WindowId;

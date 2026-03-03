@@ -61,6 +61,7 @@ export interface NotificationState {
     responses: Map<string, string>;
     sessionWindows: Map<string, WindowId>;
     windowStatuses: Map<WindowId, ClaudeStatus>;
+    windowStatusTimestamps: Map<WindowId, number>;
     focusMode: FocusModeState;
 }
 
@@ -72,6 +73,7 @@ export function createNotificationState(): NotificationState {
         responses: new Map(),
         sessionWindows: new Map(),
         windowStatuses: new Map(),
+        windowStatusTimestamps: new Map(),
         focusMode: { active: false, entryIds: [], currentIndex: 0 },
     };
 }
@@ -222,10 +224,12 @@ export function registerSession(state: NotificationState, sessionId: string, win
     const sessionWindows = new Map(state.sessionWindows);
     sessionWindows.set(sessionId, windowId);
     const windowStatuses = new Map(state.windowStatuses);
+    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
     if (!windowStatuses.has(windowId)) {
         windowStatuses.set(windowId, 'done');
+        windowStatusTimestamps.set(windowId, Date.now());
     }
-    return { ...state, sessionWindows, windowStatuses };
+    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps };
 }
 
 /** Remove all sessions and status for a destroyed window. */
@@ -236,7 +240,9 @@ export function unregisterWindow(state: NotificationState, windowId: WindowId): 
     }
     const windowStatuses = new Map(state.windowStatuses);
     windowStatuses.delete(windowId);
-    return { ...state, sessionWindows, windowStatuses };
+    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
+    windowStatusTimestamps.delete(windowId);
+    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps };
 }
 
 /** Update window status via session → window lookup. Dismisses stale notifications when working. */
@@ -245,7 +251,9 @@ export function setSessionStatus(state: NotificationState, sessionId: string, st
     if (!windowId) return state;
     const windowStatuses = new Map(state.windowStatuses);
     windowStatuses.set(windowId, status);
-    let result = { ...state, windowStatuses };
+    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
+    windowStatusTimestamps.set(windowId, Date.now());
+    let result = { ...state, windowStatuses, windowStatusTimestamps };
     if (status === 'working') {
         result = dismissForSession(result, sessionId);
     }
@@ -260,7 +268,9 @@ export function clearSession(state: NotificationState, sessionId: string): Notif
     sessionWindows.delete(sessionId);
     const windowStatuses = new Map(state.windowStatuses);
     windowStatuses.delete(windowId);
-    return { ...state, sessionWindows, windowStatuses };
+    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
+    windowStatusTimestamps.delete(windowId);
+    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps };
 }
 
 /**

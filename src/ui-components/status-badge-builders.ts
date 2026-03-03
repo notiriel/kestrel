@@ -3,7 +3,7 @@ import Gio from 'gi://Gio';
 
 import type { ClaudeStatus } from '../domain/notification-types.js';
 
-const STATUS_COLORS: Record<ClaudeStatus, string> = {
+export const STATUS_COLORS: Record<ClaudeStatus, string> = {
     'working': '#4CAF50',
     'needs-input': '#F44336',
     'done': '#FF9800',
@@ -29,4 +29,13 @@ export function buildStatusIcon(
 /** Build the style string for a status badge. */
 export function buildStatusStyle(status: ClaudeStatus): string {
     return `color: ${STATUS_COLORS[status]}; -st-icon-style: symbolic;`;
+}
+
+/** Create a small elapsed-time label widget positioned relative to a badge. */
+export function buildElapsedLabel(color: string): St.Label {
+    return new St.Label({
+        text: '',
+        style: `color: ${color}; font-size: 11px; font-weight: bold; text-align: center;`,
+        reactive: false,
+    });
 }
