@@ -11,7 +11,6 @@ export interface OverviewInteractionState {
     filterText: string;
     filteredIndices: number[];
     renaming: boolean;
-    colorPicking: boolean;
     savedFocusedWindow: WindowId | null;
     savedWorkspaceIndex: number;
     savedScrollX: number;
@@ -23,7 +22,6 @@ export function createOverviewInteractionState(): OverviewInteractionState {
         filterText: '',
         filteredIndices: [],
         renaming: false,
-        colorPicking: false,
         savedFocusedWindow: null,
         savedWorkspaceIndex: 0,
         savedScrollX: 0,
@@ -44,7 +42,6 @@ export function enterOverviewInteraction(
         filterText: '',
         filteredIndices: [],
         renaming: false,
-        colorPicking: false,
         savedFocusedWindow: focusedWindow,
         savedWorkspaceIndex: wsIndex,
         savedScrollX: scrollX,
@@ -58,7 +55,6 @@ export function exitOverviewInteraction(state: OverviewInteractionState): Overvi
         filterText: '',
         filteredIndices: [],
         renaming: false,
-        colorPicking: false,
         savedFocusedWindow: null,
         savedWorkspaceIndex: 0,
         savedScrollX: 0,
@@ -143,20 +139,6 @@ export function finishRename(state: OverviewInteractionState): OverviewInteracti
 
 export function cancelRename(state: OverviewInteractionState): OverviewInteractionState {
     return { ...state, renaming: false };
-}
-
-// --- Color picking ---
-
-export function startColorPicking(state: OverviewInteractionState): OverviewInteractionState {
-    return { ...state, colorPicking: true };
-}
-
-export function finishColorPicking(state: OverviewInteractionState): OverviewInteractionState {
-    return { ...state, colorPicking: false };
-}
-
-export function cancelColorPicking(state: OverviewInteractionState): OverviewInteractionState {
-    return { ...state, colorPicking: false };
 }
 
 // --- Transform computation ---

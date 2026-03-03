@@ -1,4 +1,5 @@
 import type { WindowId, WorkspaceColorId, WorldUpdate } from '../domain/types.js';
+import { nextWorkspaceColor } from '../domain/types.js';
 import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
 import { setFocus, filterWorkspaces, renameCurrentWorkspace, setCurrentWorkspaceColor, switchToWorkspace } from '../domain/world.js';
@@ -6,7 +7,7 @@ import { computeScene } from '../domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
 import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
-import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename, startColorPicking, finishColorPicking, cancelColorPicking } from '../domain/overview-state.js';
+import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename } from '../domain/overview-state.js';
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { SceneApplyOptions } from './world-holder.js';
@@ -193,7 +194,7 @@ export class OverviewHandler {
     }
 
     private _cancelActiveOverviewAction(world: World): boolean {
-        return this._cancelColorPick(world) || this._cancelRename(world) || this._cancelFilter(world);
+        return this._cancelRename(world) || this._cancelFilter(world);
     }
 
     private _cancelRename(world: World): boolean {
@@ -233,26 +234,15 @@ export class OverviewHandler {
             const world = this._deps.getWorld();
             if (!world || !this._overviewTransform) return;
 
-            if (this._routeColorPickClick(world, x, y)) return;
-            this._routeWindowClick(world, x, y);
+            const hitWindowId = this._hitTest(world, x, y);
+            if (!hitWindowId) return;
+
+            const update = setFocus(world, hitWindowId);
+            this._deps.setWorld(update.world);
+            this.handleConfirm();
         } catch (e) {
             console.error('[Kestrel] Error handling overview click:', e);
         }
-    }
-
-    /** Route click to color picker when active (modal grab prevents native events). */
-    private _routeColorPickClick(world: World, x: number, y: number): boolean {
-        if (!world.overviewInteractionState.colorPicking) return false;
-        this._deps.getCloneAdapter()?.handleColorPickClick?.(x, y);
-        return true;
-    }
-
-    private _routeWindowClick(world: World, x: number, y: number): void {
-        const hitWindowId = this._hitTest(world, x, y);
-        if (!hitWindowId) return;
-        const update = setFocus(world, hitWindowId);
-        this._deps.setWorld(update.world);
-        this.handleConfirm();
     }
 
     private _handleDragStart(x: number, y: number): void {
@@ -537,50 +527,30 @@ export class OverviewHandler {
 
     private _handleColorPick(): void {
         try {
-            this._handleColorPickInner();
+            this._cycleWorkspaceColor();
         } catch (e) {
             console.error('[Kestrel] Error handling color pick:', e);
         }
     }
 
-    private _handleColorPickInner(): void {
+    /** Cycle workspace color through the palette: null → blue → purple → … → coral → null */
+    private _cycleWorkspaceColor(): void {
         const world = this._deps.getWorld();
         if (!world || !this._overviewTransform) return;
-        if (world.overviewInteractionState.colorPicking) return;
 
-        this._deps.setWorld({ ...world, overviewInteractionState: startColorPicking(world.overviewInteractionState) });
-        this._overviewInputAdapter?.setKeyPassthrough(true);
-        this._startColorPickUI(world);
-    }
-
-    private _startColorPickUI(world: World): void {
         const wsIndex = world.viewport.workspaceIndex;
-        const currentColor = world.workspaces[wsIndex]?.color ?? null;
-        this._deps.getCloneAdapter()?.startColorPick?.(
-            wsIndex, currentColor, this._overviewTransform!,
-            (color: WorkspaceColorId) => this._onColorPickComplete(color),
-        );
+        const current = world.workspaces[wsIndex]?.color ?? null;
+        const next = nextWorkspaceColor(current);
+        const w = setCurrentWorkspaceColor(world, next);
+        this._deps.setWorld(w);
+        this._applyColorCycleVisual(w, wsIndex, next);
     }
 
-    private _onColorPickComplete(color: WorkspaceColorId): void {
-        const world = this._deps.getWorld();
-        if (world) {
-            let w = { ...world, overviewInteractionState: finishColorPicking(world.overviewInteractionState) };
-            w = setCurrentWorkspaceColor(w, color);
-            this._deps.setWorld(w);
-            // Recompute scene so the focus indicator picks up the new color
-            const scene = computeScene(w);
-            this._deps.getCloneAdapter()?.updateOverviewFocus(scene, w.viewport.workspaceIndex, this._overviewTransform!);
-        }
-        this._overviewInputAdapter?.setKeyPassthrough(false);
-    }
-
-    private _cancelColorPick(world: World): boolean {
-        if (!world.overviewInteractionState.colorPicking) return false;
-        this._deps.setWorld({ ...world, overviewInteractionState: cancelColorPicking(world.overviewInteractionState) });
-        this._overviewInputAdapter?.setKeyPassthrough(false);
-        this._deps.getCloneAdapter()?.cancelColorPick?.();
-        return true;
+    private _applyColorCycleVisual(w: World, wsIndex: number, color: WorkspaceColorId): void {
+        const scene = computeScene(w);
+        const adapter = this._deps.getCloneAdapter();
+        adapter?.updateOverviewFocus(scene, wsIndex, this._overviewTransform!);
+        adapter?.showColorPicker?.(wsIndex, color, this._overviewTransform!);
     }
 
     private _exitVisual(scene: SceneModel, animate: boolean = true): void {
@@ -609,9 +579,8 @@ export class OverviewHandler {
     }
 
     private _clearClonePopups(): void {
-        const adapter = this._deps.getCloneAdapter();
-        adapter?.cancelRename?.();
-        adapter?.cancelColorPick?.();
+        this._deps.getCloneAdapter()?.cancelRename?.();
+        this._deps.getCloneAdapter()?.hideColorPicker?.();
     }
 
     private _applyExitClone(scene: SceneModel, animate: boolean): void {

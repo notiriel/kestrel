@@ -63,6 +63,13 @@ export const WORKSPACE_COLORS: readonly WorkspaceColorEntry[] = [
     { id: 'coral',  label: 'Coral',   border: 'rgba(210,150,130,0.8)', bg: 'rgba(210,150,130,0.05)', solid: '#d29682cc' },
 ];
 
+/** Cycle to the next color in the palette: null → blue → … → coral → null */
+export function nextWorkspaceColor(current: WorkspaceColorId): WorkspaceColorId {
+    const idx = WORKSPACE_COLORS.findIndex(e => e.id === current);
+    const next = (idx + 1) % WORKSPACE_COLORS.length;
+    return WORKSPACE_COLORS[next]!.id;
+}
+
 export function resolveWorkspaceColor(colorId: WorkspaceColorId, config: KestrelConfig): { border: string; bg: string; solid: string } {
     if (colorId === null) return { border: config.focusBorderColor, bg: config.focusBgColor, solid: config.focusBorderColor };
     const entry = WORKSPACE_COLORS.find(e => e.id === colorId);

@@ -1,5 +1,5 @@
 import type { WindowId, WorkspaceId, KestrelConfig, WorkspaceColorId } from '../../domain/types.js';
-import { resolveWorkspaceColor, WORKSPACE_COLORS } from '../../domain/types.js';
+import { resolveWorkspaceColor } from '../../domain/types.js';
 import type { SceneModel } from '../../domain/scene.js';
 import type { ClonePort, OverviewTransform } from '../../ports/clone-port.js';
 import { safeDisconnect } from '../signal-utils.js';
@@ -11,6 +11,7 @@ import {
 } from '../../ui-components/clone-ui-builders.js';
 import { buildColorPicker } from '../../ui-components/color-picker-builders.js';
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 import Meta from 'gi://Meta';
@@ -92,8 +93,7 @@ export class CloneAdapter implements ClonePort {
     private _config: KestrelConfig | null = null;
     private _currentColorId: WorkspaceColorId = null;
     private _colorPicker: St.BoxLayout | null = null;
-    private _colorPickWsIndex: number = -1;
-    private _colorPickCallback: ((color: WorkspaceColorId) => void) | null = null;
+    private _colorPickerTimeoutId: number = 0;
 
     init(workAreaY: number, monitorHeight: number, config?: KestrelConfig): void {
         this._workAreaY = workAreaY;
@@ -558,7 +558,7 @@ export class CloneAdapter implements ClonePort {
             this._filterIndicator.visible = false;
         }
         this.cancelRename();
-        this.cancelColorPick();
+        this.hideColorPicker();
         for (const wc of this._workspaceContainers.values()) {
             wc.container.visible = true;
         }
@@ -844,17 +844,14 @@ export class CloneAdapter implements ClonePort {
         if (wc) wc.nameLabel.visible = true;
     }
 
-    startColorPick(
+    /** Show or update the color picker indicator next to the current workspace. */
+    showColorPicker(
         wsIndex: number,
         currentColor: WorkspaceColorId,
         transform: OverviewTransform,
-        onComplete: (color: WorkspaceColorId) => void,
     ): void {
         if (!this._layer) return;
-        this.cancelColorPick();
-
-        this._colorPickWsIndex = wsIndex;
-        this._colorPickCallback = onComplete;
+        this._destroyColorPickerWidget();
 
         this._colorPicker = buildColorPicker(currentColor);
 
@@ -865,62 +862,34 @@ export class CloneAdapter implements ClonePort {
 
         this._colorPicker.set_position(pickerX, pickerY);
         this._layer.add_child(this._colorPicker);
+        this._resetColorPickerTimeout();
     }
 
-    /**
-     * Hit-test a stage click against the color picker swatches.
-     * Called by overview handler since modal grab prevents native click events.
-     * Returns true if a swatch was hit (and callback was invoked).
-     */
-    handleColorPickClick(stageX: number, stageY: number): boolean {
-        const colorId = this._resolveColorPickHit(stageX, stageY);
-        if (colorId === undefined) return false;
-
-        const cb = this._colorPickCallback!;
-        this.cancelColorPick();
-        cb(colorId);
-        return true;
+    hideColorPicker(): void {
+        this._clearColorPickerTimeout();
+        this._destroyColorPickerWidget();
     }
 
-    private _resolveColorPickHit(stageX: number, stageY: number): WorkspaceColorId | undefined {
-        const picker = this._colorPicker;
-        if (!picker || !this._colorPickCallback) return undefined;
-
-        const localX = stageX - picker.x;
-        const localY = stageY - this._workAreaY - picker.y;
-        return this._colorIdAtSwatch(picker, localX, localY);
-    }
-
-    private _colorIdAtSwatch(picker: St.BoxLayout, lx: number, ly: number): WorkspaceColorId | undefined {
-        const idx = this._findSwatchAt(picker, lx, ly);
-        if (idx < 0) return undefined;
-        const entry = WORKSPACE_COLORS[idx];
-        return entry ? entry.id : null;
-    }
-
-    private _findSwatchAt(picker: St.BoxLayout, localX: number, localY: number): number {
-        if (!this._isInsideBounds(picker, localX, localY)) return -1;
-
-        const n = picker.get_n_children();
-        for (let i = 0; i < n; i++) {
-            const child = picker.get_child_at_index(i);
-            if (child && this._isInsideBounds(child, localX - child.x, localY - child.y)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private _isInsideBounds(actor: { width: number; height: number }, x: number, y: number): boolean {
-        return x >= 0 && y >= 0 && x <= actor.width && y <= actor.height;
-    }
-
-    cancelColorPick(): void {
+    private _destroyColorPickerWidget(): void {
         if (!this._colorPicker) return;
         this._colorPicker.destroy();
         this._colorPicker = null;
-        this._colorPickWsIndex = -1;
-        this._colorPickCallback = null;
+    }
+
+    private _resetColorPickerTimeout(): void {
+        this._clearColorPickerTimeout();
+        this._colorPickerTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, () => {
+            this._destroyColorPickerWidget();
+            this._colorPickerTimeoutId = 0;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    private _clearColorPickerTimeout(): void {
+        if (this._colorPickerTimeoutId) {
+            GLib.source_remove(this._colorPickerTimeoutId);
+            this._colorPickerTimeoutId = 0;
+        }
     }
 
     getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; visible: boolean; workspaceId: WorkspaceId; wsIndex: number }> {
@@ -1009,7 +978,7 @@ export class CloneAdapter implements ClonePort {
             this._overviewBg = null;
         }
         this.cancelRename();
-        this.cancelColorPick();
+        this.hideColorPicker();
         if (this._filterIndicator) {
             this._filterIndicator.destroy();
             this._filterIndicator = null;

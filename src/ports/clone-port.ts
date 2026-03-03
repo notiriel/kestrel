@@ -47,9 +47,8 @@ export interface OverviewFilterPort {
     updateFilterIndicator?(text: string): void;
     startRename?(wsIndex: number, currentName: string, transform: OverviewTransform, callback: (name: string | null) => void): void;
     cancelRename?(): void;
-    startColorPick?(wsIndex: number, currentColor: WorkspaceColorId, transform: OverviewTransform, onComplete: (color: WorkspaceColorId) => void): void;
-    handleColorPickClick?(stageX: number, stageY: number): boolean;
-    cancelColorPick?(): void;
+    showColorPicker?(wsIndex: number, currentColor: WorkspaceColorId, transform: OverviewTransform): void;
+    hideColorPicker?(): void;
 }
 
 /** Composite interface for backwards compatibility — consumers should prefer narrow ports. */

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WindowId } from '../../src/domain/types.js';
+import { nextWorkspaceColor } from '../../src/domain/types.js';
 import {
     createOverviewInteractionState,
     enterOverviewInteraction,
@@ -12,9 +13,6 @@ import {
     startRename,
     finishRename,
     cancelRename,
-    startColorPicking,
-    finishColorPicking,
-    cancelColorPicking,
     computeOverviewTransform,
     overviewHitTest,
 } from '../../src/domain/overview-state.js';
@@ -251,38 +249,22 @@ describe('OverviewInteractionState — hit testing', () => {
     });
 });
 
-describe('colorPicking state', () => {
-    it('defaults to false', () => {
-        const state = createOverviewInteractionState();
-        expect(state.colorPicking).toBe(false);
+describe('nextWorkspaceColor', () => {
+    it('cycles null → blue', () => {
+        expect(nextWorkspaceColor(null)).toBe('blue');
     });
 
-    it('startColorPicking sets colorPicking to true', () => {
-        const state = startColorPicking(createOverviewInteractionState());
-        expect(state.colorPicking).toBe(true);
+    it('cycles coral → null (wraps around)', () => {
+        expect(nextWorkspaceColor('coral')).toBeNull();
     });
 
-    it('finishColorPicking resets colorPicking to false', () => {
-        let state = startColorPicking(createOverviewInteractionState());
-        state = finishColorPicking(state);
-        expect(state.colorPicking).toBe(false);
-    });
-
-    it('cancelColorPicking resets colorPicking to false', () => {
-        let state = startColorPicking(createOverviewInteractionState());
-        state = cancelColorPicking(state);
-        expect(state.colorPicking).toBe(false);
-    });
-
-    it('enterOverviewInteraction resets colorPicking', () => {
-        let state = startColorPicking(createOverviewInteractionState());
-        state = enterOverviewInteraction(state, null, 0, 0);
-        expect(state.colorPicking).toBe(false);
-    });
-
-    it('exitOverviewInteraction resets colorPicking', () => {
-        let state = startColorPicking(createOverviewInteractionState());
-        state = exitOverviewInteraction(state);
-        expect(state.colorPicking).toBe(false);
+    it('cycles through all colors back to null', () => {
+        let color = nextWorkspaceColor(null);
+        const seen: string[] = [];
+        while (color !== null) {
+            seen.push(color);
+            color = nextWorkspaceColor(color);
+        }
+        expect(seen).toEqual(['blue', 'purple', 'rose', 'amber', 'teal', 'coral']);
     });
 });
