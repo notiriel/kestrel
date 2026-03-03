@@ -134,6 +134,8 @@ export class NotificationCoordinator {
             questionSend: (id: string) => o?.questionSend(id),
             questionDismiss: (id: string) => o?.questionDismiss(id),
             questionVisit: (id: string) => o?.questionVisit(id),
+            syncSelectOption: (id: string, qi: number, oi: number) => this._syncQuestionToDomain(id, ns => domainSelectQuestionOption(ns, id, qi, oi)),
+            syncSetOtherText: (id: string, qi: number, text: string) => this._syncQuestionToDomain(id, ns => domainSetOtherText(ns, id, qi, text)),
             extensionPath: d.extensionPath,
         };
     }

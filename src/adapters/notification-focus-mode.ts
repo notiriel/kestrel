@@ -52,6 +52,10 @@ interface FocusModeDeps {
     questionSend(id: string): void;
     questionDismiss(id: string): void;
     questionVisit(id: string): void;
+    /** Sync a question interaction to domain (for mouse selections on focus mode card). */
+    syncSelectOption(id: string, questionIndex: number, optionIndex: number): void;
+    /** Sync "Other" text to domain (for mouse edits on focus mode card). */
+    syncSetOtherText(id: string, questionIndex: number, text: string): void;
     extensionPath: string;
 }
 
@@ -526,6 +530,8 @@ export class NotificationFocusMode {
             extensionPath: this._deps.extensionPath,
             onRespond: (nid, action) => this._deps.respondToEntry(nid, action),
             onVisitSession: (sid) => this._deps.visitSession(sid),
+            onSelectOption: (id, qi, oi) => this._deps.syncSelectOption(id, qi, oi),
+            onSetOtherText: (id, qi, text) => this._deps.syncSetOtherText(id, qi, text),
         }, true, overlayCard.getSharedState());
         this._focusModeQuestionCard = focusCard;
         return focusCard.actor as St.BoxLayout;
