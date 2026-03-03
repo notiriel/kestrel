@@ -144,6 +144,16 @@ export class CloneAdapter implements ClonePort {
         return buildFocusIndicatorStyle(this._focusBorderWidth, this._focusBorderColor, this._focusBorderRadius, this._focusBgColor);
     }
 
+    /** Apply workspace color to focus indicator style. Instant, no animation. */
+    private _applyFocusColor(colorId: WorkspaceColorId): void {
+        if (colorId === this._currentColorId || !this._config || !this._focusIndicator) return;
+        this._currentColorId = colorId;
+        const resolved = resolveWorkspaceColor(colorId, this._config);
+        this._focusIndicator.style = buildFocusIndicatorStyle(
+            this._focusBorderWidth, resolved.border, this._focusBorderRadius, resolved.bg,
+        );
+    }
+
     updateWorkArea(workAreaY: number, monitorHeight?: number): void {
         this._workAreaY = workAreaY;
         if (monitorHeight !== undefined) {
@@ -420,15 +430,7 @@ export class CloneAdapter implements ClonePort {
             return;
         }
 
-        // Apply workspace color instantly (no animation needed — position easing provides continuity)
-        if (fi.color !== this._currentColorId && this._config) {
-            this._currentColorId = fi.color;
-            const resolved = resolveWorkspaceColor(fi.color, this._config);
-            this._focusIndicator.style = buildFocusIndicatorStyle(
-                this._focusBorderWidth, resolved.border, this._focusBorderRadius, resolved.bg,
-            );
-        }
-
+        this._applyFocusColor(fi.color);
         this._focusIndicator.visible = true;
         easeOrSet(this._focusIndicator, { x: fi.x, y: fi.y, width: fi.width, height: fi.height, opacity: 255 }, duration, easeMode);
     }
@@ -596,6 +598,8 @@ export class CloneAdapter implements ClonePort {
         transform: OverviewTransform,
     ): void {
         if (!this._focusIndicator) return;
+
+        this._applyFocusColor(scene.focusIndicator.color);
 
         const focusedClone = scene.clones.find(c => c.windowId === scene.focusedWindowId);
         if (!focusedClone) {
