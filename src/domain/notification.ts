@@ -249,6 +249,8 @@ export function unregisterWindow(state: NotificationState, windowId: WindowId): 
 export function setSessionStatus(state: NotificationState, sessionId: string, status: ClaudeStatus): NotificationState {
     const windowId = state.sessionWindows.get(sessionId);
     if (!windowId) return state;
+    const currentStatus = state.windowStatuses.get(windowId);
+    if (currentStatus === status) return state;
     const windowStatuses = new Map(state.windowStatuses);
     windowStatuses.set(windowId, status);
     const windowStatusTimestamps = new Map(state.windowStatusTimestamps);

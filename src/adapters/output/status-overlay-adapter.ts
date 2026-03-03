@@ -134,8 +134,8 @@ export class StatusOverlayAdapter {
         }
         const label = this._getOrCreateElapsedLabel(badge.windowId, badge.status);
         label.text = formatElapsedTime(Date.now() - timestamp);
-        label.set_position(badge.x, badge.y + badge.size);
-        label.set_size(badge.size, Math.round(badge.size / 3));
+        label.set_position(badge.x + badge.size * 0.8, badge.y + badge.size * 0.8);
+        label.set_size(badge.size * 1.5, Math.round(badge.size / 3));
         label.visible = true;
     }
 
@@ -160,7 +160,7 @@ export class StatusOverlayAdapter {
             this._elapsedLabels.set(windowId, label);
         } else {
             const color = STATUS_COLORS[status];
-            label.style = `color: ${color}; font-size: 11px; font-weight: bold; text-align: center;`;
+            label.style = `color: ${color}; font-size: 17px; font-weight: bold; text-align: left;`;
         }
         return label;
     }

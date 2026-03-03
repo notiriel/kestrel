@@ -35,7 +35,7 @@ export function buildStatusStyle(status: ClaudeStatus): string {
 export function buildElapsedLabel(color: string): St.Label {
     return new St.Label({
         text: '',
-        style: `color: ${color}; font-size: 11px; font-weight: bold; text-align: center;`,
+        style: `color: ${color}; font-size: 17px; font-weight: bold; text-align: left;`,
         reactive: false,
     });
 }
