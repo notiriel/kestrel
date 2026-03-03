@@ -43,7 +43,7 @@ export class WindowLifecycleHandler {
             this._deps.watchWindow(windowId, rawMetaWindow);
 
             const metaWindow = safeWindow(rawMetaWindow);
-            if (this._tryAssignQuakeSlot(world, windowId, metaWindow)) return;
+            if (this._tryHandleQuakeWindow(world, windowId, metaWindow)) return;
             this._routeWindow(world, windowId, metaWindow);
         } catch (e) {
             console.error('[Kestrel] Error handling window ready:', e);
@@ -59,7 +59,15 @@ export class WindowLifecycleHandler {
         }
     }
 
-    private _tryAssignQuakeSlot(world: World, windowId: WindowId, metaWindow: Meta.Window): boolean {
+    /** Try to assign or resume a quake window. Returns true if handled as quake. */
+    private _tryHandleQuakeWindow(world: World, windowId: WindowId, metaWindow: Meta.Window): boolean {
+        // Already assigned to a quake slot (restored from saved state) — just track it
+        if (isQuakeWindow(world, windowId)) {
+            this._deps.log(`[Kestrel] quake window resumed from saved state: ${windowId}`);
+            this._deps.trackQuakeWindow(windowId, metaWindow);
+            return true;
+        }
+
         const quakeSlot = this._deps.matchQuakeSlot(metaWindow);
         if (quakeSlot === null) return false;
         // Slot already has a window assigned — let this window be tiled normally

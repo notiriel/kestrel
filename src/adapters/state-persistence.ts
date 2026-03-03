@@ -32,6 +32,8 @@ interface SavedState {
     viewportWorkspaceIndex: number;
     viewportScrollX: number;
     quakeWindowIds?: string[];
+    /** v3.1: full slot→windowId mapping (array of 5, null for empty) */
+    quakeSlots?: (string | null)[];
 }
 
 export class StatePersistence implements StatePersistencePort {
@@ -69,6 +71,7 @@ export class StatePersistence implements StatePersistencePort {
                 viewportWorkspaceIndex: world.viewport.workspaceIndex,
                 viewportScrollX: world.viewport.scrollX,
                 quakeWindowIds: world.quakeState.slots.filter((id): id is WindowId => id !== null),
+                quakeSlots: [...world.quakeState.slots],
             };
             this._settings.set_string('saved-state', JSON.stringify(state));
         } catch (e) {
@@ -102,6 +105,7 @@ export class StatePersistence implements StatePersistencePort {
     private _restoreFromState(state: SavedState, config: KestrelConfig, monitor: MonitorInfo): World {
         const existingWindowIds = this._collectExistingWindowIds();
         const workspaceData = this._buildWorkspaceData(state, existingWindowIds);
+        const quakeSlots = this._restoreQuakeSlots(state, existingWindowIds);
 
         return restoreWorld(
             config, monitor,
@@ -109,6 +113,14 @@ export class StatePersistence implements StatePersistencePort {
             state.viewportWorkspaceIndex ?? 0,
             state.viewportScrollX ?? 0,
             (state.focusedWindow as WindowId) ?? null,
+            quakeSlots,
+        );
+    }
+
+    private _restoreQuakeSlots(state: SavedState, existingWindowIds: Set<string>): (WindowId | null)[] {
+        if (!state.quakeSlots) return [];
+        return state.quakeSlots.map(id =>
+            (id && existingWindowIds.has(id)) ? id as WindowId : null,
         );
     }
 

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { WindowId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld } from '../../src/domain/world.js';
+import { createWorld, restoreWorld } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import {
     createQuakeState,
+    restoreQuakeState,
     assignQuakeWindow,
     toggleQuakeSlot,
     dismissQuake,
@@ -264,5 +265,50 @@ describe('computeScene with quake window', () => {
         // Even if we somehow had activeSlot set (shouldn't happen normally)
         const scene = computeScene(world);
         expect(scene.quakeWindow).toBeNull();
+    });
+});
+
+describe('restoreQuakeState', () => {
+    it('returns empty state when no saved slots', () => {
+        const state = restoreQuakeState(undefined);
+        expect(state.slots).toHaveLength(5);
+        expect(state.slots.every(s => s === null)).toBe(true);
+        expect(state.activeSlot).toBeNull();
+    });
+
+    it('returns empty state for empty array', () => {
+        const state = restoreQuakeState([]);
+        expect(state.slots.every(s => s === null)).toBe(true);
+    });
+
+    it('restores saved slot assignments', () => {
+        const state = restoreQuakeState([wid(10), null, wid(20), null, null]);
+        expect(state.slots[0]).toBe(wid(10));
+        expect(state.slots[1]).toBeNull();
+        expect(state.slots[2]).toBe(wid(20));
+        expect(state.activeSlot).toBeNull();
+    });
+
+    it('pads short arrays to 5 slots', () => {
+        const state = restoreQuakeState([wid(1), wid(2)]);
+        expect(state.slots).toHaveLength(5);
+        expect(state.slots[0]).toBe(wid(1));
+        expect(state.slots[1]).toBe(wid(2));
+        expect(state.slots[2]).toBeNull();
+    });
+});
+
+describe('restoreWorld with quake slots', () => {
+    it('preserves quake slot assignments across restore', () => {
+        const restored = restoreWorld(config, monitor, [], 0, 0, null,
+            [wid(10), null, wid(20), null, null]);
+        expect(restored.quakeState.slots[0]).toBe(wid(10));
+        expect(restored.quakeState.slots[1]).toBeNull();
+        expect(restored.quakeState.slots[2]).toBe(wid(20));
+    });
+
+    it('creates empty quake state when no slots provided', () => {
+        const restored = restoreWorld(config, monitor, [], 0, 0, null);
+        expect(restored.quakeState.slots.every(s => s === null)).toBe(true);
     });
 });

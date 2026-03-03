@@ -23,6 +23,7 @@ export class QuakeWindowAdapter {
     private _wasVisible = false;
     private _kestrelLayer: Clutter.Actor | null = null;
     private _animClone: Clutter.Clone | null = null;
+    private _animGeneration = 0;
 
     /** Set reference to the kestrel clone layer so quake actors can be raised above it. */
     setKestrelLayer(layer: Clutter.Actor): void {
@@ -60,27 +61,32 @@ export class QuakeWindowAdapter {
     }
 
     applyQuakeScene(scene: QuakeWindowScene | null): void {
-        const wasVisible = this._wasVisible;
-
         if (scene?.visible) {
-            this._wasVisible = this._showQuakeWindow(scene, wasVisible);
-        } else if (wasVisible) {
+            this._wasVisible = this._showQuakeWindow(scene);
+        } else if (this._wasVisible) {
             this._slideOutAll();
             this._wasVisible = false;
         }
     }
 
-    private _showQuakeWindow(scene: QuakeWindowScene, wasVisible: boolean): boolean {
+    private _showQuakeWindow(scene: QuakeWindowScene): boolean {
         const tracked = this._tracked.get(scene.windowId);
         if (!tracked) return false;
 
-        tracked.metaWindow.move_resize_frame(true, scene.x, scene.y, scene.width, scene.height);
+        // Hide any other quake window that was visible (switching slots)
+        this._hideOtherQuakeWindows(scene.windowId);
 
-        if (!wasVisible) {
-            this._slideIn(tracked, scene);
-        }
+        tracked.metaWindow.move_resize_frame(true, scene.x, scene.y, scene.width, scene.height);
+        this._slideIn(tracked, scene);
 
         return true;
+    }
+
+    private _hideOtherQuakeWindows(activeWindowId: WindowId): void {
+        for (const [id, tracked] of this._tracked.entries()) {
+            if (id === activeWindowId || tracked.metaWindow.minimized) continue;
+            tracked.metaWindow.minimize();
+        }
     }
 
     /** Slide in using a clone for animation, then reveal the real window. */
@@ -90,6 +96,7 @@ export class QuakeWindowAdapter {
         tracked.actor.set_opacity(0);
 
         this._destroyAnimClone();
+        const gen = ++this._animGeneration;
         const clone = this._createAnimClone(tracked.actor, scene);
         clone.set_opacity(0);
         clone.set_translation(0, -SLIDE_OFFSET, 0);
@@ -99,12 +106,13 @@ export class QuakeWindowAdapter {
             translation_y: 0,
             duration: ANIM_DURATION,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => this._onSlideInComplete(tracked),
+            onComplete: () => this._onSlideInComplete(tracked, gen),
         });
     }
 
-    private _onSlideInComplete(tracked: TrackedQuakeWindow): void {
+    private _onSlideInComplete(tracked: TrackedQuakeWindow, gen: number): void {
         try {
+            if (gen !== this._animGeneration) return;
             this._destroyAnimClone();
             this._raiseAboveKestrelLayer(tracked.actor);
             tracked.actor.set_opacity(255);
@@ -124,11 +132,11 @@ export class QuakeWindowAdapter {
         const { metaWindow, actor } = tracked;
         const rect = metaWindow.get_frame_rect();
 
-        // Hide real window immediately, create clone at its position
         this._lowerToWindowGroup(actor);
         actor.set_opacity(0);
 
         this._destroyAnimClone();
+        const gen = ++this._animGeneration;
         const clone = this._createAnimCloneAt(actor, rect.x, rect.y, rect.width, rect.height);
 
         (clone as unknown as Easeable).ease({
@@ -136,13 +144,16 @@ export class QuakeWindowAdapter {
             translation_y: -SLIDE_OFFSET,
             duration: ANIM_DURATION,
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => {
-                try {
-                    this._destroyAnimClone();
-                    metaWindow.minimize();
-                } catch { /* window may have been destroyed */ }
-            },
+            onComplete: () => this._onSlideOutComplete(metaWindow, gen),
         });
+    }
+
+    private _onSlideOutComplete(metaWindow: Meta.Window, gen: number): void {
+        try {
+            if (gen !== this._animGeneration) return;
+            this._destroyAnimClone();
+            metaWindow.minimize();
+        } catch { /* window may have been destroyed */ }
     }
 
     /** Create an animation clone positioned from scene geometry. */

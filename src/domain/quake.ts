@@ -11,6 +11,13 @@ export function createQuakeState(): QuakeState {
     };
 }
 
+/** Restore quake state from saved slot assignments, padding/truncating to SLOT_COUNT. */
+export function restoreQuakeState(savedSlots?: readonly (WindowId | null)[]): QuakeState {
+    if (!savedSlots || savedSlots.length === 0) return createQuakeState();
+    const slots = Array.from({ length: SLOT_COUNT }, (_, i) => savedSlots[i] ?? null);
+    return { slots, activeSlot: null };
+}
+
 export function assignQuakeWindow(world: World, slotIndex: number, windowId: WindowId): WorldUpdate {
     if (world.quakeState.slots[slotIndex] !== null) return buildUpdate(world);
     const slots = world.quakeState.slots.map((s, i) => i === slotIndex ? windowId : s);

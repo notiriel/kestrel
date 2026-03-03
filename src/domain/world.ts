@@ -38,7 +38,7 @@ import type { NotificationState } from './notification.js';
 import { createNotificationState, dismissNotificationsForWindow, unregisterWindow } from './notification.js';
 import type { NotificationInteractionState } from './notification-scene.js';
 import { createNotificationInteractionState } from './notification-scene.js';
-import { createQuakeState, isQuakeWindow, releaseQuakeWindow } from './quake.js';
+import { createQuakeState, restoreQuakeState, isQuakeWindow, releaseQuakeWindow } from './quake.js';
 
 export interface World {
     readonly workspaces: readonly Workspace[];
@@ -504,6 +504,7 @@ export function restoreWorld(
     viewportWorkspaceIndex: number,
     viewportScrollX: number,
     focusedWindow: WindowId | null,
+    quakeSlots?: readonly (WindowId | null)[],
 ): World {
     const workspaces: Workspace[] = workspaceData.map((data) => {
         const ws = createWorkspace(nextWorkspaceId(), data.name, data.color ?? null);
@@ -531,7 +532,7 @@ export function restoreWorld(
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
         notificationInteractionState: createNotificationInteractionState(),
-        quakeState: createQuakeState(),
+        quakeState: restoreQuakeState(quakeSlots),
     };
 
     world = pruneEmptyWorkspaces(world);
