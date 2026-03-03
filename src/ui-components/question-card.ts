@@ -567,6 +567,16 @@ export class QuestionCard implements NotificationCardDelegate {
                 console.error('[Kestrel] Error in other text changed:', e);
             }
         });
+
+        entry.clutter_text.connect('activate', () => {
+            try {
+                if (entry.get_text().trim()) {
+                    this.navigate(1);
+                }
+            } catch (e) {
+                console.error('[Kestrel] Error in other entry activate:', e);
+            }
+        });
         row.add_child(entry);
 
         GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
