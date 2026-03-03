@@ -306,10 +306,13 @@ interface Column {
     readonly slotSpan: number;  // horizontal width in slots (1 to columnCount)
 }
 
+type WorkspaceColorId = 'blue' | 'purple' | 'rose' | 'amber' | 'teal' | 'coral' | null;
+
 interface Workspace {
     readonly id: WorkspaceId;
     readonly columns: readonly Column[];
     readonly name: string | null;
+    readonly color: WorkspaceColorId;  // per-workspace accent color, null = use global config
 }
 ```
 

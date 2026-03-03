@@ -340,6 +340,8 @@ Overview mode shows a zoomed-out bird's-eye view of the entire World. All worksp
 | Enter or Super+Minus | Exit overview, animate to selected window |
 | Escape | Exit overview, return to previously focused window (no change) |
 | Click on thumbnail | Jump to that window |
+| F2 | Rename workspace |
+| F3 | Workspace color picker |
 
 ### Type-to-Filter
 
@@ -367,6 +369,16 @@ Press F2 in overview mode to open an inline text entry on the focused workspace 
 - Pre-filled with the current name, fully selected.
 - Enter saves the name; Escape cancels.
 - Typing does NOT trigger filtering while rename is active.
+
+### Workspace Color
+
+Press F3 in overview mode to open a color picker popup for the focused workspace.
+
+- 7 options: Default (uses global config colors), Blue, Purple, Rose, Amber, Teal, Coral.
+- Click a swatch to apply. Escape cancels.
+- Color tints the focus border (instant change on workspace switch) and notification/permission card left bar (2px accent).
+- Default (null) uses the global `focusBorderColor` / `focusBgColor` from settings.
+- Colors persist across disable/enable cycles via saved state.
 
 ## Animation
 

@@ -1,6 +1,7 @@
 import type {
     WindowId,
     WorkspaceId,
+    WorkspaceColorId,
     KestrelConfig,
     MonitorInfo,
     WorldUpdate,
@@ -423,6 +424,18 @@ export function renameCurrentWorkspace(world: World, name: string | null): World
     return replaceCurrentWorkspace(world, { ...ws, name });
 }
 
+/** Set the accent color for the current workspace. Pass null to use default. */
+export function setCurrentWorkspaceColor(world: World, color: WorkspaceColorId): World {
+    const ws = currentWorkspace(world);
+    return replaceCurrentWorkspace(world, { ...ws, color });
+}
+
+/** Find the workspace color for the workspace containing the given window. */
+export function workspaceColorForWindow(world: World, windowId: WindowId): WorkspaceColorId {
+    const result = findWindowInWorld(world, windowId);
+    return result ? world.workspaces[result.wsIndex]!.color : null;
+}
+
 /**
  * Filter workspaces by fuzzy matching on name.
  * Returns matching workspace indices sorted by score descending.
@@ -477,6 +490,7 @@ export interface RestoreColumnData {
 export interface RestoreWorkspaceData {
     readonly columns: readonly RestoreColumnData[];
     readonly name: string | null;
+    readonly color?: WorkspaceColorId;
 }
 
 /**
@@ -492,7 +506,7 @@ export function restoreWorld(
     focusedWindow: WindowId | null,
 ): World {
     const workspaces: Workspace[] = workspaceData.map((data) => {
-        const ws = createWorkspace(nextWorkspaceId(), data.name);
+        const ws = createWorkspace(nextWorkspaceId(), data.name, data.color ?? null);
         return { ...ws, columns: data.columns.map(c => ({ windows: c.windows, slotSpan: c.slotSpan })) };
     });
 

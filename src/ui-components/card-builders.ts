@@ -11,10 +11,11 @@ export const ACCENT = '#62af85';
 const CARD_WIDTH = 400;
 
 /** Create the outer card box with surface styling. */
-function buildCardRoot(width: number): St.BoxLayout {
+function buildCardRoot(width: number, accentColor?: string): St.BoxLayout {
+    const borderLeft = accentColor ? `border-left: 2px solid ${accentColor};` : '';
     return new St.BoxLayout({
         vertical: true,
-        style: `background-color: ${SURFACE}; border: 1px solid ${BORDER}; border-radius: 12px; padding: 14px 16px;`,
+        style: `background-color: ${SURFACE}; border: 1px solid ${BORDER}; border-radius: 12px; padding: 14px 16px; ${borderLeft}`,
         reactive: true,
         width,
         opacity: 0,
@@ -155,7 +156,7 @@ interface CardSkeleton {
 
 /** Build the shared card skeleton: root, header, message label, expand wrapper. */
 export function buildCardSkeleton(notification: import('../domain/notification-types.js').OverlayNotification): CardSkeleton {
-    const actor = buildCardRoot(CARD_WIDTH);
+    const actor = buildCardRoot(CARD_WIDTH, notification.workspaceColor);
     actor.add_child(buildCardHeader(notification.workspaceName, notification.title));
     const msgLabel = buildCardMessage(notification.message || '');
     actor.add_child(msgLabel);

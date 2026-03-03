@@ -98,6 +98,7 @@ export function buildHelpCardData(settings: Gio.Settings): { sections: ShortcutS
             heading: 'Workspaces',
             entries: [
                 ['F2 (in overview)', 'Rename workspace'],
+                ['F3 (in overview)', 'Workspace color'],
             ],
         },
         {

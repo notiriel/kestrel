@@ -1,6 +1,7 @@
 import type { WindowId } from '../domain/types.js';
+import { resolveWorkspaceColor } from '../domain/types.js';
 import type { World } from '../domain/world.js';
-import { workspaceNameForWindow, updateNotificationState, updateNotificationInteractionState } from '../domain/world.js';
+import { workspaceNameForWindow, workspaceColorForWindow, updateNotificationState, updateNotificationInteractionState } from '../domain/world.js';
 import type { ClaudeStatus } from '../domain/notification-types.js';
 import {
     classifyPermissionPayload, parseAllowResponse, parseQuestion,
@@ -420,6 +421,7 @@ export class NotificationCoordinator {
             id: n.id,
             sessionId: n.sessionId,
             workspaceName: n.workspaceName,
+            workspaceColor: this._resolveWorkspaceColorForSession(n.sessionId),
             type: n.type,
             title: n.title,
             message: n.message,
@@ -428,6 +430,18 @@ export class NotificationCoordinator {
             timestamp: n.timestamp,
             questions: n.questions,
         };
+    }
+
+    private _resolveWorkspaceColorForSession(sessionId: string | undefined): string | undefined {
+        if (!sessionId) return undefined;
+        const world = this._deps.getWorld();
+        if (!world) return undefined;
+        const windowId = domainGetWindowForSession(world.notificationState, sessionId);
+        if (!windowId) return undefined;
+        const colorId = workspaceColorForWindow(world, windowId);
+        if (colorId === null) return undefined;
+        const resolved = resolveWorkspaceColor(colorId, world.config);
+        return resolved.solid;
     }
 
     /** Build a domain notification from a payload. */

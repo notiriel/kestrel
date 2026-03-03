@@ -1,12 +1,12 @@
-import type { WindowId, WorldUpdate } from '../domain/types.js';
+import type { WindowId, WorkspaceColorId, WorldUpdate } from '../domain/types.js';
 import type { SceneModel } from '../domain/scene.js';
 import type { World } from '../domain/world.js';
-import { setFocus, filterWorkspaces, renameCurrentWorkspace, switchToWorkspace } from '../domain/world.js';
+import { setFocus, filterWorkspaces, renameCurrentWorkspace, setCurrentWorkspaceColor, switchToWorkspace } from '../domain/world.js';
 import { computeScene } from '../domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
 import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
-import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename } from '../domain/overview-state.js';
+import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename, startColorPicking, finishColorPicking, cancelColorPicking } from '../domain/overview-state.js';
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { SceneApplyOptions } from './world-holder.js';
@@ -102,6 +102,7 @@ export class OverviewHandler {
             onTextInput: (text) => this._handleTextInput(text),
             onBackspace: () => this._handleBackspace(),
             onRename: () => this._handleRename(),
+            onColorPick: () => this._handleColorPick(),
         });
     }
 
@@ -186,10 +187,13 @@ export class OverviewHandler {
         const world = this._deps.getWorld();
         if (!world) return;
 
-        if (this._cancelRename(world)) return;
-        if (this._cancelFilter(world)) return;
+        if (this._cancelActiveOverviewAction(world)) return;
         if (this._cancelDrag()) return;
         this._cancelNormal(world);
+    }
+
+    private _cancelActiveOverviewAction(world: World): boolean {
+        return this._cancelColorPick(world) || this._cancelRename(world) || this._cancelFilter(world);
     }
 
     private _cancelRename(world: World): boolean {
@@ -521,6 +525,54 @@ export class OverviewHandler {
         this._deps.getCloneAdapter()?.syncWorkspaces(renamed.workspaces);
     }
 
+    private _handleColorPick(): void {
+        try {
+            this._handleColorPickInner();
+        } catch (e) {
+            console.error('[Kestrel] Error handling color pick:', e);
+        }
+    }
+
+    private _handleColorPickInner(): void {
+        const world = this._deps.getWorld();
+        if (!world || !this._overviewTransform) return;
+        if (world.overviewInteractionState.colorPicking) return;
+
+        this._deps.setWorld({ ...world, overviewInteractionState: startColorPicking(world.overviewInteractionState) });
+        this._overviewInputAdapter?.setKeyPassthrough(true);
+        this._startColorPickUI(world);
+    }
+
+    private _startColorPickUI(world: World): void {
+        const wsIndex = world.viewport.workspaceIndex;
+        const currentColor = world.workspaces[wsIndex]?.color ?? null;
+        this._deps.getCloneAdapter()?.startColorPick?.(
+            wsIndex, currentColor, this._overviewTransform!,
+            (color: WorkspaceColorId) => this._onColorPickComplete(color),
+        );
+    }
+
+    private _onColorPickComplete(color: WorkspaceColorId): void {
+        const world = this._deps.getWorld();
+        if (world) {
+            let w = { ...world, overviewInteractionState: finishColorPicking(world.overviewInteractionState) };
+            w = setCurrentWorkspaceColor(w, color);
+            this._deps.setWorld(w);
+            // Recompute scene so the focus indicator picks up the new color
+            const scene = computeScene(w);
+            this._deps.getCloneAdapter()?.updateOverviewFocus(scene, w.viewport.workspaceIndex, this._overviewTransform!);
+        }
+        this._overviewInputAdapter?.setKeyPassthrough(false);
+    }
+
+    private _cancelColorPick(world: World): boolean {
+        if (!world.overviewInteractionState.colorPicking) return false;
+        this._deps.setWorld({ ...world, overviewInteractionState: cancelColorPicking(world.overviewInteractionState) });
+        this._overviewInputAdapter?.setKeyPassthrough(false);
+        this._deps.getCloneAdapter()?.cancelColorPick?.();
+        return true;
+    }
+
     private _exitVisual(scene: SceneModel, animate: boolean = true): void {
         this._overviewInputAdapter?.deactivate();
         this._overviewInputAdapter = null;
@@ -534,16 +586,22 @@ export class OverviewHandler {
     /** Clear filter UI elements without touching domain state (already cleared by exitOverview/cancelOverview) */
     private _clearFilterUI(): void {
         this._clearFilterIndicator();
-        this._clearRenameUI();
+        this._clearOverviewPopups();
     }
 
     private _clearFilterIndicator(): void {
         this._deps.getCloneAdapter()?.updateFilterIndicator?.('');
     }
 
-    private _clearRenameUI(): void {
-        this._deps.getCloneAdapter()?.cancelRename?.();
+    private _clearOverviewPopups(): void {
+        this._clearClonePopups();
         this._overviewInputAdapter?.setKeyPassthrough?.(false);
+    }
+
+    private _clearClonePopups(): void {
+        const adapter = this._deps.getCloneAdapter();
+        adapter?.cancelRename?.();
+        adapter?.cancelColorPick?.();
     }
 
     private _applyExitClone(scene: SceneModel, animate: boolean): void {

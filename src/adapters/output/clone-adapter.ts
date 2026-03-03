@@ -1,4 +1,5 @@
-import type { WindowId, WorkspaceId, KestrelConfig } from '../../domain/types.js';
+import type { WindowId, WorkspaceId, KestrelConfig, WorkspaceColorId } from '../../domain/types.js';
+import { resolveWorkspaceColor } from '../../domain/types.js';
 import type { SceneModel } from '../../domain/scene.js';
 import type { ClonePort, OverviewTransform } from '../../ports/clone-port.js';
 import { safeDisconnect } from '../signal-utils.js';
@@ -8,6 +9,7 @@ import {
     buildOverviewBackground, buildFilterIndicator, buildRenameEntry,
     buildWorkspaceLabel, buildFocusIndicatorStyle, buildFocusIndicator,
 } from '../../ui-components/clone-ui-builders.js';
+import { buildColorPicker } from '../../ui-components/color-picker-builders.js';
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
@@ -87,6 +89,10 @@ export class CloneAdapter implements ClonePort {
     private _focusBorderColor: string = 'rgba(125,214,164,0.8)';
     private _focusBorderRadius: number = 8;
     private _focusBgColor: string = 'rgba(125,214,164,0.05)';
+    private _config: KestrelConfig | null = null;
+    private _currentColorId: WorkspaceColorId = null;
+    private _colorPicker: St.BoxLayout | null = null;
+    private _colorPickWsIndex: number = -1;
 
     init(workAreaY: number, monitorHeight: number, config?: KestrelConfig): void {
         this._workAreaY = workAreaY;
@@ -97,6 +103,7 @@ export class CloneAdapter implements ClonePort {
     }
 
     private _applyConfig(config: KestrelConfig): void {
+        this._config = config;
         this._focusBorderWidth = config.focusBorderWidth;
         this._focusBorderColor = config.focusBorderColor;
         this._focusBorderRadius = config.focusBorderRadius;
@@ -119,6 +126,7 @@ export class CloneAdapter implements ClonePort {
     }
 
     updateConfig(config: KestrelConfig): void {
+        this._config = config;
         this._focusBorderWidth = config.focusBorderWidth;
         this._focusBorderColor = config.focusBorderColor;
         this._focusBorderRadius = config.focusBorderRadius;
@@ -411,6 +419,15 @@ export class CloneAdapter implements ClonePort {
             return;
         }
 
+        // Apply workspace color instantly (no animation needed — position easing provides continuity)
+        if (fi.color !== this._currentColorId && this._config) {
+            this._currentColorId = fi.color;
+            const resolved = resolveWorkspaceColor(fi.color, this._config);
+            this._focusIndicator.style = buildFocusIndicatorStyle(
+                this._focusBorderWidth, resolved.border, this._focusBorderRadius, resolved.bg,
+            );
+        }
+
         this._focusIndicator.visible = true;
         easeOrSet(this._focusIndicator, { x: fi.x, y: fi.y, width: fi.width, height: fi.height, opacity: 255 }, duration, easeMode);
     }
@@ -540,6 +557,7 @@ export class CloneAdapter implements ClonePort {
             this._filterIndicator.visible = false;
         }
         this.cancelRename();
+        this.cancelColorPick();
         for (const wc of this._workspaceContainers.values()) {
             wc.container.visible = true;
         }
@@ -825,6 +843,38 @@ export class CloneAdapter implements ClonePort {
         if (wc) wc.nameLabel.visible = true;
     }
 
+    startColorPick(
+        wsIndex: number,
+        currentColor: WorkspaceColorId,
+        transform: OverviewTransform,
+        onComplete: (color: WorkspaceColorId) => void,
+    ): void {
+        if (!this._layer) return;
+        this.cancelColorPick();
+
+        this._colorPickWsIndex = wsIndex;
+
+        this._colorPicker = buildColorPicker(currentColor, (color) => {
+            this.cancelColorPick();
+            onComplete(color);
+        });
+
+        const visualPos = this._filteredPositionMap.get(wsIndex) ?? wsIndex;
+        const containerY = visualPos * this._monitorHeight;
+        const pickerX = transform.offsetX + 8;
+        const pickerY = transform.offsetY + containerY * transform.scale + (this._monitorHeight * transform.scale) / 2 - 12;
+
+        this._colorPicker.set_position(pickerX, pickerY);
+        this._layer.add_child(this._colorPicker);
+    }
+
+    cancelColorPick(): void {
+        if (!this._colorPicker) return;
+        this._colorPicker.destroy();
+        this._colorPicker = null;
+        this._colorPickWsIndex = -1;
+    }
+
     getClonePositions(): Map<WindowId, { x: number; y: number; width: number; height: number; visible: boolean; workspaceId: WorkspaceId; wsIndex: number }> {
         const positions = new Map<WindowId, { x: number; y: number; width: number; height: number; visible: boolean; workspaceId: WorkspaceId; wsIndex: number }>();
         for (const [windowId, entry] of this._clones) {
@@ -911,6 +961,7 @@ export class CloneAdapter implements ClonePort {
             this._overviewBg = null;
         }
         this.cancelRename();
+        this.cancelColorPick();
         if (this._filterIndicator) {
             this._filterIndicator.destroy();
             this._filterIndicator = null;

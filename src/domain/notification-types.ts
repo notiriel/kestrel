@@ -14,6 +14,7 @@ export interface OverlayNotification {
     readonly id: string;
     readonly sessionId?: string;
     readonly workspaceName?: string;
+    readonly workspaceColor?: string;
     readonly type: 'permission' | 'notification' | 'question';
     readonly title: string;
     readonly message: string;

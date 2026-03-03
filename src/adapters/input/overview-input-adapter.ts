@@ -16,6 +16,7 @@ interface OverviewInputCallbacks {
     onTextInput?: (text: string) => void;
     onBackspace?: () => void;
     onRename?: () => void;
+    onColorPick?: () => void;
 }
 
 const DRAG_THRESHOLD = 16;
@@ -323,13 +324,18 @@ export class OverviewInputAdapter {
 
     private _handleRenameKey(
         symbol: number,
-        state: number,
+        _state: number,
         callbacks: OverviewInputCallbacks,
     ): boolean {
-        if (symbol !== Clutter.KEY_F2) return false;
-
-        if (callbacks.onRename) callbacks.onRename();
-        return true;
+        if (symbol === Clutter.KEY_F2) {
+            if (callbacks.onRename) callbacks.onRename();
+            return true;
+        }
+        if (symbol === Clutter.KEY_F3) {
+            if (callbacks.onColorPick) callbacks.onColorPick();
+            return true;
+        }
+        return false;
     }
 
     private _isPrintableChar(ch: string): boolean {

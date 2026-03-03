@@ -12,6 +12,9 @@ import {
     startRename,
     finishRename,
     cancelRename,
+    startColorPicking,
+    finishColorPicking,
+    cancelColorPicking,
     computeOverviewTransform,
     overviewHitTest,
 } from '../../src/domain/overview-state.js';
@@ -245,5 +248,41 @@ describe('OverviewInteractionState — hit testing', () => {
             null, MONITOR_HEIGHT, LABEL_WIDTH,
         );
         expect(result).toBeNull();
+    });
+});
+
+describe('colorPicking state', () => {
+    it('defaults to false', () => {
+        const state = createOverviewInteractionState();
+        expect(state.colorPicking).toBe(false);
+    });
+
+    it('startColorPicking sets colorPicking to true', () => {
+        const state = startColorPicking(createOverviewInteractionState());
+        expect(state.colorPicking).toBe(true);
+    });
+
+    it('finishColorPicking resets colorPicking to false', () => {
+        let state = startColorPicking(createOverviewInteractionState());
+        state = finishColorPicking(state);
+        expect(state.colorPicking).toBe(false);
+    });
+
+    it('cancelColorPicking resets colorPicking to false', () => {
+        let state = startColorPicking(createOverviewInteractionState());
+        state = cancelColorPicking(state);
+        expect(state.colorPicking).toBe(false);
+    });
+
+    it('enterOverviewInteraction resets colorPicking', () => {
+        let state = startColorPicking(createOverviewInteractionState());
+        state = enterOverviewInteraction(state, null, 0, 0);
+        expect(state.colorPicking).toBe(false);
+    });
+
+    it('exitOverviewInteraction resets colorPicking', () => {
+        let state = startColorPicking(createOverviewInteractionState());
+        state = exitOverviewInteraction(state);
+        expect(state.colorPicking).toBe(false);
     });
 });

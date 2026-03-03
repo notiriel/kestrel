@@ -1,4 +1,4 @@
-import type { WindowId, WorkspaceId } from './types.js';
+import type { WindowId, WorkspaceId, WorkspaceColorId } from './types.js';
 import type { TiledWindow } from './window.js';
 
 /** A vertical column containing one or more stacked windows. */
@@ -11,11 +11,12 @@ export interface Workspace {
     readonly id: WorkspaceId;
     readonly columns: readonly Column[];
     readonly name: string | null;
+    readonly color: WorkspaceColorId;
 }
 
-export function createWorkspace(id: WorkspaceId, name?: string | null): Workspace {
+export function createWorkspace(id: WorkspaceId, name?: string | null, color?: WorkspaceColorId): Workspace {
     const defaultName = `Workspace ${Number(String(id).replace('ws-', '')) + 1}`;
-    return { id, columns: [], name: name === undefined ? defaultName : name };
+    return { id, columns: [], name: name === undefined ? defaultName : name, color: color ?? null };
 }
 
 export function createColumn(window: TiledWindow, slotSpan: number = 1): Column {

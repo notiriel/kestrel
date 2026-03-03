@@ -244,6 +244,22 @@ describe('computeScene', () => {
         expect(scene.workspaceStrip.workspaces[0]!.scrollX).toBe(scrollX);
         expect(scene.workspaceStrip.workspaces[1]!.scrollX).toBe(0);
     });
+
+    it('focus indicator color reflects current workspace color', () => {
+        let ws = createWorkspace(wsId(0), null, 'teal');
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
+        const world = makeWorld([ws], { focusedWindow: wid(1) });
+        const scene = computeScene(world);
+        expect(scene.focusIndicator.color).toBe('teal');
+    });
+
+    it('focus indicator color is null when workspace has no color', () => {
+        let ws = createWorkspace(wsId(0));
+        ws = addColumn(ws, createColumn(createTiledWindow(wid(1))));
+        const world = makeWorld([ws], { focusedWindow: wid(1) });
+        const scene = computeScene(world);
+        expect(scene.focusIndicator.color).toBeNull();
+    });
 });
 
 describe('diffScene', () => {
@@ -251,7 +267,7 @@ describe('diffScene', () => {
         return {
             clones: [],
             realWindows: [],
-            focusIndicator: { visible: false, x: 0, y: 0, width: 0, height: 0 },
+            focusIndicator: { visible: false, x: 0, y: 0, width: 0, height: 0, color: null },
             workspaceStrip: { y: 0, workspaces: [] },
             ...overrides,
         };
@@ -261,7 +277,7 @@ describe('diffScene', () => {
         const scene = makeScene({
             clones: [{ windowId: wid(1), workspaceId: wsId(0), x: 10, y: 20, width: 960, height: 500, visible: true }],
             realWindows: [{ windowId: wid(1), x: 10, y: 50, width: 960, height: 500, opacity: 0, minimized: false }],
-            focusIndicator: { visible: true, x: 7, y: 17, width: 966, height: 506 },
+            focusIndicator: { visible: true, x: 7, y: 17, width: 966, height: 506, color: null },
             workspaceStrip: { y: 0, workspaces: [] },
         });
         expect(diffScene(scene, scene)).toEqual([]);
@@ -335,17 +351,29 @@ describe('diffScene', () => {
         const expected = makeScene({
             clones: [{ windowId: wid(1), workspaceId: wsId(0), x: 10, y: 20, width: 960, height: 500, visible: true }],
             realWindows: [{ windowId: wid(1), x: 10, y: 50, width: 960, height: 500, opacity: 0, minimized: false }],
-            focusIndicator: { visible: true, x: 7, y: 17, width: 966, height: 506 },
+            focusIndicator: { visible: true, x: 7, y: 17, width: 966, height: 506, color: null },
         });
         const actual = makeScene({
             clones: [{ windowId: wid(1), workspaceId: wsId(0), x: 15, y: 20, width: 960, height: 500, visible: true }],
             realWindows: [{ windowId: wid(1), x: 15, y: 50, width: 960, height: 500, opacity: 0, minimized: false }],
-            focusIndicator: { visible: true, x: 12, y: 17, width: 966, height: 506 },
+            focusIndicator: { visible: true, x: 12, y: 17, width: 966, height: 506, color: null },
         });
         const result = diffScene(expected, actual);
         expect(result).toHaveLength(3);
         expect(result.map(m => m.entity)).toContain('clone');
         expect(result.map(m => m.entity)).toContain('realWindow');
         expect(result.map(m => m.entity)).toContain('focusIndicator');
+    });
+
+    it('focus indicator color difference reported', () => {
+        const expected = makeScene({
+            focusIndicator: { visible: true, x: 7, y: 17, width: 966, height: 506, color: 'blue' },
+        });
+        const actual = makeScene({
+            focusIndicator: { visible: true, x: 7, y: 17, width: 966, height: 506, color: 'rose' },
+        });
+        const result = diffScene(expected, actual);
+        expect(result).toHaveLength(1);
+        expect(result[0]).toEqual({ entity: 'focusIndicator', field: 'color', expected: 'blue', actual: 'rose' });
     });
 });

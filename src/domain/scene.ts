@@ -1,4 +1,4 @@
-import type { WindowId, WorkspaceId } from './types.js';
+import type { WindowId, WorkspaceId, WorkspaceColorId } from './types.js';
 import type { World } from './world.js';
 import { computeWindowPositions } from './layout.js';
 import { computeQuakeGeometry } from './quake.js';
@@ -37,6 +37,7 @@ export interface FocusIndicatorScene {
     readonly y: number;
     readonly width: number;
     readonly height: number;
+    readonly color: WorkspaceColorId;
 }
 
 interface WorkspaceContainerScene {
@@ -125,6 +126,7 @@ export function computeScene(world: World): SceneModel {
     const focusedWp = currentWsPositions?.find(
         w => w.windowId === world.focusedWindow,
     );
+    const wsColor = world.workspaces[currentWsIndex]?.color ?? null;
     let focusIndicator: FocusIndicatorScene;
     if (focusedWp) {
         focusIndicator = {
@@ -133,9 +135,10 @@ export function computeScene(world: World): SceneModel {
             y: focusedWp.y - borderWidth,
             width: focusedWp.width + borderWidth * 2,
             height: focusedWp.height + borderWidth * 2,
+            color: wsColor,
         };
     } else {
-        focusIndicator = { visible: false, x: 0, y: 0, width: 0, height: 0 };
+        focusIndicator = { visible: false, x: 0, y: 0, width: 0, height: 0, color: wsColor };
     }
 
     // Workspace strip
@@ -244,6 +247,9 @@ export function diffScene(expected: SceneModel, actual: SceneModel): SceneMismat
         if (efi[field] !== afi[field]) {
             mismatches.push({ entity: 'focusIndicator', field, expected: efi[field], actual: afi[field] });
         }
+    }
+    if ((efi.color ?? '') !== (afi.color ?? '')) {
+        mismatches.push({ entity: 'focusIndicator', field: 'color', expected: efi.color ?? 'null', actual: afi.color ?? 'null' });
     }
 
     // Compare workspace strip y

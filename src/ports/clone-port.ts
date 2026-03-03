@@ -1,4 +1,4 @@
-import type { WindowId, WorkspaceId, KestrelConfig } from '../domain/types.js';
+import type { WindowId, WorkspaceId, WorkspaceColorId, KestrelConfig } from '../domain/types.js';
 import type { SceneModel } from '../domain/scene.js';
 import type { OverviewTransform } from '../domain/overview-state.js';
 
@@ -47,6 +47,8 @@ export interface OverviewFilterPort {
     updateFilterIndicator?(text: string): void;
     startRename?(wsIndex: number, currentName: string, transform: OverviewTransform, callback: (name: string | null) => void): void;
     cancelRename?(): void;
+    startColorPick?(wsIndex: number, currentColor: WorkspaceColorId, transform: OverviewTransform, onComplete: (color: WorkspaceColorId) => void): void;
+    cancelColorPick?(): void;
 }
 
 /** Composite interface for backwards compatibility — consumers should prefer narrow ports. */

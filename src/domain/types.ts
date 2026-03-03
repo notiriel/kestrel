@@ -43,6 +43,32 @@ export interface WorldUpdate {
 }
 
 
+export type WorkspaceColorId = 'blue' | 'purple' | 'rose' | 'amber' | 'teal' | 'coral' | null;
+
+interface WorkspaceColorEntry {
+    readonly id: WorkspaceColorId;
+    readonly label: string;
+    readonly border: string;   // rgba for focus border
+    readonly bg: string;       // rgba for focus background tint
+    readonly solid: string;    // opaque hex for card left bar
+}
+
+export const WORKSPACE_COLORS: readonly WorkspaceColorEntry[] = [
+    { id: null,     label: 'Default', border: '', bg: '', solid: '' },
+    { id: 'blue',   label: 'Blue',    border: 'rgba(130,170,220,0.8)', bg: 'rgba(130,170,220,0.05)', solid: '#82aadccc' },
+    { id: 'purple', label: 'Purple',  border: 'rgba(175,140,210,0.8)', bg: 'rgba(175,140,210,0.05)', solid: '#af8cd2cc' },
+    { id: 'rose',   label: 'Rose',    border: 'rgba(210,140,160,0.8)', bg: 'rgba(210,140,160,0.05)', solid: '#d28ca0cc' },
+    { id: 'amber',  label: 'Amber',   border: 'rgba(210,180,120,0.8)', bg: 'rgba(210,180,120,0.05)', solid: '#d2b478cc' },
+    { id: 'teal',   label: 'Teal',    border: 'rgba(120,200,200,0.8)', bg: 'rgba(120,200,200,0.05)', solid: '#78c8c8cc' },
+    { id: 'coral',  label: 'Coral',   border: 'rgba(210,150,130,0.8)', bg: 'rgba(210,150,130,0.05)', solid: '#d29682cc' },
+];
+
+export function resolveWorkspaceColor(colorId: WorkspaceColorId, config: KestrelConfig): { border: string; bg: string; solid: string } {
+    if (colorId === null) return { border: config.focusBorderColor, bg: config.focusBgColor, solid: config.focusBorderColor };
+    const entry = WORKSPACE_COLORS.find(e => e.id === colorId);
+    return entry ? { border: entry.border, bg: entry.bg, solid: entry.solid } : { border: config.focusBorderColor, bg: config.focusBgColor, solid: config.focusBorderColor };
+}
+
 // Forward declaration to avoid circular import — imported as type only
 import type { World } from './world.js';
 import type { SceneModel } from './scene.js';
