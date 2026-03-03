@@ -48,6 +48,7 @@ export interface OverviewFilterPort {
     startRename?(wsIndex: number, currentName: string, transform: OverviewTransform, callback: (name: string | null) => void): void;
     cancelRename?(): void;
     startColorPick?(wsIndex: number, currentColor: WorkspaceColorId, transform: OverviewTransform, onComplete: (color: WorkspaceColorId) => void): void;
+    handleColorPickClick?(stageX: number, stageY: number): boolean;
     cancelColorPick?(): void;
 }
 

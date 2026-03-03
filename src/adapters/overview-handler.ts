@@ -233,16 +233,26 @@ export class OverviewHandler {
             const world = this._deps.getWorld();
             if (!world || !this._overviewTransform) return;
 
-            const hitWindowId = this._hitTest(world, x, y);
-            if (!hitWindowId) return;
-
-            // setWorld to store the focused world, then handleConfirm exits overview
-            const update = setFocus(world, hitWindowId);
-            this._deps.setWorld(update.world);
-            this.handleConfirm();
+            if (this._routeColorPickClick(world, x, y)) return;
+            this._routeWindowClick(world, x, y);
         } catch (e) {
             console.error('[Kestrel] Error handling overview click:', e);
         }
+    }
+
+    /** Route click to color picker when active (modal grab prevents native events). */
+    private _routeColorPickClick(world: World, x: number, y: number): boolean {
+        if (!world.overviewInteractionState.colorPicking) return false;
+        this._deps.getCloneAdapter()?.handleColorPickClick?.(x, y);
+        return true;
+    }
+
+    private _routeWindowClick(world: World, x: number, y: number): void {
+        const hitWindowId = this._hitTest(world, x, y);
+        if (!hitWindowId) return;
+        const update = setFocus(world, hitWindowId);
+        this._deps.setWorld(update.world);
+        this.handleConfirm();
     }
 
     private _handleDragStart(x: number, y: number): void {
