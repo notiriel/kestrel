@@ -66,6 +66,14 @@ export interface NotificationState {
     focusMode: FocusModeState;
 }
 
+// --- Saved status (persisted across enable/disable cycles) ---
+
+export interface SavedWindowStatus {
+    status: ClaudeStatus;
+    message: string;
+    timestamp: number;
+}
+
 // --- Factory ---
 
 export function createNotificationState(): NotificationState {
@@ -78,6 +86,36 @@ export function createNotificationState(): NotificationState {
         windowStatusMessages: new Map(),
         focusMode: { active: false, entryIds: [], currentIndex: 0 },
     };
+}
+
+/** Restore window status data into a notification state (e.g. after screen lock). */
+export function restoreWindowStatuses(
+    state: NotificationState,
+    statuses: ReadonlyMap<WindowId, SavedWindowStatus>,
+): NotificationState {
+    if (statuses.size === 0) return state;
+    const windowStatuses = new Map(state.windowStatuses);
+    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
+    const windowStatusMessages = new Map(state.windowStatusMessages);
+    for (const [windowId, saved] of statuses) {
+        windowStatuses.set(windowId, saved.status);
+        windowStatusTimestamps.set(windowId, saved.timestamp);
+        windowStatusMessages.set(windowId, saved.message);
+    }
+    return { ...state, windowStatuses, windowStatusTimestamps, windowStatusMessages };
+}
+
+/** Extract window status data for persistence. */
+export function extractWindowStatuses(state: NotificationState): Map<WindowId, SavedWindowStatus> {
+    const result = new Map<WindowId, SavedWindowStatus>();
+    for (const [windowId, status] of state.windowStatuses) {
+        result.set(windowId, {
+            status,
+            message: state.windowStatusMessages.get(windowId) ?? '...',
+            timestamp: state.windowStatusTimestamps.get(windowId) ?? Date.now(),
+        });
+    }
+    return result;
 }
 
 // --- Domain notification factory ---

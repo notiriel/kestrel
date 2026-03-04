@@ -1,8 +1,10 @@
 import type { WindowId, WorkspaceColorId, KestrelConfig, MonitorInfo } from '../domain/types.js';
 import type { World, RestoreWorkspaceData, RestoreColumnData } from '../domain/world.js';
 import type { StatePersistencePort } from '../ports/state-persistence-port.js';
-import { restoreWorld } from '../domain/world.js';
+import { restoreWorld, updateNotificationState } from '../domain/world.js';
 import { createTiledWindow } from '../domain/window.js';
+import { extractWindowStatuses, restoreWindowStatuses } from '../domain/notification.js';
+import type { SavedWindowStatus } from '../domain/notification.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
 
@@ -25,6 +27,13 @@ interface SavedWorkspaceV1V2 {
     name: string | null;
 }
 
+interface SavedWindowStatusEntry {
+    windowId: string;
+    status: string;
+    message: string;
+    timestamp: number;
+}
+
 interface SavedState {
     version: number;
     workspaces: (SavedWorkspaceV3 | SavedWorkspaceV1V2)[];
@@ -34,6 +43,8 @@ interface SavedState {
     quakeWindowIds?: string[];
     /** v3.1: full slot→windowId mapping (array of 5, null for empty) */
     quakeSlots?: (string | null)[];
+    /** v3.2: window status data (status, message, timestamp per window) */
+    windowStatuses?: SavedWindowStatusEntry[];
 }
 
 export class StatePersistence implements StatePersistencePort {
@@ -72,11 +83,20 @@ export class StatePersistence implements StatePersistencePort {
                 viewportScrollX: world.viewport.scrollX,
                 quakeWindowIds: world.quakeState.slots.filter((id): id is WindowId => id !== null),
                 quakeSlots: [...world.quakeState.slots],
+                windowStatuses: this._serializeWindowStatuses(world),
             };
             this._settings.set_string('saved-state', JSON.stringify(state));
         } catch (e) {
             console.error('[Kestrel] Error saving state:', e);
         }
+    }
+
+    private _serializeWindowStatuses(world: World): SavedWindowStatusEntry[] {
+        const result: SavedWindowStatusEntry[] = [];
+        for (const [windowId, saved] of extractWindowStatuses(world.notificationState)) {
+            result.push({ windowId, status: saved.status, message: saved.message, timestamp: saved.timestamp });
+        }
+        return result;
     }
 
     private _serializeWorkspaces(world: World): SavedWorkspaceV3[] {
@@ -107,7 +127,7 @@ export class StatePersistence implements StatePersistencePort {
         const workspaceData = this._buildWorkspaceData(state, existingWindowIds);
         const quakeSlots = this._restoreQuakeSlots(state, existingWindowIds);
 
-        return restoreWorld(
+        const world = restoreWorld(
             config, monitor,
             workspaceData,
             state.viewportWorkspaceIndex ?? 0,
@@ -115,6 +135,20 @@ export class StatePersistence implements StatePersistencePort {
             (state.focusedWindow as WindowId) ?? null,
             quakeSlots,
         );
+
+        return this._applyRestoredStatuses(world, state, existingWindowIds);
+    }
+
+    private _applyRestoredStatuses(world: World, state: SavedState, existingWindowIds: Set<string>): World {
+        const validStatuses = new Set(['working', 'needs-input', 'done']);
+        const entries = (state.windowStatuses ?? [])
+            .filter(e => existingWindowIds.has(e.windowId) && validStatuses.has(e.status));
+        if (entries.length === 0) return world;
+        const statusMap = new Map<WindowId, SavedWindowStatus>(entries.map(e => [
+            e.windowId as WindowId,
+            { status: e.status as import('../domain/notification-types.js').ClaudeStatus, message: e.message, timestamp: e.timestamp },
+        ]));
+        return updateNotificationState(world, restoreWindowStatuses(world.notificationState, statusMap));
     }
 
     private _restoreQuakeSlots(state: SavedState, existingWindowIds: Set<string>): (WindowId | null)[] {

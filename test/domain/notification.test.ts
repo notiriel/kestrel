@@ -31,6 +31,8 @@ import {
     navigateFocusMode,
     removeFromFocusMode,
     syncFocusModeEntries,
+    extractWindowStatuses,
+    restoreWindowStatuses,
 } from '../../src/domain/notification.js';
 import type {
     NotificationState,
@@ -1027,6 +1029,59 @@ describe('Notification domain model', () => {
 
             const updated = s.notifications.get('notif-1')!;
             expect(canSubmitQuestion(updated)).toBe(true);
+        });
+    });
+
+    describe('status persistence (extract/restore)', () => {
+        it('extracts window statuses into a serializable map', () => {
+            let s = createNotificationState();
+            s = registerSession(s, 'ses-1', 'w-1' as WindowId);
+            s = setSessionStatus(s, 'ses-1', 'working');
+            s = setSessionMessage(s, 'ses-1', 'Running tests');
+
+            const extracted = extractWindowStatuses(s);
+            expect(extracted.size).toBe(1);
+            const entry = extracted.get('w-1' as WindowId)!;
+            expect(entry.status).toBe('working');
+            expect(entry.message).toBe('Running tests');
+            expect(entry.timestamp).toBeGreaterThan(0);
+        });
+
+        it('restores window statuses into a fresh notification state', () => {
+            const saved = new Map([
+                ['w-1' as WindowId, { status: 'working' as const, message: 'Building', timestamp: 12345 }],
+                ['w-2' as WindowId, { status: 'needs-input' as const, message: 'Awaiting', timestamp: 67890 }],
+            ]);
+
+            const s = restoreWindowStatuses(createNotificationState(), saved);
+            expect(s.windowStatuses.get('w-1' as WindowId)).toBe('working');
+            expect(s.windowStatuses.get('w-2' as WindowId)).toBe('needs-input');
+            expect(s.windowStatusMessages.get('w-1' as WindowId)).toBe('Building');
+            expect(s.windowStatusMessages.get('w-2' as WindowId)).toBe('Awaiting');
+            expect(s.windowStatusTimestamps.get('w-1' as WindowId)).toBe(12345);
+            expect(s.windowStatusTimestamps.get('w-2' as WindowId)).toBe(67890);
+        });
+
+        it('returns same state when restoring empty map', () => {
+            const s = createNotificationState();
+            const result = restoreWindowStatuses(s, new Map());
+            expect(result).toBe(s);
+        });
+
+        it('round-trips through extract and restore', () => {
+            let s = createNotificationState();
+            s = registerSession(s, 'ses-1', 'w-1' as WindowId);
+            s = setSessionStatus(s, 'ses-1', 'needs-input');
+            s = setSessionMessage(s, 'ses-1', 'Permission needed');
+
+            const extracted = extractWindowStatuses(s);
+            const fresh = restoreWindowStatuses(createNotificationState(), extracted);
+
+            expect(fresh.windowStatuses.get('w-1' as WindowId)).toBe('needs-input');
+            expect(fresh.windowStatusMessages.get('w-1' as WindowId)).toBe('Permission needed');
+            expect(fresh.windowStatusTimestamps.get('w-1' as WindowId)).toBe(
+                s.windowStatusTimestamps.get('w-1' as WindowId),
+            );
         });
     });
 });
