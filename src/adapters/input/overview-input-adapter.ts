@@ -17,6 +17,7 @@ interface OverviewInputCallbacks {
     onBackspace?: () => void;
     onRename?: () => void;
     onColorPick?: () => void;
+    onFocusMode?: () => void;
 }
 
 const DRAG_THRESHOLD = 16;
@@ -267,7 +268,7 @@ export class OverviewInputAdapter {
         const symbol = event.get_key_symbol();
         const handled = this._handleNavigationKey(symbol, callbacks)
             || this._handleConfirmOrEscape(symbol, callbacks)
-            || this._handleEditKey(symbol, event.get_state(), callbacks)
+            || this._handleSpecialKey(symbol, event.get_state(), callbacks)
             || this._handlePrintableInput(event, callbacks);
         return handled ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
     }
@@ -310,7 +311,7 @@ export class OverviewInputAdapter {
         return false;
     }
 
-    private _handleEditKey(
+    private _handleSpecialKey(
         symbol: number,
         state: number,
         callbacks: OverviewInputCallbacks,

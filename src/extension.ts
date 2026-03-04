@@ -43,6 +43,7 @@ import { toggleQuakeSlot, getUnoccupiedQuakeSlots } from './domain/quake.js';
 import { getWorkspaceClaudeStatus } from './domain/notification.js';
 import { safeWindow } from './adapters/safe-window.js';
 import type Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 
 export default class KestrelExtension extends Extension {
@@ -258,6 +259,14 @@ export default class KestrelExtension extends Extension {
                 onOverviewExit: () => {
                     this._mouseInputAdapter?.activate();
                 },
+                onFocusMode: () => {
+                    // Domain already activated focus mode; render the UI
+                    // Defer until after overview modal is popped (deferred via idle_add)
+                    GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                        try { this._notificationCoordinator?.enterFocusMode(); } catch (e) { console.error('[Kestrel] Error entering focus mode from overview:', e); }
+                        return GLib.SOURCE_REMOVE;
+                    });
+                },
             });
 
             this._settlementRetry = new SettlementRetry({
@@ -329,7 +338,13 @@ export default class KestrelExtension extends Extension {
                         console.error('[Kestrel] Error opening new window:', e);
                     }
                 },
-                onToggleNotifications: () => this._notificationCoordinator?.toggle(),
+                onToggleNotifications: () => {
+                    if (this._overviewHandler?.isActive) {
+                        this._overviewHandler.handleFocusMode();
+                    } else {
+                        this._notificationCoordinator?.toggle();
+                    }
+                },
                 onToggleHelp: () => this._helpOverlay?.toggle(),
                 onCloseWindow: () => {
                     try {

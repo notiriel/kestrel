@@ -376,6 +376,11 @@ export class NotificationCoordinator {
         this._notificationFocusMode?.toggle();
     }
 
+    /** Enter focus mode UI. Called when domain has already activated focus mode state. */
+    enterFocusMode(): void {
+        this._notificationFocusMode?.enter();
+    }
+
     // --- Overview hooks ---
 
     enterOverview(transform: OverviewTransform, positions: Map<WindowId, { x: number; y: number; width: number; height: number; wsIndex: number }>): void {

@@ -6,7 +6,7 @@ import { setFocus, filterWorkspaces, renameCurrentWorkspace, setCurrentWorkspace
 import { computeScene } from '../domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
 import { moveLeft, moveRight } from '../domain/window-operations.js';
-import { enterOverview, exitOverview, cancelOverview } from '../domain/overview.js';
+import { enterOverview, exitOverview, cancelOverview, focusModeFromOverview } from '../domain/overview.js';
 import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename } from '../domain/overview-state.js';
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
@@ -25,6 +25,7 @@ export interface OverviewDeps {
     notifyOverviewExit?(): void;
     onOverviewEnter?(): void;
     onOverviewExit?(): void;
+    onFocusMode?(): void;
 }
 
 export class OverviewHandler {
@@ -104,6 +105,7 @@ export class OverviewHandler {
             onBackspace: () => this._handleBackspace(),
             onRename: () => this._handleRename(),
             onColorPick: () => this._handleColorPick(),
+            onFocusMode: () => this.handleFocusMode(),
         });
     }
 
@@ -227,6 +229,22 @@ export class OverviewHandler {
         this._exitVisual(update.scene);
         // applyUpdate after exit visual so scene subscribers see isActive=false
         this._deps.applyUpdate(update, { animate: true });
+    }
+
+    handleFocusMode(): void {
+        try {
+            const world = this._deps.getWorld();
+            if (!world) return;
+
+            const update = focusModeFromOverview(world);
+            if (!update) return;
+
+            this._exitVisual(update.scene);
+            this._deps.applyUpdate(update, { animate: true });
+            this._deps.onFocusMode?.();
+        } catch (e) {
+            console.error('[Kestrel] Error handling overview focus mode:', e);
+        }
     }
 
     private _handleClick(x: number, y: number): void {

@@ -21,15 +21,15 @@ const DOT_COLORS: Record<ClaudeStatus, string> = {
 };
 
 const TEXT_COLORS: Record<ClaudeStatus, string> = {
-    'working': '#1B5E20',
-    'needs-input': '#7F0000',
-    'done': '#E65100',
+    'working': '#0A3A0A',
+    'needs-input': '#4A0000',
+    'done': '#8B3800',
 };
 
 const ELAPSED_TEXT_COLORS: Record<ClaudeStatus, string> = {
-    'working': '#2E7D32',
-    'needs-input': '#B71C1C',
-    'done': '#BF360C',
+    'working': '#0D4A0D',
+    'needs-input': '#5C0000',
+    'done': '#9E4200',
 };
 
 const GLOW_COLORS: Record<ClaudeStatus, string> = {

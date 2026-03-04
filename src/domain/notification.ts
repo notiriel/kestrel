@@ -164,9 +164,11 @@ export function addNotification(
         return state;
     }
 
-    const notifications = new Map(state.notifications);
+    // Dismiss stale fire-and-forget notifications for this session before adding new one
+    const dismissed = dismissForSession(state, notification.sessionId);
+    const notifications = new Map(dismissed.notifications);
     notifications.set(notification.id, notification);
-    let newState = { ...state, notifications };
+    let newState = { ...dismissed, notifications };
 
     // Auto-enter focus mode for interactive notifications on the focused window
     if (
@@ -262,7 +264,7 @@ export function setSessionStatus(state: NotificationState, sessionId: string, st
     const windowStatusMessages = new Map(state.windowStatusMessages);
     windowStatusMessages.set(windowId, '...');
     let result = { ...state, windowStatuses, windowStatusTimestamps, windowStatusMessages };
-    if (status === 'working') {
+    if (status !== 'done') {
         result = dismissForSession(result, sessionId);
     }
     return result;
@@ -583,6 +585,14 @@ export function canSubmitQuestion(notification: DomainNotification): boolean {
 }
 
 // --- Focus mode ---
+
+/** Check if a window has a Claude session. */
+export function isAgentWindow(state: NotificationState, windowId: WindowId): boolean {
+    for (const [, wid] of state.sessionWindows) {
+        if (wid === windowId) return true;
+    }
+    return false;
+}
 
 /** Enter focus mode with a list of entry IDs. No-op when overview is active. */
 export function enterFocusMode(state: NotificationState, entryIds: string[], overviewActive: boolean = false): NotificationState {
