@@ -31,7 +31,9 @@ export class PermissionCard implements NotificationCardDelegate {
     private _progressTimeoutId: number | null = null;
 
     constructor(notification: OverlayNotification, options: VisitableCardOptions) {
-        const skeleton = buildCardSkeleton(notification);
+        const respond = (action: string): void => { options.onRespond(notification.id, action); };
+        const onFocus = options.onVisitSession ? () => respond('focus') : undefined;
+        const skeleton = buildCardSkeleton(notification, onFocus);
         this.actor = skeleton.actor;
         this.expandWrapper = skeleton.expandWrapper;
         this.msgLabel = skeleton.msgLabel;
@@ -40,14 +42,9 @@ export class PermissionCard implements NotificationCardDelegate {
             skeleton.expandContent.add_child(buildCommandBlock(notification.command));
         }
 
-        const respond = (action: string): void => { options.onRespond(notification.id, action); };
-        const onFocus = options.onVisitSession
-            ? () => respond('focus')
-            : undefined;
         skeleton.expandContent.add_child(buildPermissionButtons(
             () => respond('deny'), () => respond('allow'),
             () => respond('always'), () => respond('ask'),
-            onFocus,
         ));
 
         this.progressBar = buildProgressBar();
