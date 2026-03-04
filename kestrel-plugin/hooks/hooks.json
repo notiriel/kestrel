@@ -12,6 +12,12 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh done"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-resume-summary.sh",
+            "async": true,
+            "timeout": 30
           }
         ]
       }
