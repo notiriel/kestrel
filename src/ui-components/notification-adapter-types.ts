@@ -26,14 +26,10 @@ export interface NotificationCardDelegate {
     destroy(): void;
 }
 
-/** Shared card construction options */
-export interface CardOptions {
+/** Card construction options */
+export interface VisitableCardOptions {
     extensionPath: string;
     onRespond: (id: string, action: string) => void;
-}
-
-/** Options for cards that can visit a session */
-export interface VisitableCardOptions extends CardOptions {
     onVisitSession?: (sessionId: string) => void;
     /** Called when a question option is selected (for syncing to domain state). */
     onSelectOption?: (id: string, questionIndex: number, optionIndex: number) => void;

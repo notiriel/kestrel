@@ -11,7 +11,10 @@ export class NotificationCard implements NotificationCardDelegate {
     readonly progressBar: St.Widget | null = null;
 
     constructor(notification: OverlayNotification, options: VisitableCardOptions) {
-        const skeleton = buildCardSkeleton(notification);
+        const onFocus = options.onVisitSession
+            ? () => options.onRespond(notification.id, 'focus')
+            : undefined;
+        const skeleton = buildCardSkeleton(notification, onFocus);
         this.actor = skeleton.actor;
         this.expandWrapper = skeleton.expandWrapper;
         this.msgLabel = skeleton.msgLabel;

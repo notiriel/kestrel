@@ -600,6 +600,15 @@ export function enterFocusMode(state: NotificationState, entryIds: string[], ove
     return { ...state, focusMode: { active: true, entryIds: [...entryIds], currentIndex: 0 } };
 }
 
+/** Enter focus mode starting from a specific notification, including all pending entries. */
+export function enterFocusModeForNotification(state: NotificationState, notificationId: string): NotificationState {
+    const pending = getPendingEntries(state);
+    if (pending.length === 0) return state;
+    const entryIds = pending.map(n => n.id);
+    const startIndex = Math.max(0, entryIds.indexOf(notificationId));
+    return { ...state, focusMode: { active: true, entryIds, currentIndex: startIndex } };
+}
+
 /** Exit focus mode, clearing all focus mode state. */
 export function exitFocusMode(state: NotificationState): NotificationState {
     return { ...state, focusMode: { active: false, entryIds: [], currentIndex: 0 } };

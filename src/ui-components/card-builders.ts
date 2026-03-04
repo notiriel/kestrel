@@ -22,8 +22,8 @@ function buildCardRoot(width: number, accentColor?: string): St.BoxLayout {
     });
 }
 
-/** Header row with optional workspace label + title. */
-function buildCardHeader(workspaceName: string | undefined, title: string): St.BoxLayout {
+/** Header row with optional workspace label + title + focus button. */
+function buildCardHeader(workspaceName: string | undefined, title: string, onFocus?: () => void): St.BoxLayout {
     const header = new St.BoxLayout({
         style: 'spacing: 8px;',
         x_expand: true,
@@ -47,6 +47,20 @@ function buildCardHeader(workspaceName: string | undefined, title: string): St.B
     });
     titleLabel.clutter_text.ellipsize = 3;
     header.add_child(titleLabel);
+
+    if (onFocus) {
+        const btn = new St.Button({
+            label: '\u{1F441}',
+            style: `font-size: 14px; color: ${TEXT_DIM}; background: transparent; border: none; padding: 0 4px;`,
+            reactive: true,
+            can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        btn.connect('clicked', () => {
+            try { onFocus(); } catch (e) { console.error('[Kestrel] Error in focus button click:', e); }
+        });
+        header.add_child(btn);
+    }
 
     return header;
 }
@@ -111,7 +125,7 @@ const GREEN = '#7dd6a4';
 const RED = '#c95a5a';
 const BLUE = '#5a8ec9';
 
-/** 4-button permission row: Deny, Allow, Always, Dismiss. */
+/** Permission button row: Deny, Allow, Always, Dismiss. */
 export function buildPermissionButtons(
     onDeny: () => void,
     onAllow: () => void,
@@ -155,9 +169,9 @@ interface CardSkeleton {
 }
 
 /** Build the shared card skeleton: root, header, message label, expand wrapper. */
-export function buildCardSkeleton(notification: import('../domain/notification-types.js').OverlayNotification): CardSkeleton {
+export function buildCardSkeleton(notification: import('../domain/notification-types.js').OverlayNotification, onFocus?: () => void): CardSkeleton {
     const actor = buildCardRoot(CARD_WIDTH, notification.workspaceColor);
-    actor.add_child(buildCardHeader(notification.workspaceName, notification.title));
+    actor.add_child(buildCardHeader(notification.workspaceName, notification.title, onFocus));
     const msgLabel = buildCardMessage(notification.message || '');
     actor.add_child(msgLabel);
     const { wrapper: expandWrapper, content: expandContent } = buildExpandWrapper();

@@ -313,6 +313,20 @@ export class QuestionCard implements NotificationCardDelegate {
             }));
         }
 
+        if (!this._focusMode && this._options.onVisitSession) {
+            const focusBtn = new St.Button({
+                label: '\u{1F441}',
+                style: `font-size: 14px; color: ${TEXT_DIM}; background: transparent; border: none; padding: 0 4px;`,
+                reactive: true,
+                can_focus: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            focusBtn.connect('clicked', () => {
+                try { this._options.onRespond(this._notification.id, 'focus'); } catch (e) { console.error('[Kestrel] Error in focus button:', e); }
+            });
+            headerBox.add_child(focusBtn);
+        }
+
         this._timerLabel = new St.Label({
             text: `${this._remainingSeconds}s`,
             style: `font-family: monospace; font-size: 12px; font-weight: bold; color: ${TEXT_MUTED}; background-color: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 20px; border: 1px solid ${BORDER}; min-width: 48px; text-align: center;`,
