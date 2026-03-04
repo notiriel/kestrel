@@ -159,7 +159,7 @@ export class QuestionCard implements NotificationCardDelegate {
 
         // Delegate selection logic to domain
         const domainNotif = this._toDomainNotification();
-        const tempState = { notifications: new Map([['_', domainNotif]]), responses: new Map(), sessionWindows: new Map(), windowStatuses: new Map(), windowStatusTimestamps: new Map(), focusMode: { active: false, entryIds: [], currentIndex: 0 } };
+        const tempState = { notifications: new Map([['_', domainNotif]]), responses: new Map(), sessionWindows: new Map(), windowStatuses: new Map(), windowStatusTimestamps: new Map(), windowStatusMessages: new Map(), focusMode: { active: false, entryIds: [], currentIndex: 0 } };
         const newState = domainSelectOption(tempState, '_', questionIndex, optionIndex);
         const updated = newState.notifications.get('_');
         if (!updated) return;
@@ -181,7 +181,7 @@ export class QuestionCard implements NotificationCardDelegate {
     setOtherText(questionIndex: number, text: string): void {
         // Delegate to domain
         const domainNotif = this._toDomainNotification();
-        const tempState = { notifications: new Map([['_', domainNotif]]), responses: new Map(), sessionWindows: new Map(), windowStatuses: new Map(), windowStatusTimestamps: new Map(), focusMode: { active: false, entryIds: [], currentIndex: 0 } };
+        const tempState = { notifications: new Map([['_', domainNotif]]), responses: new Map(), sessionWindows: new Map(), windowStatuses: new Map(), windowStatusTimestamps: new Map(), windowStatusMessages: new Map(), focusMode: { active: false, entryIds: [], currentIndex: 0 } };
         const newState = domainSetOtherText(tempState, '_', questionIndex, text);
         const updated = newState.notifications.get('_');
         if (!updated) return;

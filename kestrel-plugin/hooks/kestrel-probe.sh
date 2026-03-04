@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Prevent recursion from inner claude -p call
+[ "$KESTREL_SUMMARIZING" = "1" ] && exit 0
+
 LOG="/tmp/kestrel-hooks.log"
 log() { echo "[$(date '+%H:%M:%S.%3N')] [probe] $*" >> "$LOG"; }
 

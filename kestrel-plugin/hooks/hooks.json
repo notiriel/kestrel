@@ -16,17 +16,6 @@
         ]
       }
     ],
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh needs-input"
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "matcher": "",
@@ -35,6 +24,12 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh working",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-summary.sh",
+            "async": true,
+            "timeout": 30
           }
         ]
       }
@@ -94,6 +89,12 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-status.sh done"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/kestrel-summary.sh",
+            "async": true,
+            "timeout": 30
           },
           {
             "type": "command",

@@ -62,6 +62,7 @@ export interface NotificationState {
     sessionWindows: Map<string, WindowId>;
     windowStatuses: Map<WindowId, ClaudeStatus>;
     windowStatusTimestamps: Map<WindowId, number>;
+    windowStatusMessages: Map<WindowId, string>;
     focusMode: FocusModeState;
 }
 
@@ -74,6 +75,7 @@ export function createNotificationState(): NotificationState {
         sessionWindows: new Map(),
         windowStatuses: new Map(),
         windowStatusTimestamps: new Map(),
+        windowStatusMessages: new Map(),
         focusMode: { active: false, entryIds: [], currentIndex: 0 },
     };
 }
@@ -242,10 +244,12 @@ export function unregisterWindow(state: NotificationState, windowId: WindowId): 
     windowStatuses.delete(windowId);
     const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
     windowStatusTimestamps.delete(windowId);
-    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps };
+    const windowStatusMessages = new Map(state.windowStatusMessages);
+    windowStatusMessages.delete(windowId);
+    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps, windowStatusMessages };
 }
 
-/** Update window status via session → window lookup. Dismisses stale notifications when working. */
+/** Update window status via session → window lookup. Resets message to "..." and dismisses stale notifications when working. */
 export function setSessionStatus(state: NotificationState, sessionId: string, status: ClaudeStatus): NotificationState {
     const windowId = state.sessionWindows.get(sessionId);
     if (!windowId) return state;
@@ -255,11 +259,24 @@ export function setSessionStatus(state: NotificationState, sessionId: string, st
     windowStatuses.set(windowId, status);
     const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
     windowStatusTimestamps.set(windowId, Date.now());
-    let result = { ...state, windowStatuses, windowStatusTimestamps };
+    const windowStatusMessages = new Map(state.windowStatusMessages);
+    windowStatusMessages.set(windowId, '...');
+    let result = { ...state, windowStatuses, windowStatusTimestamps, windowStatusMessages };
     if (status === 'working') {
         result = dismissForSession(result, sessionId);
     }
     return result;
+}
+
+/** Update the status message for a session's window. Does not change status or timestamp. */
+export function setSessionMessage(state: NotificationState, sessionId: string, message: string): NotificationState {
+    const windowId = state.sessionWindows.get(sessionId);
+    if (!windowId) return state;
+    const current = state.windowStatusMessages.get(windowId);
+    if (current === message) return state;
+    const windowStatusMessages = new Map(state.windowStatusMessages);
+    windowStatusMessages.set(windowId, message);
+    return { ...state, windowStatusMessages };
 }
 
 /** Remove session mapping and window status (for 'end' status). */
@@ -272,7 +289,9 @@ export function clearSession(state: NotificationState, sessionId: string): Notif
     windowStatuses.delete(windowId);
     const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
     windowStatusTimestamps.delete(windowId);
-    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps };
+    const windowStatusMessages = new Map(state.windowStatusMessages);
+    windowStatusMessages.delete(windowId);
+    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps, windowStatusMessages };
 }
 
 /**

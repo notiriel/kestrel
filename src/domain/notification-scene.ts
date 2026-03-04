@@ -128,8 +128,8 @@ export interface StatusBadgeScene {
     readonly status: ClaudeStatus;
     readonly x: number;
     readonly y: number;
-    readonly size: number;
     readonly visible: boolean;
+    readonly message: string;
 }
 
 // --- Monitor/panel info needed for layout ---
@@ -412,12 +412,12 @@ export interface ClonePositionInfo {
     readonly wsIndex: number;
 }
 
-const STATUS_ICON_SIZE = 75;
-const ICON_PADDING = 10;
+const PILL_MARGIN = 8;
 
 /**
  * Compute status badge scenes for all windows with Claude session status.
- * Used during overview mode to position badges on clone positions.
+ * Used during overview mode to position pill badges at top-center of clones.
+ * The x coordinate is the horizontal center; adapters subtract half pill width.
  */
 export function computeStatusBadgeScenes(
     notifState: NotificationState,
@@ -432,17 +432,16 @@ export function computeStatusBadgeScenes(
         if (!pos) continue;
 
         const { scale, offsetX, offsetY } = transform;
-        const x = (pos.x + pos.width - STATUS_ICON_SIZE - ICON_PADDING) * scale + offsetX;
-        const y = (pos.wsIndex * layerHeight + pos.y + ICON_PADDING) * scale + offsetY;
-        const size = Math.round(STATUS_ICON_SIZE * scale);
+        const x = (pos.x + pos.width / 2) * scale + offsetX;
+        const y = (pos.wsIndex * layerHeight + pos.y + PILL_MARGIN) * scale + offsetY;
 
         badges.push({
             windowId,
             status,
             x: Math.round(x),
             y: Math.round(y),
-            size,
             visible: true,
+            message: notifState.windowStatusMessages.get(windowId) ?? '',
         });
     }
 

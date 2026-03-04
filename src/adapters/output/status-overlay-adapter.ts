@@ -2,11 +2,10 @@ import type { WindowId } from '../../domain/types.js';
 import type { World } from '../../domain/world.js';
 import type { OverviewTransform } from '../../ports/clone-port.js';
 import { safeDisconnect } from '../signal-utils.js';
-import { buildStatusIcon, buildStatusStyle, buildElapsedLabel, STATUS_COLORS } from '../../ui-components/status-badge-builders.js';
+import { buildStatusPill, updateStatusPill } from '../../ui-components/status-badge-builders.js';
 import { computeStatusBadgeScenes, type StatusBadgeScene } from '../../domain/notification-scene.js';
 import { formatElapsedTime } from '../../domain/elapsed-time.js';
 import St from 'gi://St';
-import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
 
@@ -28,21 +27,19 @@ interface ClonePosition {
 }
 
 export class StatusOverlayAdapter {
-    private _overlays: Map<WindowId, St.Icon> = new Map();
-    private _elapsedLabels: Map<WindowId, St.Label> = new Map();
+    private _pills: Map<WindowId, St.BoxLayout> = new Map();
     private _titleSignals: Map<WindowId, TitleSignalEntry> = new Map();
     private _layer: Clutter.Actor | null = null;
-    private _iconGFile: Gio.File | null = null;
     private _getWorld: (() => World | null) | null = null;
     private _refreshTimerId: number | null = null;
-    private _lastBadges: readonly StatusBadgeScene[] = [];
+    private _overviewTransform: OverviewTransform | null = null;
+    private _overviewPositions: Map<WindowId, ClonePosition> | null = null;
 
     /** Callback invoked when a probe title is detected. Coordinator registers in domain. */
     onProbeDetected: ((sessionId: string, windowId: WindowId) => void) | null = null;
 
-    init(layer: Clutter.Actor, extensionDataDir: string, getWorld: () => World | null): void {
+    init(layer: Clutter.Actor, _extensionDataDir: string, getWorld: () => World | null): void {
         this._layer = layer;
-        this._iconGFile = Gio.File.new_for_path(`${extensionDataDir}/claude-logo-symbolic.svg`);
         this._getWorld = getWorld;
     }
 
@@ -66,31 +63,14 @@ export class StatusOverlayAdapter {
             safeDisconnect(entry.metaWindow, entry.signalId);
             this._titleSignals.delete(windowId);
         }
-
-        const overlay = this._overlays.get(windowId);
-        if (overlay) {
-            overlay.destroy();
-            this._overlays.delete(windowId);
-        }
-
-        const label = this._elapsedLabels.get(windowId);
-        if (label) {
-            label.destroy();
-            this._elapsedLabels.delete(windowId);
-        }
+        this._clearOverlay(windowId);
     }
 
     private _clearOverlay(windowId: WindowId): void {
-        const overlay = this._overlays.get(windowId);
-        if (overlay) {
-            overlay.destroy();
-            this._overlays.delete(windowId);
-        }
-
-        const label = this._elapsedLabels.get(windowId);
-        if (label) {
-            label.destroy();
-            this._elapsedLabels.delete(windowId);
+        const pill = this._pills.get(windowId);
+        if (pill) {
+            pill.destroy();
+            this._pills.delete(windowId);
         }
     }
 
@@ -98,27 +78,27 @@ export class StatusOverlayAdapter {
         transform: OverviewTransform,
         clonePositions: Map<WindowId, ClonePosition>,
     ): void {
-        const badges = this._computeBadges(transform, clonePositions);
-        this._lastBadges = badges;
-        for (const badge of badges) {
-            this._applyBadgeScene(badge);
-        }
+        this._overviewTransform = transform;
+        this._overviewPositions = clonePositions;
+        this._refreshBadges();
         this._startRefreshTimer();
     }
 
     private _computeBadges(transform: OverviewTransform, clonePositions: Map<WindowId, ClonePosition>): readonly StatusBadgeScene[] {
-        if (!this._layer || !this._iconGFile) return [];
+        if (!this._layer) return [];
         const world = this._getWorld?.();
         if (!world) return [];
         return computeStatusBadgeScenes(world.notificationState, clonePositions, transform, this._layer.height);
     }
 
     private _applyBadgeScene(badge: StatusBadgeScene): void {
-        const overlay = this._getOrCreateOverlay(badge.windowId, badge.status);
-        overlay.set_position(badge.x, badge.y);
-        overlay.set_size(badge.size, badge.size);
-        overlay.visible = badge.visible;
-        this._applyElapsedLabel(badge);
+        const pill = this._getOrCreatePill(badge.windowId, badge.status);
+        const elapsed = this._getElapsedText(badge.windowId);
+        updateStatusPill(pill, badge.status, badge.message, elapsed);
+        // Position pill so its top-center is at the scene's (x, y)
+        const [, naturalWidth] = pill.get_preferred_width(-1);
+        pill.set_position(badge.x - Math.round(naturalWidth / 2), badge.y);
+        pill.visible = badge.visible;
     }
 
     private _getStatusTimestamp(windowId: WindowId): number | undefined {
@@ -126,54 +106,37 @@ export class StatusOverlayAdapter {
         return world?.notificationState.windowStatusTimestamps.get(windowId);
     }
 
-    private _applyElapsedLabel(badge: StatusBadgeScene): void {
-        const timestamp = badge.visible ? this._getStatusTimestamp(badge.windowId) : undefined;
-        if (!timestamp) {
-            this._elapsedLabels.get(badge.windowId)?.set({ visible: false });
-            return;
-        }
-        const label = this._getOrCreateElapsedLabel(badge.windowId, badge.status);
-        label.text = formatElapsedTime(Date.now() - timestamp);
-        label.set_position(badge.x + badge.size * 0.8, badge.y + badge.size * 0.8);
-        label.set_size(badge.size * 1.5, Math.round(badge.size / 3));
-        label.visible = true;
+    private _getElapsedText(windowId: WindowId): string {
+        const timestamp = this._getStatusTimestamp(windowId);
+        if (!timestamp) return '';
+        return formatElapsedTime(Date.now() - timestamp);
     }
 
-    private _getOrCreateOverlay(windowId: WindowId, status: ClaudeStatus): St.Icon {
-        let overlay = this._overlays.get(windowId);
-        if (!overlay) {
-            overlay = buildStatusIcon(this._iconGFile!, status);
-            this._layer!.add_child(overlay);
-            this._overlays.set(windowId, overlay);
-        } else {
-            overlay.style = buildStatusStyle(status);
+    private _getOrCreatePill(windowId: WindowId, status: ClaudeStatus): St.BoxLayout {
+        let pill = this._pills.get(windowId);
+        if (!pill) {
+            pill = buildStatusPill(status);
+            this._layer!.add_child(pill);
+            this._pills.set(windowId, pill);
         }
-        return overlay;
+        return pill;
     }
 
-    private _getOrCreateElapsedLabel(windowId: WindowId, status: ClaudeStatus): St.Label {
-        let label = this._elapsedLabels.get(windowId);
-        if (!label) {
-            const color = STATUS_COLORS[status];
-            label = buildElapsedLabel(color);
-            this._layer!.add_child(label);
-            this._elapsedLabels.set(windowId, label);
-        } else {
-            const color = STATUS_COLORS[status];
-            label.style = `color: ${color}; font-size: 17px; font-weight: bold; text-align: left;`;
+    private _refreshBadges(): void {
+        if (!this._overviewTransform || !this._overviewPositions) return;
+        const badges = this._computeBadges(this._overviewTransform, this._overviewPositions);
+        for (const badge of badges) {
+            this._applyBadgeScene(badge);
         }
-        return label;
     }
 
     private _startRefreshTimer(): void {
         this._stopRefreshTimer();
         this._refreshTimerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
             try {
-                for (const badge of this._lastBadges) {
-                    this._applyBadgeScene(badge);
-                }
+                this._refreshBadges();
             } catch (e) {
-                console.error('[Kestrel] Error refreshing elapsed time:', e);
+                console.error('[Kestrel] Error refreshing badges:', e);
             }
             return GLib.SOURCE_CONTINUE;
         });
@@ -188,34 +151,22 @@ export class StatusOverlayAdapter {
 
     exitOverview(): void {
         this._stopRefreshTimer();
-        for (const overlay of this._overlays.values()) {
-            overlay.visible = false;
-        }
-        for (const label of this._elapsedLabels.values()) {
-            label.visible = false;
+        this._overviewTransform = null;
+        this._overviewPositions = null;
+        for (const pill of this._pills.values()) {
+            pill.visible = false;
         }
     }
 
     destroy(): void {
         this._stopRefreshTimer();
-
         for (const entry of this._titleSignals.values()) {
             safeDisconnect(entry.metaWindow, entry.signalId);
         }
         this._titleSignals.clear();
-
-        for (const overlay of this._overlays.values()) {
-            overlay.destroy();
-        }
-        this._overlays.clear();
-
-        for (const label of this._elapsedLabels.values()) {
-            label.destroy();
-        }
-        this._elapsedLabels.clear();
-
+        for (const pill of this._pills.values()) pill.destroy();
+        this._pills.clear();
         this._layer = null;
-        this._iconGFile = null;
         this._getWorld = null;
     }
 

@@ -17,6 +17,7 @@ import {
     registerSession,
     unregisterWindow,
     setSessionStatus,
+    setSessionMessage,
     clearSession,
     dismissNotificationsForWindow,
     shouldSuppressNotification,
@@ -815,6 +816,65 @@ describe('Notification domain model', () => {
         it('clearSession is no-op for unknown session (no timestamp change)', () => {
             const result = clearSession(state, 'unknown');
             expect(result.windowStatusTimestamps.size).toBe(0);
+        });
+    });
+
+    describe('windowStatusMessages', () => {
+        const win1 = 'win-1' as WindowId;
+
+        it('setSessionMessage stores the message', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionMessage(s, 'sess-1', 'Fixing auth module');
+            expect(s.windowStatusMessages.get(win1)).toBe('Fixing auth module');
+        });
+
+        it('setSessionMessage does not affect status or timestamp', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionStatus(s, 'sess-1', 'working');
+            const ts = s.windowStatusTimestamps.get(win1);
+            s = setSessionMessage(s, 'sess-1', 'Fixing auth module');
+            expect(s.windowStatuses.get(win1)).toBe('working');
+            expect(s.windowStatusTimestamps.get(win1)).toBe(ts);
+        });
+
+        it('setSessionStatus resets message to "..."', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionMessage(s, 'sess-1', 'Fixing auth module');
+            s = setSessionStatus(s, 'sess-1', 'working');
+            expect(s.windowStatusMessages.get(win1)).toBe('...');
+        });
+
+        it('setSessionMessage replaces existing message', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionMessage(s, 'sess-1', 'Task A');
+            s = setSessionMessage(s, 'sess-1', 'Task B');
+            expect(s.windowStatusMessages.get(win1)).toBe('Task B');
+        });
+
+        it('setSessionMessage is no-op for same message', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionMessage(s, 'sess-1', 'Fixing auth');
+            const s2 = setSessionMessage(s, 'sess-1', 'Fixing auth');
+            expect(s2).toBe(s);
+        });
+
+        it('setSessionMessage is no-op for unknown session', () => {
+            const s2 = setSessionMessage(state, 'unknown', 'Fixing auth');
+            expect(s2).toBe(state);
+        });
+
+        it('clearSession removes message', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionMessage(s, 'sess-1', 'Fixing auth module');
+            s = clearSession(s, 'sess-1');
+            expect(s.windowStatusMessages.has(win1)).toBe(false);
+        });
+
+        it('unregisterWindow removes message', () => {
+            let s = registerSession(state, 'sess-1', win1);
+            s = setSessionMessage(s, 'sess-1', 'Fixing auth module');
+            s = unregisterWindow(s, win1);
+            expect(s.windowStatusMessages.has(win1)).toBe(false);
         });
     });
 

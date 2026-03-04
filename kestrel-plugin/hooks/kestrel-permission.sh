@@ -3,6 +3,9 @@
 # Reads PermissionRequest JSON from stdin, sends to Kestrel overlay,
 # waits for user response, outputs Claude Code decision JSON.
 
+# Prevent recursion from inner claude -p call
+[ "$KESTREL_SUMMARIZING" = "1" ] && exit 0
+
 set -euo pipefail
 
 LOG="/tmp/kestrel-hooks.log"
@@ -23,8 +26,12 @@ fi
 # and the terminal UI has the proper multi-choice widget. Fire a notification
 # so the user knows even when the session isn't the focused window.
 if [ "$TOOL_NAME" = "ExitPlanMode" ]; then
-    log "skipping ExitPlanMode — sending notification and falling through to terminal UI"
+    log "skipping ExitPlanMode — setting needs-input and falling through to terminal UI"
     SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
+    gdbus call --session --dest org.gnome.Shell \
+        --object-path /io/kestrel/Extension \
+        --method io.kestrel.Extension.SetWindowStatus \
+        "$SESSION_ID" "needs-input" "Plan approval" >/dev/null 2>&1 || true
     NOTIFY_PAYLOAD=$(jq -n -c --arg sid "$SESSION_ID" '{
         session_id: $sid,
         type: "notification",
@@ -57,6 +64,14 @@ PAYLOAD=$(echo "$INPUT" | jq -c '{
     command: (.tool_input.command // null),
     tool_name: (.tool_name // null),
 }')
+
+# Set status to needs-input with descriptive message
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
+STATUS_MSG="Permission: ${TOOL_NAME}"
+gdbus call --session --dest org.gnome.Shell \
+    --object-path /io/kestrel/Extension \
+    --method io.kestrel.Extension.SetWindowStatus \
+    "$SESSION_ID" "needs-input" "$STATUS_MSG" >/dev/null 2>&1 || true
 
 # Send to Kestrel via custom DBus interface, get notification ID
 log "payload: $PAYLOAD"
