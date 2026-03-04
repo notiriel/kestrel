@@ -6,7 +6,7 @@ import type { ClaudeStatus } from '../domain/notification-types.js';
 import {
     classifyPermissionPayload, parseAllowResponse, parseQuestion,
     addNotification, respondToNotification, getResponse as domainGetResponse,
-    registerSession, setSessionStatus, clearSession,
+    registerSession, setSessionStatus, setSessionMessage, clearSession,
     getWindowForSession as domainGetWindowForSession,
     getWindowStatusMap as domainGetWindowStatusMap,
     getPendingEntries as domainGetPendingEntries,
@@ -89,7 +89,7 @@ export class NotificationCoordinator {
         return new KestrelDBusService({
             handleNotification: (payload) => this.handleNotification(payload),
             handlePermissionRequest: (payload) => this.handlePermissionRequest(payload),
-            setWindowStatus: (sessionId, status) => this.setWindowStatus(sessionId, status),
+            setWindowStatus: (sessionId, status, message) => this.setWindowStatus(sessionId, status, message),
             getNotificationResponse: (id) => this.getNotificationResponse(id),
             listWorkspaces: () => this._deps.listWorkspaces(),
             switchToWorkspaceByName: (name) => this._deps.switchToWorkspaceByName(name),
@@ -175,24 +175,25 @@ export class NotificationCoordinator {
 
     // --- DBus handlers ---
 
-    /** Set Claude session status for a window via domain state. */
-    setWindowStatus(sessionId: string, status: string): void {
+    /** Set Claude session status and/or message for a window via domain state.
+     *  Status and message are independent: either, both, or neither may change. */
+    setWindowStatus(sessionId: string, status: string, message?: string): void {
         const world = this._deps.getWorld();
         if (!world) return;
 
-        let ns: NotificationState;
-        if (status === 'end') {
-            ns = clearSession(world.notificationState, sessionId);
-        } else {
-            const validStatus = status as ClaudeStatus;
-            if (!['working', 'needs-input', 'done'].includes(validStatus)) {
-                console.log(`[Kestrel] setWindowStatus: unknown status ${status}`);
-                return;
-            }
-            ns = setSessionStatus(world.notificationState, sessionId, validStatus);
-        }
+        let ns = this._applyStatusChange(world.notificationState, sessionId, status);
+        if (message) ns = setSessionMessage(ns, sessionId, message);
+        if (ns === world.notificationState) return;
         this._deps.setWorld(updateNotificationState(world, ns));
         this._applyOverlayScene();
+    }
+
+    private _applyStatusChange(ns: NotificationState, sessionId: string, status: string): NotificationState {
+        if (status === 'end') return clearSession(ns, sessionId);
+        if (status && ['working', 'needs-input', 'done'].includes(status)) {
+            return setSessionStatus(ns, sessionId, status as ClaudeStatus);
+        }
+        return ns;
     }
 
     handlePermissionRequest(jsonPayload: string): string {

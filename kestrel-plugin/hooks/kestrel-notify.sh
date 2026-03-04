@@ -3,6 +3,9 @@
 # Reads notification JSON from stdin, shows a card in Kestrel overlay.
 # Fire-and-forget — idle notifications don't need a response back to Claude.
 
+# Prevent recursion from inner claude -p call
+[ "$KESTREL_SUMMARIZING" = "1" ] && exit 0
+
 set -euo pipefail
 
 LOG="/tmp/kestrel-hooks.log"

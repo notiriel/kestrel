@@ -34,7 +34,7 @@ gdbus call --session --dest org.gnome.Shell \
 | `HandlePermission` | `payload: s` (JSON) | `{"id":"notif-N"}` | Show permission card, return ID for polling |
 | `HandleNotification` | `payload: s` (JSON) | `{"id":"notif-N"}` | Fire-and-forget notification card |
 | `GetNotificationResponse` | `id: s` | `{"action":"allow"}` or `{"pending":true}` | Poll user's response to a permission card |
-| `SetWindowStatus` | `sessionId: s, status: s` | -- | Update clone status badge |
+| `SetWindowStatus` | `sessionId: s, status: s, message: s` | -- | Update clone status badge with optional message |
 | `ListWorkspaces` | -- | JSON array | List non-empty workspaces with metadata |
 | `SwitchToWorkspaceByName` | `name: s` | `{"ok":true}` | Navigate to workspace by name |
 | `RenameCurrentWorkspace` | `name: s` | `{"ok":true}` | Rename current workspace |
@@ -103,7 +103,7 @@ kestrel-status.sh done         # Session idle/ready
 kestrel-status.sh end          # Session ended
 ```
 
-Calls `SetWindowStatus(sessionId, status)` on DBus.
+Calls `SetWindowStatus(sessionId, status, "")` on DBus. Empty message preserves existing message.
 
 ### kestrel-notify.sh (Stop)
 
@@ -156,7 +156,22 @@ From `hooks.json`:
 | `PostToolUse` | status(working) |
 | `PermissionRequest` | permission |
 | `Stop` | status(done), notify |
+| `UserPromptSubmit` | summary (async) |
+| `Stop` | summary (async) |
 | `SessionEnd` | status(end) |
+
+### kestrel-summary.sh (UserPromptSubmit, Stop — async)
+
+Generates a 2-4 word summary of the user prompt or agent completion and sends it as a status message.
+
+Process:
+
+1. Checks `KESTREL_SUMMARIZING` env var to prevent recursion
+2. Extracts `prompt` (UserPromptSubmit) or `last_assistant_message` (Stop) from JSON stdin
+3. Calls `claude -p --model haiku` to summarize in 2-4 words
+4. Sends summary via `SetWindowStatus(sessionId, status, summary)` on DBus
+
+Runs as `async: true` so it doesn't block Claude Code. The summary appears ~1-3s after the status badge color changes.
 
 ## Data Flow
 

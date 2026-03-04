@@ -4,6 +4,9 @@
 # collects answers, and returns them as updatedInput to Claude Code.
 #
 # Uses PreToolUse (not PermissionRequest) so it blocks even in bypassPermissions mode.
+
+# Prevent recursion from inner claude -p call
+[ "$KESTREL_SUMMARIZING" = "1" ] && exit 0
 #
 # The extension returns answers already keyed by question text (not index),
 # so this script passes them through directly.
@@ -36,6 +39,13 @@ PAYLOAD=$(echo "$INPUT" | jq -c '{
     tool_name: .tool_name,
     tool_input: .tool_input,
 }')
+
+# Set status to needs-input with descriptive message
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
+gdbus call --session --dest org.gnome.Shell \
+    --object-path /io/kestrel/Extension \
+    --method io.kestrel.Extension.SetWindowStatus \
+    "$SESSION_ID" "needs-input" "Question" >/dev/null 2>&1 || true
 
 # Send to Kestrel via custom DBus interface
 log "payload: $PAYLOAD"

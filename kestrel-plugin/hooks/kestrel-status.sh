@@ -10,7 +10,10 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
 log "--- status hook fired --- status=$1 session=$SESSION_ID"
 log "stdin: $INPUT"
 
+# Prevent recursion from inner claude -p call
+[ "$KESTREL_SUMMARIZING" = "1" ] && exit 0
+
 RESULT=$(gdbus call --session --dest org.gnome.Shell \
   --object-path /io/kestrel/Extension \
   --method io.kestrel.Extension.SetWindowStatus \
-  "$SESSION_ID" "$1" 2>&1) && log "dbus ok: $RESULT" || log "dbus error: $RESULT"
+  "$SESSION_ID" "$1" "" 2>&1) && log "dbus ok: $RESULT" || log "dbus error: $RESULT"

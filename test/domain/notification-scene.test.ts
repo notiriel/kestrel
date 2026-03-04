@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { WindowId } from '../../src/domain/types.js';
 import type { NotificationState, DomainNotification } from '../../src/domain/notification.js';
-import { createNotificationState, enterFocusMode, registerSession, setSessionStatus } from '../../src/domain/notification.js';
+import { createNotificationState, enterFocusMode, registerSession, setSessionStatus, setSessionMessage } from '../../src/domain/notification.js';
 import {
     createNotificationInteractionState,
     expandStack, collapseStack, expandCard, collapseCard,
@@ -298,11 +298,10 @@ describe('computeStatusBadgeScenes', () => {
         expect(badges[0]!.windowId).toBe('win-1');
         expect(badges[0]!.status).toBe('working');
         expect(badges[0]!.visible).toBe(true);
-        expect(badges[0]!.size).toBe(Math.round(75 * 0.5));
 
-        // Verify position calculation
-        const expectedX = (100 + 800 - 75 - 10) * 0.5 + 10;
-        const expectedY = (0 * 1080 + 50 + 10) * 0.5 + 20;
+        // Verify top-center position calculation (pill margin = 8)
+        const expectedX = (100 + 800 / 2) * 0.5 + 10;
+        const expectedY = (0 * 1080 + 50 + 8) * 0.5 + 20;
         expect(badges[0]!.x).toBe(Math.round(expectedX));
         expect(badges[0]!.y).toBe(Math.round(expectedY));
     });
@@ -315,6 +314,37 @@ describe('computeStatusBadgeScenes', () => {
         // No clone positions for win-1
         const badges = computeStatusBadgeScenes(state, new Map(), { scale: 0.5, offsetX: 0, offsetY: 0 }, 1080);
         expect(badges).toHaveLength(0);
+    });
+
+    it('includes message from windowStatusMessages', () => {
+        let state = createNotificationState();
+        state = registerSession(state, 'sess-1', 'win-1' as WindowId);
+        state = setSessionStatus(state, 'sess-1', 'working');
+        state = setSessionMessage(state, 'sess-1', 'Fixing auth module');
+
+        const clonePositions = new Map<WindowId, ClonePositionInfo>([
+            ['win-1' as WindowId, { x: 100, y: 50, width: 800, height: 600, wsIndex: 0 }],
+        ]);
+        const transform: OverviewTransformInfo = { scale: 0.5, offsetX: 10, offsetY: 20 };
+        const badges = computeStatusBadgeScenes(state, clonePositions, transform, 1080);
+
+        expect(badges).toHaveLength(1);
+        expect(badges[0]!.message).toBe('Fixing auth module');
+    });
+
+    it('returns "..." message after status change', () => {
+        let state = createNotificationState();
+        state = registerSession(state, 'sess-1', 'win-1' as WindowId);
+        state = setSessionStatus(state, 'sess-1', 'working');
+
+        const clonePositions = new Map<WindowId, ClonePositionInfo>([
+            ['win-1' as WindowId, { x: 100, y: 50, width: 800, height: 600, wsIndex: 0 }],
+        ]);
+        const transform: OverviewTransformInfo = { scale: 0.5, offsetX: 0, offsetY: 0 };
+        const badges = computeStatusBadgeScenes(state, clonePositions, transform, 1080);
+
+        expect(badges).toHaveLength(1);
+        expect(badges[0]!.message).toBe('...');
     });
 
     it('multiple windows on different workspaces', () => {

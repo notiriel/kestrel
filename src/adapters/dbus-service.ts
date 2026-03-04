@@ -14,6 +14,7 @@ const INTERFACE_XML = `
     <method name="SetWindowStatus">
       <arg name="sessionId" direction="in" type="s"/>
       <arg name="status"    direction="in" type="s"/>
+      <arg name="message"   direction="in" type="s"/>
     </method>
     <method name="GetNotificationResponse">
       <arg name="id"       direction="in"  type="s"/>
@@ -41,7 +42,7 @@ const OBJECT_PATH = '/io/kestrel/Extension';
 interface KestrelDBusCallbacks {
     handleNotification(payload: string): string;
     handlePermissionRequest(payload: string): string;
-    setWindowStatus(sessionId: string, status: string): void;
+    setWindowStatus(sessionId: string, status: string, message: string): void;
     getNotificationResponse(id: string): string;
     listWorkspaces(): string;
     switchToWorkspaceByName(name: string): string;
@@ -66,8 +67,8 @@ export class KestrelDBusService {
         const handler = {
             HandleNotification: safeDbusHandler(callbacks.handleNotification),
             HandlePermission: safeDbusHandler(callbacks.handlePermissionRequest),
-            SetWindowStatus(sessionId: string, status: string): void {
-                try { callbacks.setWindowStatus(sessionId, status); }
+            SetWindowStatus(sessionId: string, status: string, message: string): void {
+                try { callbacks.setWindowStatus(sessionId, status, message); }
                 catch (e) { console.error('[Kestrel] DBus SetWindowStatus error:', e); }
             },
             GetNotificationResponse: safeDbusHandler(callbacks.getNotificationResponse),
