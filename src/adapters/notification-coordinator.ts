@@ -14,6 +14,7 @@ import {
     selectQuestionOption as domainSelectQuestionOption,
     navigateQuestion as domainNavigateQuestion,
     setOtherText as domainSetOtherText,
+    enterFocusModeForNotification,
 } from '../domain/notification.js';
 import type { DomainNotification, NotificationState } from '../domain/notification.js';
 import {
@@ -280,6 +281,16 @@ export class NotificationCoordinator {
     private _onOverlayRespond(id: string, action: string): void {
         const world = this._deps.getWorld();
         if (!world) return;
+
+        if (action === 'focus') {
+            const ns = enterFocusModeForNotification(world.notificationState, id);
+            if (ns !== world.notificationState) {
+                this._deps.setWorld(updateNotificationState(world, ns));
+                this._notificationFocusMode?.enter();
+            }
+            return;
+        }
+
         const ns = respondToNotification(world.notificationState, id, action);
         this._deps.setWorld(updateNotificationState(world, ns));
         this._applyOverlayScene();

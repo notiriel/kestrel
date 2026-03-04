@@ -188,7 +188,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
             onSetOtherText: (id, qi, text) => this.onSetOtherText?.(id, qi, text),
         });
         if (type === 'notification') return new NotificationCard(notification, { ...opts, onVisitSession: visitCb });
-        return new PermissionCard(notification, opts);
+        return new PermissionCard(notification, { ...opts, onVisitSession: visitCb });
     }
 
     private _domainToOverlay(n: DomainNotification): OverlayNotification {

@@ -111,12 +111,15 @@ const GREEN = '#7dd6a4';
 const RED = '#c95a5a';
 const BLUE = '#5a8ec9';
 
-/** 4-button permission row: Deny, Allow, Always, Dismiss. */
+const ORANGE = '#d4a054';
+
+/** Permission button row: Deny, Allow, Always, Focus, Dismiss. */
 export function buildPermissionButtons(
     onDeny: () => void,
     onAllow: () => void,
     onAlways: () => void,
     onDismiss: () => void,
+    onFocus?: () => void,
 ): St.BoxLayout {
     const row = new St.BoxLayout({
         style: 'spacing: 6px; margin-top: 10px;',
@@ -127,8 +130,11 @@ export function buildPermissionButtons(
         ['Deny', RED, `rgba(201,90,90,0.08)`, `rgba(201,90,90,0.2)`, onDeny],
         ['Allow', GREEN, `rgba(125,214,164,0.08)`, `rgba(125,214,164,0.2)`, onAllow],
         ['Always', BLUE, `rgba(90,142,201,0.08)`, `rgba(90,142,201,0.2)`, onAlways],
-        ['Dismiss', TEXT_DIM, `transparent`, BORDER, onDismiss],
     ];
+    if (onFocus) {
+        pairs.push(['Focus', ORANGE, `rgba(212,160,84,0.08)`, `rgba(212,160,84,0.2)`, onFocus]);
+    }
+    pairs.push(['Dismiss', TEXT_DIM, `transparent`, BORDER, onDismiss]);
 
     for (const [lbl, color, bg, border, handler] of pairs) {
         row.add_child(makeButton(lbl, color, bg, border, handler));

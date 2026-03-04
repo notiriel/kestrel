@@ -16,7 +16,8 @@ export class NotificationCard implements NotificationCardDelegate {
         this.expandWrapper = skeleton.expandWrapper;
         this.msgLabel = skeleton.msgLabel;
 
-        // Notification buttons: Visit, Dismiss
+        // Notification buttons: Visit, Focus, Dismiss
+        const ORANGE = '#d4a054';
         const buttonRow = new St.BoxLayout({
             style: 'spacing: 6px; margin-top: 10px;',
             x_expand: true,
@@ -27,6 +28,11 @@ export class NotificationCard implements NotificationCardDelegate {
             }
             options.onRespond(notification.id, 'visit');
         }));
+        if (options.onVisitSession) {
+            buttonRow.add_child(makeButton('Focus', ORANGE, `rgba(212,160,84,0.08)`, `rgba(212,160,84,0.2)`, () => {
+                options.onRespond(notification.id, 'focus');
+            }));
+        }
         buttonRow.add_child(makeButton('Dismiss', TEXT_DIM, `transparent`, BORDER, () => {
             options.onRespond(notification.id, 'dismiss');
         }));

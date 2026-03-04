@@ -1,5 +1,5 @@
 import type { OverlayNotification } from '../domain/notification-types.js';
-import type { NotificationCardDelegate, CardOptions } from './notification-adapter-types.js';
+import type { NotificationCardDelegate, VisitableCardOptions } from './notification-adapter-types.js';
 import Clutter from 'gi://Clutter';
 import type St from 'gi://St';
 import GLib from 'gi://GLib';
@@ -30,7 +30,7 @@ export class PermissionCard implements NotificationCardDelegate {
 
     private _progressTimeoutId: number | null = null;
 
-    constructor(notification: OverlayNotification, options: CardOptions) {
+    constructor(notification: OverlayNotification, options: VisitableCardOptions) {
         const skeleton = buildCardSkeleton(notification);
         this.actor = skeleton.actor;
         this.expandWrapper = skeleton.expandWrapper;
@@ -41,9 +41,13 @@ export class PermissionCard implements NotificationCardDelegate {
         }
 
         const respond = (action: string): void => { options.onRespond(notification.id, action); };
+        const onFocus = options.onVisitSession
+            ? () => respond('focus')
+            : undefined;
         skeleton.expandContent.add_child(buildPermissionButtons(
             () => respond('deny'), () => respond('allow'),
             () => respond('always'), () => respond('ask'),
+            onFocus,
         ));
 
         this.progressBar = buildProgressBar();
