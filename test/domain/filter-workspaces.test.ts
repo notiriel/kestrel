@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import { filterWorkspaces } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
 import { createWorkspace } from '../../src/domain/workspace.js';
@@ -19,7 +20,8 @@ function worldWithNames(...names: (string | null)[]): World {
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
     };
 }
 

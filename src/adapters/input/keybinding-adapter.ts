@@ -92,6 +92,7 @@ export class KeybindingAdapter implements KeybindingPort {
         this._addBindings(settings, this._coreBindings(callbacks));
         this._addBindings(settings, this._stackBindings(callbacks));
         this._addBindings(settings, this._quakeBindings(callbacks));
+        this._addBindings(settings, this._todoBindings(callbacks));
     }
 
     private _coreBindings(cb: KeybindingCallbacks): Array<[string, () => void]> {
@@ -120,7 +121,12 @@ export class KeybindingAdapter implements KeybindingPort {
             ['quake-slot-2-toggle', cb.onQuakeSlot2],
             ['quake-slot-3-toggle', cb.onQuakeSlot3],
             ['quake-slot-4-toggle', cb.onQuakeSlot4],
-            ['quake-slot-5-toggle', cb.onQuakeSlot5],
+        ];
+    }
+
+    private _todoBindings(cb: KeybindingCallbacks): Array<[string, () => void]> {
+        return [
+            ['workspace-todos-toggle', cb.onWorkspaceTodosToggle],
         ];
     }
 

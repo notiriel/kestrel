@@ -904,6 +904,24 @@
       <h3>Layout survives restarts</h3>
       <p>Window positions, workspace assignments, and focus state persist across screen locks, extension restarts, and session recovery. Your spatial memory stays intact.</p>
     </div>
+
+    <div class="feature">
+      <div class="feature-label">Quake Console</div>
+      <h3>Hotkey-bound app overlays</h3>
+      <p>Up to four application slots (Super+W/E/R/T) that slide in from the top, like the classic Quake terminal. Configure each slot with a desktop app. Apps pre-launch on startup so they appear instantly.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Window Stacking</div>
+      <h3>Vertical splits within columns</h3>
+      <p>Stack multiple windows in a single column with Super+J. Stacked windows share the column height equally. Navigate within stacks with Super+Up/Down before crossing to adjacent workspaces.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-label">Workspace TODOs</div>
+      <h3>Task list per workspace</h3>
+      <p>Each workspace has its own TODO list toggled with Super+Z. Keyboard-driven task management with completion fade, dynamic numbering, and agent integration via DBus &mdash; agents can add, complete, and list tasks programmatically.</p>
+    </div>
   </div>
 </section>
 
@@ -922,11 +940,12 @@
     <table class="keybindings-table">
       <thead><tr><th>Keybinding</th><th>Action</th></tr></thead>
       <tbody>
-        <tr><td><kbd>Super</kbd> + <kbd>&rarr;</kbd></td><td>Focus next window</td></tr>
-        <tr><td><kbd>Super</kbd> + <kbd>&larr;</kbd></td><td>Focus previous window</td></tr>
-        <tr><td><kbd>Super</kbd> + <kbd>&darr;</kbd></td><td>Switch to workspace below</td></tr>
-        <tr><td><kbd>Super</kbd> + <kbd>&uarr;</kbd></td><td>Switch to workspace above</td></tr>
-        <tr><td><kbd>Super</kbd> + <kbd>-</kbd></td><td>Toggle overview</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>&rarr;</kbd></td><td>Focus next column</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>&larr;</kbd></td><td>Focus previous column</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>&darr;</kbd></td><td>Focus down (within stack, then workspace below)</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>&uarr;</kbd></td><td>Focus up (within stack, then workspace above)</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Alt</kbd> + <kbd>&darr;</kbd></td><td>Force switch to workspace below</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Alt</kbd> + <kbd>&uarr;</kbd></td><td>Force switch to workspace above</td></tr>
       </tbody>
     </table>
   </div>
@@ -936,12 +955,28 @@
     <table class="keybindings-table">
       <thead><tr><th>Keybinding</th><th>Action</th></tr></thead>
       <tbody>
-        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&rarr;</kbd></td><td>Move window right</td></tr>
-        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&larr;</kbd></td><td>Move window left</td></tr>
-        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&darr;</kbd></td><td>Move window to workspace below</td></tr>
-        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&uarr;</kbd></td><td>Move window to workspace above</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&rarr;</kbd></td><td>Move column right</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&larr;</kbd></td><td>Move column left</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&darr;</kbd></td><td>Move down (within stack, then workspace below)</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>&uarr;</kbd></td><td>Move up (within stack, then workspace above)</td></tr>
         <tr><td><kbd>Super</kbd> + <kbd>F</kbd></td><td>Toggle half / full width</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>J</kbd></td><td>Stack / unstack with left neighbor</td></tr>
         <tr><td><kbd>Super</kbd> + <kbd>N</kbd></td><td>New window of focused app</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Backspace</kbd></td><td>Close focused window</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="keybinding-group">
+    <div class="keybinding-group-title">Overlays &amp; Tools</div>
+    <table class="keybindings-table">
+      <thead><tr><th>Keybinding</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Super</kbd> + <kbd>-</kbd></td><td>Toggle overview</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Z</kbd></td><td>Toggle workspace TODOs</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>.</kbd></td><td>Toggle notification focus mode</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>'</kbd></td><td>Show keyboard shortcuts help</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>W</kbd> / <kbd>E</kbd> / <kbd>R</kbd> / <kbd>T</kbd></td><td>Toggle quake console slots 1–4</td></tr>
       </tbody>
     </table>
   </div>
@@ -1019,6 +1054,10 @@
     <div class="claude-feature">
       <h3>Notifications</h3>
       <p>Fire-and-forget status updates from Claude Code sessions surface as notification cards in the overview. Stay informed without context-switching.</p>
+    </div>
+    <div class="claude-feature">
+      <h3>Workspace TODOs</h3>
+      <p>Agents can add, complete, and list tasks on a workspace's TODO list via DBus. Tasks persist as JSON files and are visible in the Super+Z overlay.</p>
     </div>
   </div>
 
@@ -1109,7 +1148,7 @@
       <li><a href="https://github.com/notiriel/kestrel">GitHub</a></li>
       <li><a href="https://github.com/notiriel/kestrel/issues">Issues</a></li>
       <li><a href="https://github.com/notiriel/kestrel/blob/master/docs/design.md">Design Doc</a></li>
-      <li><a href="https://github.com/notiriel/kestrel/blob/master/docs/solution-design.md">Architecture</a></li>
+      <li><a href="https://github.com/notiriel/kestrel/blob/master/docs/architecture.md">Architecture</a></li>
     </ul>
     <div class="footer-license">MIT License &middot; Open source, community-owned</div>
   </div>

@@ -22,7 +22,7 @@ export interface KeybindingCallbacks {
     onQuakeSlot2: () => void;
     onQuakeSlot3: () => void;
     onQuakeSlot4: () => void;
-    onQuakeSlot5: () => void;
+    onWorkspaceTodosToggle: () => void;
 }
 
 export interface KeybindingPort {

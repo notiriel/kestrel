@@ -124,6 +124,7 @@ Pure TypeScript with no `gi://` imports. Fully testable with Vitest.
 | `notification-types.ts` | `OverlayNotification`, `QuestionOption`, `QuestionDefinition`, `ClaudeStatus` |
 | `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
 | `quake.ts` | Quake console lifecycle: `assignQuakeWindow`, `toggleQuakeSlot`, `dismissQuake`, `releaseQuakeWindow`, `isQuakeWindow` |
+| `todo.ts` | Workspace TODO list: `TodoItem`, `TodoOverlayState`, `toggleTodoOverlay`, `dismissTodoOverlay`, `navigateUp/Down`, `todoToggleComplete`, `startNewItem`, `startEditItem`, `confirmEdit`, `cancelEdit`, `requestDelete`, `confirmDelete`, `cancelDelete`, `pruneCompleted`, `visibleItems`, `computeTodoGeometry`, `todosFilePath` |
 
 ### Ports (src/ports/)
 
@@ -170,6 +171,7 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 | `notification-overlay-adapter.ts` | Renders permission/notification/question card UI. Implements `NotificationPort` |
 | `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
 | `float-clone-manager.ts` | Floating (non-tiled) window clone management |
+| `todo-overlay-adapter.ts` | Workspace TODO overlay: modal lifecycle, keyboard dispatch, file I/O (`~/.kestrel/<uuid>/todos.json`), completion timers |
 
 **Handlers** (orchestrate domain calls + adapter updates, stay at `src/adapters/` root):
 
@@ -222,6 +224,7 @@ Presentational widget builders. These are pure UI construction functions with st
 | `help-builders.ts` | Help overlay construction |
 | `focus-mode-builders.ts` | Focus mode UI construction |
 | `animation-helpers.ts` | Clutter animation utilities |
+| `todo-overlay-builders.ts` | TODO overlay widget builders: backdrop, card, task rows, edit entry, hint bar |
 | `notification-adapter-types.ts` | Notification adapter type definitions |
 
 ## 2. Core Data Flow

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
 import { enterOverview, exitOverview, cancelOverview } from '../../src/domain/overview.js';
 import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
@@ -39,7 +40,8 @@ function makeWorld(windowIds: number[], focusedIdx: number): World {
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
     };
 }
 
@@ -112,7 +114,8 @@ describe('exitOverview', () => {
             overviewActive: true,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = exitOverview(world);
         // win-3 is off-screen at scrollX=0, so viewport should scroll to show it

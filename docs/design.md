@@ -173,7 +173,7 @@ All keybindings are configurable via GSettings. These are the defaults:
 | Super+E | Toggle quake slot 2 |
 | Super+R | Toggle quake slot 3 |
 | Super+T | Toggle quake slot 4 |
-| Super+Z | Toggle quake slot 5 |
+| Super+Z | Toggle workspace TODOs |
 
 ### Boundary Behavior
 
@@ -394,6 +394,67 @@ graph LR
     D --> E[New input arrives mid-animation]
     E --> B
 ```
+
+## Workspace TODOs
+
+Each workspace has a TODO list for capturing next actions and resumption cues. Research on task resumption shows the most valuable cue is the *next intended action* — TODOs externalize this directly per workspace.
+
+### Toggle
+
+**Super+Z** toggles the TODO overlay for the current workspace. Escape closes the overlay.
+
+### Display
+
+```
+(1. [ ] Task 1)       <- selected (highlighted)
+ 2. [ ] Task 2
+ 3. [X] Task 3        <- completed, strikethrough, fading
+```
+
+Tasks are numbered dynamically (1-based). Completed tasks show with strikethrough and reduced opacity for 10 seconds, then disappear. Numbers simplify agent communication ("do Todo 3").
+
+### Keyboard Controls
+
+| Key | Action |
+|---|---|
+| Arrow Up / k | Select previous task |
+| Arrow Down / j | Select next task |
+| Space | Toggle completion on selected task |
+| n | Create new task (enter edit mode) |
+| F2 | Edit selected task text |
+| Delete / d | Delete selected task (with confirmation) |
+| Enter | Confirm edit or confirm delete |
+| Escape | Cancel edit, cancel delete, or close overlay |
+
+### Completion Flow
+
+1. Space toggles the checkbox: `[ ]` → `[X]`
+2. Text gets strikethrough and reduced opacity
+3. Task remains visible for 10 seconds
+4. After 10 seconds, task is pruned from the visible list
+
+### Storage
+
+Tasks are stored in `~/.kestrel/<workspace-uuid>/todos.json`:
+
+```json
+[
+  {"uuid": "a1b2c3d4-...", "text": "Fix auth bug", "completed": null},
+  {"uuid": "e5f6g7h8-...", "text": "Write tests", "completed": "2026-03-06T12:00:00Z"}
+]
+```
+
+### Agent Integration
+
+Agents can manage TODOs via DBus:
+
+| Method | Args | Returns | Purpose |
+|---|---|---|---|
+| `AddTodo` | `sessionId: s, text: s` | `{"uuid":"..."}` | Add a task to the session's workspace |
+| `CompleteTodo` | `sessionId: s, uuid: s` | `{"ok":true}` | Mark a task as completed |
+| `ListTodos` | `sessionId: s` | `[{"number","uuid","text","completed"}]` | List visible tasks |
+
+Session ID maps to window → workspace → UUID via the existing probe hook infrastructure.
 
 ## Quake Console
 

@@ -34,6 +34,17 @@ const INTERFACE_XML = `
     <method name="GetDiagnostics">
       <arg name="response" direction="out" type="s"/>
     </method>
+    <method name="AddTodo">
+      <arg name="text"      direction="in"  type="s"/>
+      <arg name="response"  direction="out" type="s"/>
+    </method>
+    <method name="CompleteTodo">
+      <arg name="uuid"      direction="in"  type="s"/>
+      <arg name="response"  direction="out" type="s"/>
+    </method>
+    <method name="ListTodos">
+      <arg name="response"  direction="out" type="s"/>
+    </method>
   </interface>
 </node>`;
 
@@ -48,6 +59,9 @@ interface KestrelDBusCallbacks {
     switchToWorkspaceByName(name: string): string;
     renameCurrentWorkspace(name: string): string;
     getDiagnostics(): string;
+    addTodo(text: string): string;
+    completeTodo(uuid: string): string;
+    listTodos(): string;
 }
 
 function safeDbusHandler(fn: (...args: string[]) => string): (...args: string[]) => string {
@@ -76,6 +90,9 @@ export class KestrelDBusService {
             SwitchToWorkspaceByName: safeDbusHandler(callbacks.switchToWorkspaceByName),
             RenameCurrentWorkspace: safeDbusHandler(callbacks.renameCurrentWorkspace),
             GetDiagnostics: safeDbusHandler(callbacks.getDiagnostics),
+            AddTodo: safeDbusHandler(callbacks.addTodo),
+            CompleteTodo: safeDbusHandler(callbacks.completeTodo),
+            ListTodos: safeDbusHandler(callbacks.listTodos),
         };
 
         this._dbus = Gio.DBusExportedObject.wrapJSObject(INTERFACE_XML, handler);

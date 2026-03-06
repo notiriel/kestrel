@@ -9,7 +9,7 @@ export interface QuakeSlotConfig {
 }
 
 export interface QuakeState {
-    readonly slots: readonly (WindowId | null)[];  // 5 slots
+    readonly slots: readonly (WindowId | null)[];  // 4 slots
     readonly activeSlot: number | null;
 }
 

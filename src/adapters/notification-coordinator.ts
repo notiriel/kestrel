@@ -44,6 +44,9 @@ interface NotificationCoordinatorDeps {
     switchToWorkspaceByName(name: string): string;
     renameCurrentWorkspace(name: string): string;
     getDiagnostics(): string;
+    addTodo(text: string): string;
+    completeTodo(uuid: string): string;
+    listTodos(): string;
 }
 
 export class NotificationCoordinator {
@@ -96,6 +99,9 @@ export class NotificationCoordinator {
             switchToWorkspaceByName: (name) => this._deps.switchToWorkspaceByName(name),
             renameCurrentWorkspace: (name) => this._deps.renameCurrentWorkspace(name),
             getDiagnostics: () => this._deps.getDiagnostics(),
+            addTodo: (text) => this._deps.addTodo(text),
+            completeTodo: (uuid) => this._deps.completeTodo(uuid),
+            listTodos: () => this._deps.listTodos(),
         });
     }
 

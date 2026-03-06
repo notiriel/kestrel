@@ -184,6 +184,16 @@ vi.mock('../../src/adapters/output/quake-window-adapter.js', () => ({
         return inst;
     }),
 }));
+vi.mock('../../src/adapters/output/todo-overlay-adapter.js', () => ({
+    TodoOverlayAdapter: vi.fn().mockImplementation(() => {
+        const inst = {
+            ...mockMethods('onWorldChanged', 'destroy', 'setCallbacks', 'saveItems'),
+            loadItems: vi.fn().mockReturnValue([]),
+        };
+        mockInstances.todo = inst;
+        return inst;
+    }),
+}));
 vi.mock('../../src/adapters/safe-window.js', () => ({
     safeWindow: (w: unknown) => w,
     rawWindow: (w: unknown) => w,

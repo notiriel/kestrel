@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
 import { createWorld, addWindow, enterFullscreen, exitFullscreen, buildUpdate } from '../../src/domain/world.js';
 import type { World } from '../../src/domain/world.js';
@@ -134,7 +135,8 @@ describe('Fullscreen Step-Out', () => {
                 overviewActive: false,
                 overviewInteractionState: createOverviewInteractionState(),
                 notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
             };
 
             ({ world } = enterFullscreen(world, wid(1)));
@@ -160,7 +162,8 @@ describe('Fullscreen Step-Out', () => {
                 overviewActive: false,
                 overviewInteractionState: createOverviewInteractionState(),
                 notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
             };
 
             ({ world } = enterFullscreen(world, wid(2)));

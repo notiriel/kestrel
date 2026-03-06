@@ -39,6 +39,9 @@ gdbus call --session --dest org.gnome.Shell \
 | `SwitchToWorkspaceByName` | `name: s` | `{"ok":true}` | Navigate to workspace by name |
 | `RenameCurrentWorkspace` | `name: s` | `{"ok":true}` | Rename current workspace |
 | `GetDiagnostics` | -- | `{"expected":...,"actual":...,"mismatches":...}` | Compare expected vs actual scene state |
+| `AddTodo` | `sessionId: s, text: s` | `{"uuid":"..."}` | Add a task to the session's workspace |
+| `CompleteTodo` | `sessionId: s, uuid: s` | `{"ok":true}` | Mark a task as completed |
+| `ListTodos` | `sessionId: s` | `[{"number","uuid","text","completed"}]` | List visible tasks for the session's workspace |
 
 ### HandlePermission Payload Format
 

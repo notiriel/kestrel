@@ -204,7 +204,7 @@ export default class KestrelPreferences extends ExtensionPreferences {
         generalGroup.add(heightRow);
 
         // Slot groups
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= 4; i++) {
             const appKey = `quake-slot-${i}`;
             const toggleKey = `quake-slot-${i}-toggle`;
             const slotKeys = [appKey, toggleKey];

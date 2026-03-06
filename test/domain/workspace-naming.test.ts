@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
 import {
     createWorld,
@@ -54,7 +55,8 @@ function makeMultiWorld(
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
     };
 }
 

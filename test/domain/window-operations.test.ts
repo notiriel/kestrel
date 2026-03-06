@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
 import { moveRight, moveLeft, moveDown, moveUp, toggleSize, toggleStack } from '../../src/domain/window-operations.js';
 import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
@@ -44,7 +45,8 @@ function makeWorld(windowIds_: number[], focusedIdx: number, scrollX = 0): World
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
     };
 }
 
@@ -69,7 +71,8 @@ function makeMultiWorld(
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
     };
 }
 
@@ -183,7 +186,8 @@ describe('moveDown', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = moveDown(world);
         // Should reorder within stack
@@ -244,7 +248,8 @@ describe('toggleSize', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = toggleSize(world);
         const col = update.world.workspaces[0]!.columns.find(c =>
@@ -290,7 +295,8 @@ describe('toggleStack', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = toggleStack(world);
         expect(update.world.workspaces[0]!.columns).toHaveLength(3);

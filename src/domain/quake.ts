@@ -2,7 +2,7 @@ import type { WindowId, MonitorInfo, KestrelConfig, QuakeState, WorldUpdate } fr
 import type { World } from './world.js';
 import { buildUpdate } from './world.js';
 
-const SLOT_COUNT = 5;
+const SLOT_COUNT = 4;
 
 export function createQuakeState(): QuakeState {
     return {

@@ -65,7 +65,7 @@ function formatPair(settings: Gio.Settings, keyA: string, keyB: string): string 
 }
 
 function formatQuakeGroup(settings: Gio.Settings): string {
-    const keys = [1, 2, 3, 4, 5].map(i => readAccel(settings, `quake-slot-${i}-toggle`));
+    const keys = [1, 2, 3, 4].map(i => readAccel(settings, `quake-slot-${i}-toggle`));
     const parsed = keys.map(parseModsAndKey);
     const allSameMods = parsed.every(p => p.mods && p.mods === parsed[0].mods);
     if (allSameMods) {
@@ -105,7 +105,8 @@ export function buildHelpCardData(settings: Gio.Settings): { sections: ShortcutS
             heading: 'System',
             entries: [
                 [readAccel(settings, 'kestrel-toggle-overview'), 'Overview'],
-                [formatQuakeGroup(settings), 'Quake console slots 1–5'],
+                [formatQuakeGroup(settings), 'Quake console slots 1–4'],
+                [readAccel(settings, 'workspace-todos-toggle'), 'Workspace TODOs'],
                 [readAccel(settings, 'toggle-notifications'), 'Notifications'],
                 [readAccel(settings, 'toggle-help'), 'This help'],
             ],

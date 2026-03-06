@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
 import { focusRight, focusLeft, focusDown, focusUp, forceWorkspaceDown } from '../../src/domain/navigation.js';
 import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
@@ -39,7 +40,8 @@ function makeWorld(windowIds: number[], focusedIdx: number, scrollX = 0): World 
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
     };
 }
 
@@ -127,7 +129,8 @@ function makeMultiWorld(
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
     };
 }
 
@@ -162,7 +165,8 @@ describe('focusDown', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = focusDown(world);
         expect(update.world.focusedWindow).toBe(wid(3));
@@ -202,7 +206,8 @@ describe('focusDown', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = focusDown(world);
         // Should navigate within stack (wid(1) → wid(2)), not switch workspace
@@ -248,7 +253,8 @@ describe('focusUp', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = focusUp(world);
         expect(update.world.focusedWindow).toBe(wid(1));
@@ -272,7 +278,8 @@ describe('forceWorkspaceDown/Up', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = forceWorkspaceDown(world);
         expect(update.world.viewport.workspaceIndex).toBe(1);
@@ -296,7 +303,8 @@ describe('horizontal navigation with stacks', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = focusLeft(world);
         expect(update.world.focusedWindow).toBe(wid(2));
@@ -315,7 +323,8 @@ describe('horizontal navigation with stacks', () => {
             overviewActive: false,
             overviewInteractionState: createOverviewInteractionState(),
             notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         };
         const update = focusLeft(world);
         // col0 has only 1 window, clamp to position 0

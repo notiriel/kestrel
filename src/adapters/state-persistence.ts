@@ -56,7 +56,7 @@ export class StatePersistence implements StatePersistencePort {
 
     readConfig(): KestrelConfig {
         const quakeSlots = [];
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= 4; i++) {
             quakeSlots.push({ appId: this._settings.get_string(`quake-slot-${i}`) });
         }
         return {

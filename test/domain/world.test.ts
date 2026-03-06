@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
 import { resolveWorkspaceColor } from '../../src/domain/types.js';
 import { createWorld, addWindow, removeWindow, setFocus, restoreWorld, workspaceNameForWindow, renameCurrentWorkspace, setCurrentWorkspaceColor, workspaceColorForWindow, switchToWorkspace } from '../../src/domain/world.js';
@@ -209,7 +210,8 @@ describe('World', () => {
                 overviewActive: false,
                 overviewInteractionState: createOverviewInteractionState(),
                 notificationState: createNotificationState(),
-                quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+                quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
             } as World;
         }
 
@@ -245,7 +247,8 @@ describe('World', () => {
                 overviewActive: false,
                 overviewInteractionState: createOverviewInteractionState(),
                 notificationState: createNotificationState(),
-                quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+                quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
             } as World;
             const { world: result } = removeWindow(w, wid(2));
             expect(result.focusedWindow).toBe(wid(3));

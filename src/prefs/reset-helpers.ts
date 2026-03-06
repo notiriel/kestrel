@@ -34,12 +34,11 @@ const ALL_RESETTABLE_KEYS = [
     'quake-slot-2',
     'quake-slot-3',
     'quake-slot-4',
-    'quake-slot-5',
     'quake-slot-1-toggle',
     'quake-slot-2-toggle',
     'quake-slot-3-toggle',
     'quake-slot-4-toggle',
-    'quake-slot-5-toggle',
+    'workspace-todos-toggle',
     'debug-mode',
 ];
 

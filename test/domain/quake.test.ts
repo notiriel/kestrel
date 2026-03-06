@@ -24,7 +24,6 @@ const config: KestrelConfig = {
         { appId: 'org.gnome.Nautilus.desktop' },
         { appId: '' },
         { appId: '' },
-        { appId: '' },
     ],
     quakeWidthPercent: 80,
     quakeHeightPercent: 80,
@@ -40,9 +39,9 @@ function wid(n: number): WindowId {
 }
 
 describe('createQuakeState', () => {
-    it('creates state with 5 empty slots and no active slot', () => {
+    it('creates state with 4 empty slots and no active slot', () => {
         const state = createQuakeState();
-        expect(state.slots).toHaveLength(5);
+        expect(state.slots).toHaveLength(4);
         expect(state.slots.every(s => s === null)).toBe(true);
         expect(state.activeSlot).toBeNull();
     });
@@ -271,7 +270,7 @@ describe('computeScene with quake window', () => {
 describe('restoreQuakeState', () => {
     it('returns empty state when no saved slots', () => {
         const state = restoreQuakeState(undefined);
-        expect(state.slots).toHaveLength(5);
+        expect(state.slots).toHaveLength(4);
         expect(state.slots.every(s => s === null)).toBe(true);
         expect(state.activeSlot).toBeNull();
     });
@@ -282,16 +281,16 @@ describe('restoreQuakeState', () => {
     });
 
     it('restores saved slot assignments', () => {
-        const state = restoreQuakeState([wid(10), null, wid(20), null, null]);
+        const state = restoreQuakeState([wid(10), null, wid(20), null]);
         expect(state.slots[0]).toBe(wid(10));
         expect(state.slots[1]).toBeNull();
         expect(state.slots[2]).toBe(wid(20));
         expect(state.activeSlot).toBeNull();
     });
 
-    it('pads short arrays to 5 slots', () => {
+    it('pads short arrays to 4 slots', () => {
         const state = restoreQuakeState([wid(1), wid(2)]);
-        expect(state.slots).toHaveLength(5);
+        expect(state.slots).toHaveLength(4);
         expect(state.slots[0]).toBe(wid(1));
         expect(state.slots[1]).toBe(wid(2));
         expect(state.slots[2]).toBeNull();
@@ -301,7 +300,7 @@ describe('restoreQuakeState', () => {
 describe('restoreWorld with quake slots', () => {
     it('preserves quake slot assignments across restore', () => {
         const restored = restoreWorld(config, monitor, [], 0, 0, null,
-            [wid(10), null, wid(20), null, null]);
+            [wid(10), null, wid(20), null]);
         expect(restored.quakeState.slots[0]).toBe(wid(10));
         expect(restored.quakeState.slots[1]).toBeNull();
         expect(restored.quakeState.slots[2]).toBe(wid(20));

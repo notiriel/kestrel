@@ -153,11 +153,6 @@
       <summary>Quake slot 4 application</summary>
       <description>Desktop app ID for quake slot 4</description>
     </key>
-    <key name="quake-slot-5" type="s">
-      <default>''</default>
-      <summary>Quake slot 5 application</summary>
-      <description>Desktop app ID for quake slot 5</description>
-    </key>
     <key name="quake-slot-1-toggle" type="as">
       <default>['&lt;Super&gt;w']</default>
       <summary>Toggle quake slot 1</summary>
@@ -178,10 +173,10 @@
       <summary>Toggle quake slot 4</summary>
       <description>Toggle the quake console for slot 4</description>
     </key>
-    <key name="quake-slot-5-toggle" type="as">
+    <key name="workspace-todos-toggle" type="as">
       <default>['&lt;Super&gt;z']</default>
-      <summary>Toggle quake slot 5</summary>
-      <description>Toggle the quake console for slot 5</description>
+      <summary>Toggle workspace TODOs</summary>
+      <description>Toggle the TODO overlay for the current workspace</description>
     </key>
     <key name="quake-prelaunch" type="b">
       <default>true</default>

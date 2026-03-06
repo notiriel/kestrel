@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createTodoState } from '../../src/domain/todo.js';
 import type { KestrelConfig, MonitorInfo, WindowId, WorkspaceId } from '../../src/domain/types.js';
 import { computeWindowPositions } from '../../src/domain/layout.js';
 import { computeScene, diffScene } from '../../src/domain/scene.js';
@@ -38,7 +39,8 @@ function makeWorld(workspaces: ReturnType<typeof createWorkspace>[], overrides: 
         overviewActive: false,
         overviewInteractionState: createOverviewInteractionState(),
         notificationState: createNotificationState(),
-        quakeState: { slots: [null, null, null, null, null], activeSlot: null },
+        quakeState: { slots: [null, null, null, null], activeSlot: null },
+        todoState: createTodoState(),
         ...overrides,
     };
 }
