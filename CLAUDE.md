@@ -41,6 +41,14 @@ Reality -(events)-> Domain -(new world model)-> Adapter -(animates)-> Reality
 
 Adapters detect changes in reality (window created, destroyed, key pressed, focus changed) and inform the domain. The domain computes the complete new world model. The adapter turns that model into reality (positions clones, animates transitions, activates focus). **The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output.
 
+**HARD RULE: ALL mutable application state and logic belongs in the domain, NEVER in adapters.** This means:
+- Item collections (todos, notifications, etc.) must be fields on `World`, mutated via domain functions
+- Filtering, selection, mode transitions — all computed by domain functions
+- Adapters hold ZERO mutable application state — only GNOME widget references and signal IDs
+- Adapters call domain functions, receive new World, and render it. That's all they do.
+- This rule applies at every phase: design, planning, implementation, and code review
+- When adding a new feature, first design the domain types and functions, verify with tests, then write a thin adapter that calls those functions
+
 Operations like workspace pruning happen immediately in the domain. If a workspace empties, the domain removes it and adjusts all indices in the same operation. The adapter must reconcile its visual state (e.g. clone containers) to match.
 
 ### Textual model notation
@@ -82,6 +90,7 @@ B is focused. WS2 has D, E.
 | `notification-types.ts` | Type definitions for notifications (`QuestionOption`, `OverlayNotification`, `FocusModeState`) |
 | `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
 | `quake.ts` | QuakeState lifecycle: assign, toggle, dismiss, release quake windows |
+| `todo.ts` | Workspace TODOs: `TodoItem`, `TodoOverlayState`, toggle/dismiss, navigation, edit/delete, completion with 10s fade, file paths, geometry |
 
 ### Ports
 
@@ -128,6 +137,7 @@ B is focused. WS2 has D, E.
 | `notification-overlay-adapter.ts` | Renders permission/notification/question card UI |
 | `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
 | `float-clone-manager.ts` | Floating (non-tiled) window clone management |
+| `todo-overlay-adapter.ts` | Workspace TODO overlay: modal lifecycle, keyboard dispatch, file I/O, completion timers |
 
 **Handlers (orchestrate domain calls + adapter updates, at `src/adapters/` root):**
 
@@ -175,6 +185,7 @@ B is focused. WS2 has D, E.
 | `focus-mode-builders.ts` | Focus mode widget builders |
 | `animation-helpers.ts` | Clutter animation utilities |
 | `notification-adapter-types.ts` | Notification adapter type definitions |
+| `todo-overlay-builders.ts` | TODO overlay widget builders: backdrop, card, task rows, edit entry, hint bar |
 
 **Entry point**: `src/extension.ts` — Composition root. `KestrelExtension` extends the GNOME `Extension` base class and wires domain + adapters in `enable()`/`disable()`.
 
@@ -201,6 +212,9 @@ B is focused. WS2 has D, E.
 | `GetNotificationResponse` | `id: s` | `{"action":"allow"}` or `{"pending":true}` | Poll user's response to a permission card |
 | `SetWindowStatus` | `sessionId: s, status: s` | — | Update clone status badge |
 | `GetDiagnostics` | — | `{"expected":…,"actual":…,"mismatches":…}` | Compare expected scene model vs actual adapter state for debugging layout bugs |
+| `AddTodo` | `text: s` | `{"uuid":"…"}` | Add a task to the current workspace |
+| `CompleteTodo` | `uuid: s` | `{"ok":true}` | Mark a task as completed |
+| `ListTodos` | — | `[{"number","uuid","text","completed"}]` | List visible tasks for the current workspace |
 
 ### Hook scripts (`kestrel-plugin/hooks/`)
 

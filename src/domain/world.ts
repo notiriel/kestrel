@@ -39,6 +39,8 @@ import { createNotificationState, dismissNotificationsForWindow, unregisterWindo
 import type { NotificationInteractionState } from './notification-scene.js';
 import { createNotificationInteractionState } from './notification-scene.js';
 import { createQuakeState, restoreQuakeState, isQuakeWindow, releaseQuakeWindow } from './quake.js';
+import type { TodoOverlayState } from './todo.js';
+import { createTodoState, dismissTodoOverlay } from './todo.js';
 
 export interface World {
     readonly workspaces: readonly Workspace[];
@@ -51,6 +53,7 @@ export interface World {
     readonly notificationState: NotificationState;
     readonly notificationInteractionState: NotificationInteractionState;
     readonly quakeState: QuakeState;
+    readonly todoState: TodoOverlayState;
 }
 
 let workspaceCounter = 0;
@@ -77,12 +80,17 @@ export function createWorld(config: KestrelConfig, monitor: MonitorInfo): World 
         notificationState: createNotificationState(),
         notificationInteractionState: createNotificationInteractionState(),
         quakeState: createQuakeState(),
+        todoState: createTodoState(),
     };
 }
 
 /** Replace the notification interaction state in a world. */
 export function updateNotificationInteractionState(world: World, state: NotificationInteractionState): World {
     return { ...world, notificationInteractionState: state };
+}
+
+export function updateTodoState(world: World, todoState: TodoOverlayState): World {
+    return { ...world, todoState };
 }
 
 export function updateConfig(world: World, config: KestrelConfig): WorldUpdate {
@@ -478,6 +486,7 @@ export function switchToWorkspace(world: World, wsIndex: number): WorldUpdate {
         ...world,
         viewport: { ...world.viewport, workspaceIndex: wsIndex, scrollX: 0 },
         focusedWindow: newFocus,
+        todoState: dismissTodoOverlay(world.todoState),
     };
     return buildUpdate(adjustViewport(newWorld));
 }
@@ -533,6 +542,7 @@ export function restoreWorld(
         notificationState: createNotificationState(),
         notificationInteractionState: createNotificationInteractionState(),
         quakeState: restoreQuakeState(quakeSlots),
+        todoState: createTodoState(),
     };
 
     world = pruneEmptyWorkspaces(world);

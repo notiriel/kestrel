@@ -1,7 +1,7 @@
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import type { WindowId, MonitorInfo } from './domain/types.js';
 import type { World } from './domain/world.js';
-import { createWorld, setFocus, updateMonitor, updateConfig, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
+import { createWorld, setFocus, updateMonitor, updateConfig, updateTodoState, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
 import { diffScene, computeScene } from './domain/scene.js';
 import type { SceneModel, CloneScene, RealWindowScene, FocusIndicatorScene, WorkspaceStripScene } from './domain/scene.js';
 import { focusRight, focusLeft, focusDown, focusUp } from './domain/navigation.js';
@@ -41,6 +41,12 @@ import { MouseInputAdapter } from './adapters/input/mouse-input-adapter.js';
 import { QuakeWindowAdapter } from './adapters/output/quake-window-adapter.js';
 import { toggleQuakeSlot, getUnoccupiedQuakeSlots } from './domain/quake.js';
 import { getWorkspaceClaudeStatus } from './domain/notification.js';
+import { toggleTodoOverlay, dismissTodoOverlay, syncTodoWorkspace, navigateUp, navigateDown, todoToggleComplete, startNewItem, startEditItem, confirmEdit, cancelEdit, requestDelete, confirmDelete, cancelDelete, pruneCompleted, visibleItems } from './domain/todo.js';
+import type { TodoItem } from './domain/todo.js';
+import type { TodoKeyAction } from './adapters/output/todo-overlay-adapter.js';
+import { TodoOverlayAdapter } from './adapters/output/todo-overlay-adapter.js';
+import { TodoPersistenceAdapter } from './adapters/output/todo-persistence-adapter.js';
+import type { TodoPersistencePort } from './ports/todo-persistence-port.js';
 import { safeWindow } from './adapters/safe-window.js';
 import type Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -67,6 +73,8 @@ export default class KestrelExtension extends Extension {
     private _helpOverlay: HelpOverlayAdapter | null = null;
     private _mouseInputAdapter: MouseInputAdapter | null = null;
     private _quakeAdapter: QuakeWindowAdapter | null = null;
+    private _todoAdapter: TodoOverlayAdapter | null = null;
+    private _todoPersistence: TodoPersistencePort | null = null;
     private _debugMode: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
     private _settingsChangedId: number = 0;
@@ -188,11 +196,16 @@ export default class KestrelExtension extends Extension {
                 this._worldHolder.subscribeScene(sub);
             }
 
-            // Register world subscriber for panel indicator
+            // Register world subscriber for panel indicator and todo overlay
             this._worldSubscribers = [
                 {
                     onWorldChanged: (world) => {
                         this._panelIndicator?.update(world);
+                    },
+                },
+                {
+                    onWorldChanged: (world) => {
+                        this._todoAdapter?.onWorldChanged(world);
                     },
                 },
             ];
@@ -225,11 +238,22 @@ export default class KestrelExtension extends Extension {
                 switchToWorkspaceByName: (name) => this._switchToWorkspaceByName(name),
                 renameCurrentWorkspace: (name) => this._renameCurrentWorkspace(name),
                 getDiagnostics: () => this._getDiagnostics(),
+                addTodo: (text) => this._addTodo(text),
+                completeTodo: (uuid) => this._completeTodo(uuid),
+                listTodos: () => this._listTodos(),
             });
             this._notificationCoordinator.init();
 
             // Help overlay (Super+')
             this._helpOverlay = new HelpOverlayAdapter(this.path, settings);
+
+            // TODO overlay (Super+Z)
+            this._todoPersistence = new TodoPersistenceAdapter();
+            this._todoAdapter = new TodoOverlayAdapter();
+            this._todoAdapter.setCallbacks({
+                onKeyAction: (action) => this._handleTodoKeyAction(action),
+                onWorkspaceSwitched: (world) => this._handleTodoWorkspaceSwitch(world),
+            });
 
             // 5. Create collaborators
             this._overviewHandler = new OverviewHandler({
@@ -361,7 +385,7 @@ export default class KestrelExtension extends Extension {
                 onQuakeSlot2: () => this._handleQuakeToggle(1),
                 onQuakeSlot3: () => this._handleQuakeToggle(2),
                 onQuakeSlot4: () => this._handleQuakeToggle(3),
-                onQuakeSlot5: () => this._handleQuakeToggle(4),
+                onWorkspaceTodosToggle: () => this._handleTodoToggle(),
             });
 
             // 7b. Activate mouse scroll handler
@@ -459,6 +483,10 @@ export default class KestrelExtension extends Extension {
 
             this._notificationCoordinator?.destroy();
             this._notificationCoordinator = null;
+
+            this._todoAdapter?.destroy();
+            this._todoAdapter = null;
+            this._todoPersistence = null;
 
             this._quakeAdapter?.destroy();
             this._quakeAdapter = null;
@@ -800,6 +828,119 @@ export default class KestrelExtension extends Extension {
         } catch (e) {
             console.error('[Kestrel] Error handling quake toggle:', e);
         }
+    }
+
+    private _handleTodoToggle(): void {
+        try {
+            if (!this._worldHolder.world || !this._todoAdapter) return;
+            const wsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
+            if (!wsId) return;
+            const loadItems = (id: import('./domain/types.js').WorkspaceId) => this._todoPersistence!.loadItems(id);
+            const newTodoState = toggleTodoOverlay(this._worldHolder.world.todoState, wsId, loadItems);
+            this._updateTodoState(newTodoState);
+        } catch (e) {
+            console.error('[Kestrel] Error handling todo toggle:', e);
+        }
+    }
+
+    private _handleTodoKeyAction(action: TodoKeyAction): void {
+        try {
+            if (!this._worldHolder.world) return;
+            const s = this._worldHolder.world.todoState;
+            const nowMs = Date.now();
+            let newState = s;
+            switch (action.type) {
+                case 'dismiss': newState = dismissTodoOverlay(s); break;
+                case 'navigate-up': newState = navigateUp(s, nowMs); break;
+                case 'navigate-down': newState = navigateDown(s, nowMs); break;
+                case 'toggle-complete': newState = todoToggleComplete(s, nowMs); break;
+                case 'new-item': newState = startNewItem(s); break;
+                case 'start-edit': newState = startEditItem(s, nowMs); break;
+                case 'confirm-edit': newState = confirmEdit(s, action.entryText, GLib.uuid_string_random(), nowMs); break;
+                case 'cancel-edit': newState = cancelEdit(s); break;
+                case 'request-delete': newState = requestDelete(s, nowMs); break;
+                case 'confirm-delete': newState = confirmDelete(s, nowMs); break;
+                case 'cancel-delete': newState = cancelDelete(s); break;
+                case 'prune': newState = pruneCompleted(s, nowMs); break;
+            }
+            this._updateTodoState(newState);
+        } catch (e) {
+            console.error('[Kestrel] Error handling todo key action:', e);
+        }
+    }
+
+    private _updateTodoState(newState: import('./domain/todo.js').TodoOverlayState): void {
+        if (!this._worldHolder.world) return;
+        const prevTodoState = this._worldHolder.world.todoState;
+        this._setWorld(updateTodoState(this._worldHolder.world, newState));
+        // Save to disk when items change while overlay is active
+        if (newState.activeWorkspaceId && this._todoPersistence) {
+            this._todoPersistence.saveItems(newState.activeWorkspaceId, visibleItems(newState.items, Date.now()));
+        }
+        // Save previous items when closing (use pre-dismiss state which still has the items)
+        if (prevTodoState.activeWorkspaceId && !newState.activeWorkspaceId && this._todoPersistence) {
+            this._todoPersistence.saveItems(prevTodoState.activeWorkspaceId, visibleItems(prevTodoState.items, Date.now()));
+        }
+    }
+
+    private _handleTodoWorkspaceSwitch(world: World): void {
+        try {
+            if (!this._todoPersistence) return;
+            const newWsId = wsIdAt(world, world.viewport.workspaceIndex);
+            if (!newWsId) return;
+            const prevWsId = world.todoState.activeWorkspaceId;
+            if (prevWsId) {
+                this._todoPersistence.saveItems(prevWsId, visibleItems(world.todoState.items, Date.now()));
+            }
+            const newState = syncTodoWorkspace(world.todoState, newWsId, (id) => this._todoPersistence!.loadItems(id));
+            this._setWorld(updateTodoState(world, newState));
+        } catch (e) {
+            console.error('[Kestrel] Error handling todo workspace switch:', e);
+        }
+    }
+
+    private _currentWorkspaceId(): import('./domain/types.js').WorkspaceId | null {
+        if (!this._worldHolder.world) return null;
+        return wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
+    }
+
+    private _addTodo(text: string): string {
+        const wsId = this._currentWorkspaceId();
+        if (!wsId) return JSON.stringify({ error: 'No active workspace' });
+        if (!this._todoPersistence) return JSON.stringify({ error: 'Todo persistence not initialized' });
+        const trimmed = text.trim();
+        if (!trimmed) return JSON.stringify({ error: 'Empty text' });
+        const items = this._todoPersistence.loadItems(wsId);
+        const uuid = GLib.uuid_string_random();
+        const newItems: TodoItem[] = [...items, { uuid, text: trimmed, completed: null }];
+        this._todoPersistence.saveItems(wsId, newItems);
+        return JSON.stringify({ uuid });
+    }
+
+    private _completeTodo(uuid: string): string {
+        const wsId = this._currentWorkspaceId();
+        if (!wsId) return JSON.stringify({ error: 'No active workspace' });
+        if (!this._todoPersistence) return JSON.stringify({ error: 'Todo persistence not initialized' });
+        const items = this._todoPersistence.loadItems(wsId);
+        const item = items.find(i => i.uuid === uuid);
+        if (!item) return JSON.stringify({ error: 'Todo not found' });
+        const newItems = items.map(i => i.uuid === uuid ? { ...i, completed: new Date().toISOString() } : i);
+        this._todoPersistence.saveItems(wsId, newItems);
+        return JSON.stringify({ ok: true });
+    }
+
+    private _listTodos(): string {
+        const wsId = this._currentWorkspaceId();
+        if (!wsId) return JSON.stringify({ error: 'No active workspace' });
+        if (!this._todoPersistence) return JSON.stringify({ error: 'Todo persistence not initialized' });
+        const items = this._todoPersistence.loadItems(wsId);
+        const visible = visibleItems(items, Date.now());
+        return JSON.stringify(visible.map((item, i) => ({
+            number: i + 1,
+            uuid: item.uuid,
+            text: item.text,
+            completed: item.completed !== null,
+        })));
     }
 
     private _handleExternalFocus(windowId: WindowId): void {
