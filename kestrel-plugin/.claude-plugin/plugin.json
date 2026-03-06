@@ -1,11 +1,9 @@
 {
   "name": "kestrel",
-  "description": "Claude Code plugin for Kestrel GNOME Shell extension development — includes quality-gate hooks and specialized agents",
+  "description": "Claude Code integration for the Kestrel GNOME Shell extension — session probing, status tracking, permission overlay, notifications, and workspace TODOs",
   "version": "1.0.0",
   "author": {
-    "name": "Kestrel"
+    "name": "notiriel"
   },
-  "repository": "https://github.com/notiriel/kestrel",
-  "license": "MIT",
-  "keywords": ["gnome", "tiling", "extension", "dbus", "testing"]
+  "repository": "https://github.com/notiriel/kestrel"
 }
