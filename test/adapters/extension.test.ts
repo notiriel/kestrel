@@ -207,8 +207,8 @@ vi.mock('../../src/adapters/safe-window.js', () => ({
 
 import KestrelExtension from '../../src/extension.js';
 import { StatePersistence } from '../../src/adapters/state-persistence.js';
-import { createWorld, addWindow } from '../../src/domain/world.js';
-import type { WindowId } from '../../src/domain/types.js';
+import { createWorld, addWindow } from '../../src/domain/world/world.js';
+import type { WindowId } from '../../src/domain/world/types.js';
 
 const MockedStatePersistence = vi.mocked(StatePersistence);
 

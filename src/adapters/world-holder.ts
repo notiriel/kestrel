@@ -1,6 +1,6 @@
-import type { SceneModel } from '../domain/scene.js';
-import type { WorkspaceId, WorldUpdate } from '../domain/types.js';
-import type { World } from '../domain/world.js';
+import type { SceneModel } from '../domain/scene/scene.js';
+import type { WorkspaceId, WorldUpdate } from '../domain/world/types.js';
+import type { World } from '../domain/world/world.js';
 
 export interface SceneApplyOptions {
     animate: boolean;

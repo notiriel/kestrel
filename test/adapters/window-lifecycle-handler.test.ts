@@ -12,10 +12,10 @@ vi.mock('../../src/adapters/safe-window.js', () => ({
 }));
 
 import { WindowLifecycleHandler, type WindowLifecycleDeps } from '../../src/adapters/window-lifecycle-handler.js';
-import { createWorld, addWindow } from '../../src/domain/world.js';
-import { assignQuakeWindow } from '../../src/domain/quake.js';
-import type { WindowId, WorldUpdate } from '../../src/domain/types.js';
-import type { World } from '../../src/domain/world.js';
+import { createWorld, addWindow } from '../../src/domain/world/world.js';
+import { assignQuakeWindow } from '../../src/domain/world/quake.js';
+import type { WindowId, WorldUpdate } from '../../src/domain/world/types.js';
+import type { World } from '../../src/domain/world/world.js';
 import type { SceneApplyOptions } from '../../src/adapters/world-holder.js';
 
 const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };

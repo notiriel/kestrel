@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { createTodoState } from '../../src/domain/todo.js';
-import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow, enterFullscreen, exitFullscreen, buildUpdate } from '../../src/domain/world.js';
-import type { World } from '../../src/domain/world.js';
-import { createWorkspace, addColumn, createColumn, allWindows } from '../../src/domain/workspace.js';
-import { createTiledWindow } from '../../src/domain/window.js';
-import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/navigation.js';
-import { createNotificationState } from '../../src/domain/notification.js';
-import { createOverviewInteractionState } from '../../src/domain/overview-state.js';
+import { createTodoState } from '../../src/domain/world/todo.js';
+import type { WindowId, WorkspaceId, KestrelConfig, MonitorInfo } from '../../src/domain/world/types.js';
+import { createWorld, addWindow, enterFullscreen, exitFullscreen, buildUpdate } from '../../src/domain/world/world.js';
+import type { World } from '../../src/domain/world/world.js';
+import { createWorkspace, addColumn, createColumn, allWindows } from '../../src/domain/world/workspace.js';
+import { createTiledWindow } from '../../src/domain/world/window.js';
+import { focusRight, focusLeft, focusDown, focusUp } from '../../src/domain/world/navigation.js';
+import { createNotificationState } from '../../src/domain/world/notification.js';
+import { createOverviewInteractionState } from '../../src/domain/world/overview-state.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const monitor: MonitorInfo = {

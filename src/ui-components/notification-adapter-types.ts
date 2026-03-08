@@ -1,4 +1,4 @@
-import type { QuestionDefinition } from '../domain/notification-types.js';
+import type { QuestionDefinition } from '../domain/world/notification-types.js';
 import type St from 'gi://St';
 import type Clutter from 'gi://Clutter';
 

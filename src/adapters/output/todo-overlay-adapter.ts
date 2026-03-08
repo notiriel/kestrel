@@ -4,9 +4,11 @@ import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import type { World } from '../../domain/world.js';
-import type { WorkspaceId } from '../../domain/types.js';
-import { visibleItems, computeTodoGeometry } from '../../domain/todo.js';
+import type { World } from '../../domain/world/world.js';
+import type { WorkspaceId } from '../../domain/world/types.js';
+import { visibleItems } from '../../domain/world/todo.js';
+import type { TodoMode } from '../../domain/world/todo.js';
+import { computeTodoGeometry } from '../../domain/scene/scene.js';
 import { buildTodoBackdrop, buildTodoCard, animateTodoIn, animateTodoOut } from '../../ui-components/todo-overlay-builders.js';
 import type { TodoOverlayConfig, TodoDisplayItem } from '../../ui-components/todo-overlay-builders.js';
 
@@ -273,7 +275,6 @@ export class TodoOverlayAdapter {
 
 }
 
-type TodoMode = 'navigation' | 'editing' | 'confirm-delete';
 
 const ENTER_KEYS = new Set([Clutter.KEY_Return, Clutter.KEY_KP_Enter]);
 

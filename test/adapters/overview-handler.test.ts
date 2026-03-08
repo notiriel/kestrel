@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { WindowId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, addWindow } from '../../src/domain/world.js';
-import type { World } from '../../src/domain/world.js';
+import type { WindowId, KestrelConfig, MonitorInfo } from '../../src/domain/world/types.js';
+import { createWorld, addWindow } from '../../src/domain/world/world.js';
+import type { World } from '../../src/domain/world/world.js';
 import { OverviewHandler, type OverviewDeps } from '../../src/adapters/overview-handler.js';
 import { createMockClonePort, createMockWindowPort } from './mock-ports.js';
 

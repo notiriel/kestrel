@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { WindowId, KestrelConfig, MonitorInfo, WorldUpdate } from '../../src/domain/types.js';
-import { createWorld, addWindow } from '../../src/domain/world.js';
-import type { World } from '../../src/domain/world.js';
-import { focusLeft, focusUp } from '../../src/domain/navigation.js';
+import type { WindowId, KestrelConfig, MonitorInfo, WorldUpdate } from '../../src/domain/world/types.js';
+import { createWorld, addWindow } from '../../src/domain/world/world.js';
+import type { World } from '../../src/domain/world/world.js';
+import { focusLeft, focusUp } from '../../src/domain/world/navigation.js';
 import { NavigationHandler, type NavigationDeps } from '../../src/adapters/navigation-handler.js';
 import { createMockClonePort } from './mock-ports.js';
-import { moveDown, moveUp } from '../../src/domain/window-operations.js';
+import { moveDown, moveUp } from '../../src/domain/world/window-operations.js';
 import type { SceneApplyOptions } from '../../src/adapters/world-holder.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };

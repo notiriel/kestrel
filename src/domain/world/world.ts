@@ -5,7 +5,6 @@ import type {
     KestrelConfig,
     MonitorInfo,
     WorldUpdate,
-    QuakeState,
 } from './types.js';
 import type { TiledWindow } from './window.js';
 import { createTiledWindow } from './window.js';
@@ -29,15 +28,15 @@ import {
     allWindows,
 } from './workspace.js';
 import { createViewport, type Viewport } from './viewport.js';
-import { computeFocusedWindowPosition } from './layout.js';
-import { computeScene } from './scene.js';
+import { computeFocusedWindowPosition } from '../scene/layout.js';
+import { computeScene } from '../scene/scene.js';
 import { fuzzyMatch } from './fuzzy-match.js';
 import type { OverviewInteractionState } from './overview-state.js';
 import { createOverviewInteractionState } from './overview-state.js';
-import type { NotificationState } from './notification.js';
-import { createNotificationState, dismissNotificationsForWindow, unregisterWindow } from './notification.js';
-import type { NotificationInteractionState } from './notification-scene.js';
-import { createNotificationInteractionState } from './notification-scene.js';
+import type { NotificationState, NotificationInteractionState } from './notification.js';
+import { createNotificationState, dismissNotificationsForWindow, createNotificationInteractionState } from './notification.js';
+import { unregisterWindow } from './notification-status.js';
+import type { QuakeState } from './quake.js';
 import { createQuakeState, restoreQuakeState, isQuakeWindow, releaseQuakeWindow } from './quake.js';
 import type { TodoOverlayState } from './todo.js';
 import { createTodoState, dismissTodoOverlay } from './todo.js';

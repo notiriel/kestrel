@@ -1,6 +1,7 @@
-import type { WindowId, WorkspaceId, KestrelConfig, WorkspaceColorId } from '../../domain/types.js';
-import { resolveWorkspaceColor } from '../../domain/types.js';
-import type { SceneModel } from '../../domain/scene.js';
+import type { WindowId, WorkspaceId, KestrelConfig, WorkspaceColorId } from '../../domain/world/types.js';
+import { resolveWorkspaceColor } from '../../domain/world/types.js';
+import { OVERVIEW_LABEL_WIDTH } from '../../domain/world/overview-state.js';
+import type { SceneModel } from '../../domain/scene/scene.js';
 import type { ClonePort, OverviewTransform } from '../../ports/clone-port.js';
 import { safeDisconnect } from '../signal-utils.js';
 import { FloatCloneManager } from './float-clone-manager.js';
@@ -63,8 +64,6 @@ const UnpickableActor = GObject.registerClass(
 );
 
 const ANIMATION_DURATION = 250;
-/** Horizontal space reserved for workspace name label in overview mode */
-const OVERVIEW_LABEL_WIDTH = 56;
 
 export class CloneAdapter implements ClonePort {
     private _layer: Clutter.Actor | null = null;

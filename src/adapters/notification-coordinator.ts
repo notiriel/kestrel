@@ -1,26 +1,28 @@
-import type { WindowId } from '../domain/types.js';
-import { resolveWorkspaceColor } from '../domain/types.js';
-import type { World } from '../domain/world.js';
-import { workspaceNameForWindow, workspaceColorForWindow, updateNotificationState, updateNotificationInteractionState } from '../domain/world.js';
-import type { ClaudeStatus } from '../domain/notification-types.js';
+import type { WindowId } from '../domain/world/types.js';
+import { resolveWorkspaceColor } from '../domain/world/types.js';
+import type { World } from '../domain/world/world.js';
+import { workspaceNameForWindow, workspaceColorForWindow, updateNotificationState, updateNotificationInteractionState } from '../domain/world/world.js';
+import type { ClaudeStatus } from '../domain/world/notification-types.js';
 import {
     classifyPermissionPayload, parseAllowResponse, parseQuestion,
     addNotification, respondToNotification, getResponse as domainGetResponse,
-    registerSession, setSessionStatus, setSessionMessage, clearSession,
-    getWindowForSession as domainGetWindowForSession,
-    getWindowStatusMap as domainGetWindowStatusMap,
     getPendingEntries as domainGetPendingEntries,
-    createDomainNotification, formatQuestionTitle,
+    createDomainNotification,
     selectQuestionOption as domainSelectQuestionOption,
     navigateQuestion as domainNavigateQuestion,
     setOtherText as domainSetOtherText,
-    enterFocusModeForNotification,
-} from '../domain/notification.js';
-import type { DomainNotification, NotificationState } from '../domain/notification.js';
+    expandStack, collapseStack, expandCard, collapseCard,
+} from '../domain/world/notification.js';
+import {
+    registerSession, setSessionStatus, setSessionMessage, clearSession,
+    getWindowForSession as domainGetWindowForSession,
+    getWindowStatusMap as domainGetWindowStatusMap,
+} from '../domain/world/notification-status.js';
+import { enterFocusModeForNotification } from '../domain/world/focus-mode.js';
+import type { DomainNotification, NotificationState } from '../domain/world/notification.js';
 import {
     computeOverlayScene,
-    expandStack, collapseStack, expandCard, collapseCard,
-} from '../domain/notification-scene.js';
+} from '../domain/scene/notification-scene.js';
 import type { OverviewTransform } from '../ports/clone-port.js';
 import { StatusOverlayAdapter } from './output/status-overlay-adapter.js';
 import { NotificationOverlayAdapter } from './output/notification-overlay-adapter.js';
@@ -121,7 +123,7 @@ export class NotificationCoordinator {
         });
     }
 
-    private _domainPendingEntries(): Array<{ id: string; notification: import('../domain/notification-types.js').OverlayNotification }> {
+    private _domainPendingEntries(): Array<{ id: string; notification: import('../domain/world/notification-types.js').OverlayNotification }> {
         const world = this._deps.getWorld();
         if (!world) return [];
         return domainGetPendingEntries(world.notificationState).map(n => ({
@@ -222,7 +224,8 @@ export class NotificationCoordinator {
         const classification = classifyPermissionPayload(payload);
         const focusModeWasActive = this._isFocusModeActive();
         if (classification.isQuestion) {
-            payload.title = formatQuestionTitle(classification.questions.length);
+            const n = classification.questions.length;
+            payload.title = `Claude asks ${n} question${n !== 1 ? 's' : ''}`;
             payload.message = 'Session wants your input';
         }
         const type = classification.isQuestion ? 'question' : 'permission';
@@ -265,7 +268,7 @@ export class NotificationCoordinator {
         }
     }
 
-    private _addToDomainState(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question', parsedQuestions?: import('../domain/notification.js').ParsedQuestion[]): void {
+    private _addToDomainState(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question', parsedQuestions?: import('../domain/world/notification.js').ParsedQuestion[]): void {
         const world = this._deps.getWorld();
         if (!world) return;
         const domainNotif = this._buildDomainNotification(id, sessionId, payload, type, parsedQuestions);
@@ -441,7 +444,7 @@ export class NotificationCoordinator {
     }
 
     /** Project domain notification to overlay notification format. */
-    private _domainToOverlay(n: DomainNotification): import('../domain/notification-types.js').OverlayNotification {
+    private _domainToOverlay(n: DomainNotification): import('../domain/world/notification-types.js').OverlayNotification {
         return {
             id: n.id,
             sessionId: n.sessionId,
@@ -470,7 +473,7 @@ export class NotificationCoordinator {
     }
 
     /** Build a domain notification from a payload. */
-    private _buildDomainNotification(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question', parsedQuestions?: import('../domain/notification.js').ParsedQuestion[]): DomainNotification {
+    private _buildDomainNotification(id: string, sessionId: string, payload: Record<string, unknown>, type: 'permission' | 'notification' | 'question', parsedQuestions?: import('../domain/world/notification.js').ParsedQuestion[]): DomainNotification {
         const opt = (k: string) => payload[k] ? String(payload[k]) : undefined;
         const defaultTitle = type === 'permission' ? 'Permission Request' : 'Notification';
         return createDomainNotification(id, sessionId, type, String(payload.title ?? defaultTitle), String(payload.message ?? ''), {

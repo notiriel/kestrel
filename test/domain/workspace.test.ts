@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { WindowId, WorkspaceId } from '../../src/domain/types.js';
+import type { WindowId, WorkspaceId } from '../../src/domain/world/types.js';
 import {
     createWorkspace, addColumn, createColumn, slotIndexOf, columnAtSlot,
     columnOf, positionInColumn, stackWindowInto, unstackWindow, reorderInColumn,
     allWindows,
-} from '../../src/domain/workspace.js';
-import { createTiledWindow } from '../../src/domain/window.js';
+} from '../../src/domain/world/workspace.js';
+import { createTiledWindow } from '../../src/domain/world/window.js';
 
 function wid(n: number): WindowId {
     return `win-${n}` as WindowId;

@@ -2,7 +2,30 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import type { KeybindingPort, KeybindingCallbacks } from '../../ports/keybinding-port.js';
+interface KeybindingCallbacks {
+    onFocusRight: () => void;
+    onFocusLeft: () => void;
+    onFocusDown: () => void;
+    onFocusUp: () => void;
+    onMoveLeft: () => void;
+    onMoveRight: () => void;
+    onMoveDown: () => void;
+    onMoveUp: () => void;
+    onToggleSize: () => void;
+    onToggleOverview: () => void;
+    onNewWindow: () => void;
+    onToggleNotifications: () => void;
+    onToggleHelp: () => void;
+    onCloseWindow: () => void;
+    onJoinStack: () => void;
+    onForceWorkspaceUp: () => void;
+    onForceWorkspaceDown: () => void;
+    onQuakeSlot1: () => void;
+    onQuakeSlot2: () => void;
+    onQuakeSlot3: () => void;
+    onQuakeSlot4: () => void;
+    onWorkspaceTodosToggle: () => void;
+}
 
 /** Mutter setting whose default ('Super_L') opens the Activities Overview. */
 const MUTTER_SCHEMA = 'org.gnome.mutter';
@@ -34,7 +57,7 @@ const CONFLICTING_WM_KEYS = [
     'move-to-monitor-down',         // <Shift><Super>Down
 ] as const;
 
-export class KeybindingAdapter implements KeybindingPort {
+export class KeybindingAdapter {
     private _bound: string[] = [];
     private _savedOverlayKey: string | null = null;
     private _savedBindings: Array<{ schemaId: string; bindings: Map<string, string[]> }> = [];

@@ -1,15 +1,15 @@
-import type { NotificationPort, NotificationInitOptions } from '../../ports/notification-port.js';
-import type { NotificationOverlayScene, NotificationCardScene } from '../../domain/notification-scene.js';
-import type { DomainNotification } from '../../domain/notification.js';
-import type { OverlayNotification } from '../../domain/notification-types.js';
+interface NotificationInitOptions {
+    onVisitSession?: (sessionId: string) => void;
+}
+import type { NotificationOverlayScene, NotificationCardScene } from '../../domain/scene/notification-scene.js';
+import type { DomainNotification } from '../../domain/world/notification.js';
+import type { OverlayNotification } from '../../domain/world/notification-types.js';
 import type { QuestionState, NotificationCardDelegate } from '../../ui-components/notification-adapter-types.js';
 import { PermissionCard } from '../../ui-components/permission-card.js';
 import { NotificationCard } from '../../ui-components/notification-card.js';
 import { QuestionCard } from '../../ui-components/question-card.js';
-import { getCardBehavior } from '../../ui-components/card-behavior.js';
 import {
     buildNotificationContainer, buildCountBadge, buildCardStyle,
-    QUESTION_CARD_WIDTH, CARD_RIGHT_OFFSET,
 } from '../../ui-components/notification-overlay-builders.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
@@ -20,21 +20,19 @@ interface Easeable {
     ease(params: Record<string, unknown>): void;
 }
 
-const CARD_MARGIN = 12;
 const ANIMATION_DURATION = 300;
 
 interface WidgetEntry {
     delegate: NotificationCardDelegate;
     cardExpanded: boolean;
-    notificationType: string;
+    hasInternalPadding: boolean;
 }
 
-export class NotificationOverlayAdapter implements NotificationPort {
+export class NotificationOverlayAdapter {
     private _container: St.Widget | null = null;
     private _widgets: Map<string, WidgetEntry> = new Map();
     private _countBadge: St.Label | null = null;
     private _onVisitSession: ((sessionId: string) => void) | null = null;
-    private _focusSignalId: number = 0;
     private _extensionPath: string = '';
 
     /** Callback invoked when entries are added, removed, or responded to. */
@@ -59,7 +57,6 @@ export class NotificationOverlayAdapter implements NotificationPort {
         try {
             this._createContainer();
             this._createCountBadge();
-            this._connectFocusTracking();
         } catch (e) {
             console.error('[Kestrel] Error creating notification overlay:', e);
         }
@@ -76,15 +73,6 @@ export class NotificationOverlayAdapter implements NotificationPort {
         this._connectContainerHover();
 
         Main.layoutManager.addTopChrome(this._container, { affectsStruts: false, trackFullscreen: false });
-
-        this._container.width = QUESTION_CARD_WIDTH + CARD_MARGIN * 2;
-        const monitor = Main.layoutManager.primaryMonitor;
-        if (monitor) {
-            this._container.set_position(
-                monitor.x + monitor.width - QUESTION_CARD_WIDTH - CARD_MARGIN * 2,
-                monitor.y + Main.panel.height + CARD_MARGIN,
-            );
-        }
     }
 
     private _connectContainerHover(): void {
@@ -102,20 +90,6 @@ export class NotificationOverlayAdapter implements NotificationPort {
     private _createCountBadge(): void {
         this._countBadge = buildCountBadge();
         this._container!.add_child(this._countBadge);
-    }
-
-    private _connectFocusTracking(): void {
-        this._focusSignalId = global.display.connect('notify::focus-window', () => {
-            try {
-                const focusedWindow = global.display.focus_window;
-                if (!focusedWindow) return;
-                const monitorIndex = focusedWindow.get_monitor();
-                const mon = global.display.get_monitor_geometry(monitorIndex);
-                if (mon) this._repositionToMonitor(mon);
-            } catch (e) {
-                console.error('[Kestrel] Error repositioning notification overlay:', e);
-            }
-        });
     }
 
     /**
@@ -158,6 +132,8 @@ export class NotificationOverlayAdapter implements NotificationPort {
     private _updateContainer(scene: NotificationOverlayScene): void {
         if (!this._container) return;
         this._container.visible = scene.visible;
+        this._container.set_position(scene.x, scene.y);
+        this._container.width = scene.width;
         if (scene.height > 0) this._container.height = scene.height;
     }
 
@@ -166,10 +142,10 @@ export class NotificationOverlayAdapter implements NotificationPort {
         const delegate = this._createDelegate(id, domainNotif.type, overlayNotif);
 
         const card = delegate.actor;
-        card.translation_x = CARD_RIGHT_OFFSET + 60; // Start off-screen for slide-in
+        card.translation_x = cardScene.translationX + 60; // Start off-screen for slide-in
         this._connectCardHoverEvents(id, card);
 
-        const entry: WidgetEntry = { delegate, cardExpanded: false, notificationType: domainNotif.type };
+        const entry: WidgetEntry = { delegate, cardExpanded: false, hasInternalPadding: cardScene.hasInternalPadding };
         this._widgets.set(id, entry);
         this._container?.insert_child_below(card, this._countBadge);
 
@@ -218,6 +194,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
         (card as unknown as Easeable).ease({
             translation_y: cardScene.y,
             translation_x: cardScene.translationX,
+            width: cardScene.width,
             scale_x: cardScene.scale,
             scale_y: cardScene.scale,
             opacity: cardScene.opacity,
@@ -292,15 +269,11 @@ export class NotificationOverlayAdapter implements NotificationPort {
         entry.cardExpanded = true;
 
         const card = entry.delegate.actor;
-        const behavior = getCardBehavior(entry.notificationType);
-        card.style = this._cardStyle(true, behavior);
+        card.style = this._cardStyle(true, entry.hasInternalPadding);
 
         entry.delegate.msgLabel.clutter_text.line_wrap = true;
         entry.delegate.msgLabel.clutter_text.ellipsize = 0; // NONE
 
-        if (behavior.expandedWidth !== behavior.collapsedWidth) {
-            this._easeCardResize(card, behavior.expandedWidth, 0);
-        }
         this._animateExpandHeight(entry);
     }
 
@@ -314,15 +287,10 @@ export class NotificationOverlayAdapter implements NotificationPort {
         entry.cardExpanded = false;
 
         const card = entry.delegate.actor;
-        const behavior = getCardBehavior(entry.notificationType);
-        card.style = this._cardStyle(false, behavior);
+        card.style = this._cardStyle(false, entry.hasInternalPadding);
 
         entry.delegate.msgLabel.clutter_text.line_wrap = false;
         entry.delegate.msgLabel.clutter_text.ellipsize = 3; // END
-
-        if (behavior.expandedWidth !== behavior.collapsedWidth) {
-            this._easeCardResize(card, behavior.collapsedWidth, behavior.collapsedTranslationX);
-        }
 
         (entry.delegate.expandWrapper as unknown as Easeable).ease({
             height: 0,
@@ -337,14 +305,6 @@ export class NotificationOverlayAdapter implements NotificationPort {
         if (!entry) return 0;
         const inner = entry.delegate.expandWrapper.get_first_child();
         return inner ? inner.get_preferred_height(-1)[1] : 0;
-    }
-
-    private _easeCardResize(card: St.BoxLayout, width: number, translationX: number): void {
-        (card as unknown as Easeable).ease({
-            width, translation_x: translationX,
-            duration: ANIMATION_DURATION,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-        });
     }
 
     private _animateExpandHeight(entry: WidgetEntry): void {
@@ -425,19 +385,11 @@ export class NotificationOverlayAdapter implements NotificationPort {
 
     destroy(): void {
         try {
-            this._disconnectFocusTracking();
             this._destroyWidgets();
             this._destroyCountBadge();
             this._destroyContainer();
         } catch (e) {
             console.error('[Kestrel] Error destroying notification overlay:', e);
-        }
-    }
-
-    private _disconnectFocusTracking(): void {
-        if (this._focusSignalId) {
-            global.display.disconnect(this._focusSignalId);
-            this._focusSignalId = 0;
         }
     }
 
@@ -464,15 +416,7 @@ export class NotificationOverlayAdapter implements NotificationPort {
         }
     }
 
-    private _repositionToMonitor(monitor: { x: number; y: number; width: number; height: number }): void {
-        if (!this._container) return;
-        this._container.set_position(
-            monitor.x + monitor.width - QUESTION_CARD_WIDTH - CARD_MARGIN * 2,
-            monitor.y + Main.panel.height + CARD_MARGIN,
-        );
-    }
-
-    private _cardStyle(hovered: boolean, behavior: { hasInternalPadding: boolean }): string {
-        return buildCardStyle(hovered, behavior.hasInternalPadding);
+    private _cardStyle(hovered: boolean, hasInternalPadding: boolean): string {
+        return buildCardStyle(hovered, hasInternalPadding);
     }
 }

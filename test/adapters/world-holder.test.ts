@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { WorldHolder } from '../../src/adapters/world-holder.js';
 import type { SceneSubscriber, WorldSubscriber, SceneApplyOptions } from '../../src/adapters/world-holder.js';
-import { createWorld, addWindow, buildUpdate } from '../../src/domain/world.js';
-import type { World } from '../../src/domain/world.js';
-import type { WorldUpdate } from '../../src/domain/types.js';
+import { createWorld, addWindow, buildUpdate } from '../../src/domain/world/world.js';
+import type { World } from '../../src/domain/world/world.js';
+import type { WorldUpdate } from '../../src/domain/world/types.js';
 
 const CONFIG = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const MONITOR = { count: 1, totalWidth: 1920, totalHeight: 1080, slotWidth: 960, workAreaY: 0, stageOffsetX: 0 };

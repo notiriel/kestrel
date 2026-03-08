@@ -12,36 +12,32 @@ Kestrel follows a hexagonal (ports-and-adapters) architecture with four layers:
 graph TB
     subgraph "Domain Core (src/domain/)"
         direction LR
-        world["world.ts\nAggregate root"]
-        scene["scene.ts\nSceneModel computation"]
-        layout["layout.ts\nPixel positions"]
-        nav["navigation.ts\nFocus movement"]
-        winops["window-operations.ts\nWindow move/resize"]
-        ws["workspace.ts\nWorkspace operations"]
-        vp["viewport.ts\nCamera state"]
-        win["window.ts\nTiledWindow"]
-        types["types.ts\nBranded types, interfaces"]
-        overview["overview.ts\nOverview mode"]
-        overviewState["overview-state.ts\nOverview interaction"]
-        notif["notification.ts\nNotification lifecycle"]
-        notifTypes["notification-types.ts\nNotification types"]
-        fuzzy["fuzzy-match.ts\nFuzzy search"]
-        quake["quake.ts\nQuake console"]
+        subgraph "world/"
+            world["world.ts\nAggregate root"]
+            nav["navigation.ts\nFocus movement"]
+            winops["window-operations.ts\nWindow move/resize"]
+            ws["workspace.ts\nWorkspace operations"]
+            vp["viewport.ts\nCamera state"]
+            win["window.ts\nTiledWindow"]
+            types["types.ts\nBranded types, interfaces"]
+            overview["overview.ts\nOverview mode"]
+            overviewState["overview-state.ts\nOverview interaction"]
+            notif["notification.ts\nNotification lifecycle"]
+            notifTypes["notification-types.ts\nNotification types"]
+            fuzzy["fuzzy-match.ts\nFuzzy search"]
+            quake["quake.ts\nQuake console"]
+        end
+        subgraph "scene/"
+            scene["scene.ts\nSceneModel computation"]
+            layout["layout.ts\nPixel positions"]
+            notifScene["notification-scene.ts\nNotification scene"]
+        end
     end
 
     subgraph "Ports (src/ports/)"
         direction LR
         clonePort["ClonePort"]
         windowPort["WindowPort"]
-        focusPort["FocusPort"]
-        monitorPort["MonitorPort"]
-        keybindingPort["KeybindingPort"]
-        shellPort["ShellPort"]
-        windowEventPort["WindowEventPort"]
-        statePersistencePort["StatePersistencePort"]
-        conflictDetectorPort["ConflictDetectorPort"]
-        notificationPort["NotificationPort"]
-        panelIndicatorPort["PanelIndicatorPort"]
     end
 
     subgraph "Adapters (src/adapters/)"
@@ -85,14 +81,6 @@ graph TB
 
     cloneAdapter --> clonePort
     windowAdapter --> windowPort
-    focusAdapter --> focusPort
-    monitorAdapter --> monitorPort
-    keybindingAdapter --> keybindingPort
-    shellAdapter --> shellPort
-    windowEventAdapter --> windowEventPort
-    statePersistence --> statePersistencePort
-    conflictDetector --> conflictDetectorPort
-    notifOverlay --> notificationPort
 
     handlers --> world
     handlers --> cloneAdapter
@@ -105,70 +93,77 @@ graph TB
 
 ### Domain Core (src/domain/)
 
-Pure TypeScript with no `gi://` imports. Fully testable with Vitest.
+Pure TypeScript with no `gi://` imports. Fully testable with Vitest. Split into two subdirectories matching the two-level architecture:
+
+**`src/domain/world/`** — Logical state (14 files):
 
 | File | Purpose |
 |------|---------|
 | `types.ts` | Branded types (`WindowId`, `WorkspaceId`), core interfaces (`World`, `WorldUpdate`, `KestrelConfig` (includes `columnCount`), `MonitorInfo`) |
 | `world.ts` | Aggregate root. Functions: `createWorld`, `addWindow`, `removeWindow`, `setFocus`, `buildUpdate`, `updateMonitor`, `updateConfig`, `enterFullscreen`, `exitFullscreen`, `widenWindow`, `switchToWorkspace`, `filterWorkspaces`, `restoreWorld`, `adjustViewport`, `ensureTrailingEmpty`, `pruneEmptyWorkspaces`, `renameCurrentWorkspace` |
-| `scene.ts` | `computeScene(world)` pure function producing `SceneModel` from `World`. Iterates columns and computes per-window positions including stacked window y/height within columns. Also `diffScene()` for diagnostics. Types: `CloneScene`, `RealWindowScene`, `FocusIndicatorScene`, `WorkspaceContainerScene`, `WorkspaceStripScene` |
-| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — iterates columns and computes pixel positions, splitting height equally for stacked windows within a column (internal to scene computation and viewport adjustment) |
 | `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp`, `forceWorkspaceUp`, `forceWorkspaceDown` — pure functions taking `World`, returning `WorldUpdate`. Vertical focus is overloaded: navigates within stack first, then switches workspace. No `overviewActive` guards — keybinding action mode (`Shell.ActionMode.NORMAL`) prevents navigation during overview |
 | `window-operations.ts` | `moveRight`, `moveLeft`, `moveDown`, `moveUp`, `toggleSize`, `toggleStack` |
 | `workspace.ts` | `Workspace` type and `Column` type. Column operations: `addColumn`, `removeWindowFromColumn`, `columnNeighbor`, `swapColumns`, `slotIndexOf`, `columnAtSlot`, `insertColumnAt`, `replaceWindowInColumn`, `columnOf`, `positionInColumn`, `stackWindowLeft`, `unstackWindow`, `reorderInColumn` |
 | `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (fullscreen state) |
 | `viewport.ts` | `Viewport` type: `createViewport`, tracks current workspace index, scrollX, widthPx |
 | `overview.ts` | `enterOverview`, `exitOverview`, `cancelOverview` |
-| `overview-state.ts` | `OverviewInteractionState` (filter text, rename state, saved focus/viewport), `OverviewTransform`, filter/rename/navigation functions, `computeOverviewTransform`, `overviewHitTest` |
-| `notification.ts` | Full notification lifecycle (`addNotification`, `respondToNotification`, `dismissForSession`, etc.), question interaction (`navigateQuestion`, `selectQuestionOption`, `setOtherText`), focus mode, session/window tracking, response formatting |
+| `overview-state.ts` | `OverviewInteractionState` (filter text, rename state, saved focus/viewport), `OverviewTransform`, `OVERVIEW_LABEL_WIDTH`, filter/rename/navigation functions, `computeOverviewTransform`, `overviewHitTest` |
+| `notification.ts` | Notification lifecycle (`addNotification`, `respondToNotification`, `dismissForSession`), question interaction (`navigateQuestion`, `selectQuestionOption`, `setOtherText`), response formatting, interaction state (`NotificationInteractionState`, `expandStack`, `collapseStack`), simple focus mode setters |
 | `notification-types.ts` | `OverlayNotification`, `QuestionOption`, `QuestionDefinition`, `ClaudeStatus` |
+| `notification-status.ts` | Session/window status tracking (`registerSession`, `setSessionStatus`, `clearSession`), workspace status aggregation, status persistence (`restoreWindowStatuses`, `extractWindowStatuses`) |
+| `focus-mode.ts` | Focus mode navigation (`enterFocusModeForNotification`, `navigateFocusMode`, `removeFromFocusMode`, `syncFocusModeEntries`) |
 | `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
-| `quake.ts` | Quake console lifecycle: `assignQuakeWindow`, `toggleQuakeSlot`, `dismissQuake`, `releaseQuakeWindow`, `isQuakeWindow` |
-| `todo.ts` | Workspace TODO list: `TodoItem`, `TodoOverlayState`, `toggleTodoOverlay`, `dismissTodoOverlay`, `navigateUp/Down`, `todoToggleComplete`, `startNewItem`, `startEditItem`, `confirmEdit`, `cancelEdit`, `requestDelete`, `confirmDelete`, `cancelDelete`, `pruneCompleted`, `visibleItems`, `computeTodoGeometry`, `todosFilePath` |
+| `quake.ts` | `QuakeState` type and lifecycle: `assignQuakeWindow`, `toggleQuakeSlot`, `dismissQuake`, `releaseQuakeWindow`, `isQuakeWindow` |
+| `todo.ts` | Workspace TODO list: `TodoItem`, `TodoOverlayState`, `toggleTodoOverlay`, `dismissTodoOverlay`, `navigateUp/Down`, `todoToggleComplete`, `startNewItem`, `startEditItem`, `confirmEdit`, `cancelEdit`, `requestDelete`, `confirmDelete`, `cancelDelete`, `pruneCompleted`, `visibleItems`, `todosFilePath` |
+
+**`src/domain/scene/`** — Physical description computed from world (3 files):
+
+| File | Purpose |
+|------|---------|
+| `scene.ts` | `computeScene(world)` pure function producing `SceneModel` from `World`. Also `diffScene()` for diagnostics, `computeQuakeGeometry()`, `computeTodoGeometry()`. Types: `CloneScene`, `RealWindowScene`, `FocusIndicatorScene`, `WorkspaceContainerScene`, `WorkspaceStripScene` |
+| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — iterates columns and computes pixel positions, splitting height equally for stacked windows within a column (internal to scene computation and viewport adjustment) |
+| `notification-scene.ts` | Notification overlay, focus mode, and status badge scene computation |
+
+**`src/domain/`** — Shared utilities:
+
+| File | Purpose |
+|------|---------|
+| `elapsed-time.ts` | Pure elapsed-time formatting utility |
 
 ### Ports (src/ports/)
 
-Interface definitions only. No `gi://` imports. The extension depends on ports, never on concrete adapters.
+Interface definitions used for test mocking. Only ports with mock implementations are kept; other adapters are referenced directly by concrete type.
 
 | File | Purpose |
 |------|---------|
 | `clone-port.ts` | `CloneLifecyclePort`, `CloneRenderPort`, `OverviewRenderPort`, `OverviewFilterPort` (and composite `ClonePort`) |
 | `window-port.ts` | `WindowPort` — position real windows, check settlement |
-| `focus-port.ts` | `FocusPort` — focus activation, feedback loop suppression |
-| `monitor-port.ts` | `MonitorPort` — monitor geometry reading |
-| `keybinding-port.ts` | `KeybindingPort`, `KeybindingCallbacks` — register/unregister keybindings |
-| `shell-port.ts` | `ShellPort` — GNOME Shell interaction (hide overview, intercept animations) |
-| `window-event-port.ts` | `WindowEventPort`, `WindowEventCallbacks` — window lifecycle signals |
-| `state-persistence-port.ts` | `StatePersistencePort` — save/load world state across enable/disable cycles |
-| `conflict-detector-port.ts` | `ConflictDetectorPort` — detect conflicting GNOME extensions |
-| `notification-port.ts` | `NotificationPort` — render permission/notification/question cards |
-| `panel-indicator-port.ts` | `PanelIndicatorPort` — workspace indicator in top panel |
 
 ### Adapters (src/adapters/)
 
-GNOME Shell integration via `gi://` imports. Each adapter implements its corresponding port.
+GNOME Shell integration via `gi://` imports.
 
 **Input adapters (`src/adapters/input/`)** — detect reality events and call the domain:
 
 | File | Purpose |
 |------|---------|
-| `keybinding-adapter.ts` | Registers GNOME keybindings from schema. Implements `KeybindingPort` |
+| `keybinding-adapter.ts` | Registers GNOME keybindings from schema |
 | `mouse-input-adapter.ts` | Mouse scroll events for horizontal/vertical navigation |
 | `overview-input-adapter.ts` | Keyboard input handler for overview mode |
-| `window-event-adapter.ts` | `window-created`/`destroy`/`first-frame` signals, separates float windows. Implements `WindowEventPort` |
-| `monitor-adapter.ts` | Reads monitor geometry, `monitors-changed` signal. Implements `MonitorPort` |
-| `conflict-detector.ts` | Detects/disables conflicting GNOME extensions. Implements `ConflictDetectorPort` |
+| `window-event-adapter.ts` | `window-created`/`destroy`/`first-frame` signals, separates float windows |
+| `monitor-adapter.ts` | Reads monitor geometry, `monitors-changed` signal |
+| `conflict-detector.ts` | Detects/disables conflicting GNOME extensions |
 
 **Output adapters (`src/adapters/output/`)** — called by domain (via WorldHolder) to render state:
 
 | File | Purpose |
 |------|---------|
-| `clone-adapter.ts` | `Clutter.Clone` lifecycle, workspace strip, focus indicator, overview zoom. Implements `CloneLifecyclePort`, `CloneRenderPort`, `OverviewRenderPort`, `OverviewFilterPort` |
+| `clone-adapter.ts` | `Clutter.Clone` lifecycle, workspace strip, focus indicator, overview zoom. Implements `ClonePort` |
 | `window-adapter.ts` | Positions real `Meta.Window`s via `move_resize_frame()`, tracks settlement. Implements `WindowPort` |
-| `focus-adapter.ts` | `Meta.Window.activate()`, external focus tracking, new/close window suppression. Implements `FocusPort` |
+| `focus-adapter.ts` | `Meta.Window.activate()`, external focus tracking, new/close window suppression |
 | `quake-window-adapter.ts` | Positions and animates quake overlay windows via `move_resize_frame()` and `Clutter.ease()`, launches apps via `Shell.AppSystem`, matches windows to app IDs via `Shell.WindowTracker` |
-| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch. Implements `PanelIndicatorPort` |
-| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI. Implements `NotificationPort` |
+| `panel-indicator-adapter.ts` | Workspace indicator in GNOME top panel with click-to-switch |
+| `notification-overlay-adapter.ts` | Renders permission/notification/question card UI |
 | `status-overlay-adapter.ts` | Status badge on clone (`working`, `needs-input`, `done`, `end`) |
 | `float-clone-manager.ts` | Floating (non-tiled) window clone management |
 | `todo-overlay-adapter.ts` | Workspace TODO overlay: modal lifecycle, keyboard dispatch, file I/O (`~/.kestrel/<uuid>/todos.json`), completion timers |
@@ -193,8 +188,8 @@ GNOME Shell integration via `gi://` imports. Each adapter implements its corresp
 
 | File | Purpose |
 |------|---------|
-| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations. Implements `ShellPort` |
-| `state-persistence.ts` | Saves/restores world state to dconf settings. Implements `StatePersistencePort` |
+| `shell-adapter.ts` | GNOME Shell integration: hides overview, intercepts window animations |
+| `state-persistence.ts` | Saves/restores world state to dconf settings |
 | `world-holder.ts` | Observer hub: holds `World` state, multicasts `WorldUpdate` to `SceneSubscriber`s (clone, window, focus, quake) and `WorldSubscriber`s (panel indicator). Handlers call `applyUpdate()` instead of directly invoking adapters |
 | `settlement-retry.ts` | Exponential-backoff layout retry for async window configures (primarily Wayland). Delays: `[100, 150, 200, 300, 400, 500, 750, 1000]` ms |
 | `reconciliation-guard.ts` | Prevents concurrent/overlapping operations |
@@ -216,7 +211,6 @@ Presentational widget builders. These are pure UI construction functions with st
 | `permission-card.ts` | Permission card widget |
 | `question-card.ts` | Question card widget |
 | `card-builders.ts` | Shared card construction helpers |
-| `card-behavior.ts` | Card hover/focus/animation behavior |
 | `clone-ui-builders.ts` | Clone visual construction |
 | `status-badge-builders.ts` | Status badge construction |
 | `panel-indicator-builders.ts` | Panel indicator construction |
@@ -232,12 +226,18 @@ Presentational widget builders. These are pure UI construction functions with st
 The fundamental data flow is unidirectional:
 
 ```
-Reality -(signals)-> Adapters -(domain calls)-> Domain -(WorldUpdate)-> Adapters -(animate)-> Reality
+Events -> World Model -> Scene Model -> Adapter -> Reality
 ```
 
-All domain operations return `WorldUpdate { world, scene }`. The domain computes the complete desired physical state as a `SceneModel`. Handlers pass updates to `WorldHolder.applyUpdate()`, which multicasts to registered `SceneSubscriber`s (clone layout, window positioning, focus activation, quake) and `WorldSubscriber`s (panel indicator). Subscribers apply the scene by setting actor properties and animating transitions.
+The domain has two levels, physically separated into `src/domain/world/` and `src/domain/scene/`:
 
-**The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output. Scene subscribers registered in `extension.ts` handle overview-aware routing: during overview mode, clone updates are routed to `updateOverviewFocus` while window and focus subscribers are suppressed.
+1. **World model** (`world/`) — the logical state of the application. Which workspaces exist, which windows in which slots, notification lifecycle, overview mode, quake console state, todo lists. All mutations happen here via pure functions.
+
+2. **Scene model** (`scene/`) — the complete physical description of reality. Pixel positions and visibility of every clone, real window, focus indicator, notification card, and status badge. Computed as a pure function of the world model by `computeScene(world)`.
+
+All domain operations return `WorldUpdate { world, scene }`. The aggregate root `world.ts` calls `computeScene()` internally via `buildUpdate()` — callers never invoke scene computation directly. Handlers pass updates to `WorldHolder.applyUpdate()`, which multicasts to registered `SceneSubscriber`s (clone layout, window positioning, focus activation, quake) and `WorldSubscriber`s (panel indicator). Subscribers apply the scene by setting actor properties and animating transitions.
+
+**The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the scene model's output. Scene subscribers registered in `extension.ts` handle overview-aware routing: during overview mode, clone updates are routed to `updateOverviewFocus` while window and focus subscribers are suppressed.
 
 Operations like workspace pruning happen immediately in the domain. If a workspace empties, the domain removes it and adjusts all indices in the same operation. The adapter must reconcile its visual state (e.g., clone containers) to match.
 
@@ -245,17 +245,17 @@ Operations like workspace pruning happen immediately in the domain. If a workspa
 sequenceDiagram
     participant GNOME as GNOME Shell
     participant Handler as Handler
-    participant Domain as Domain Core
-    participant Scene as Scene Computation
+    participant World as world/ (logical state)
+    participant Scene as scene/ (physical state)
     participant WH as WorldHolder
     participant Subs as Scene Subscribers
 
     GNOME->>Handler: Signal fires (key press, window event)
-    Handler->>Domain: Call domain function (e.g. focusRight(world))
-    Domain->>Domain: Compute new World state
-    Domain->>Scene: computeScene(world)
-    Scene-->>Domain: SceneModel (positions, visibility, transforms)
-    Domain-->>Handler: WorldUpdate { world, scene }
+    Handler->>World: Call domain function (e.g. focusRight(world))
+    World->>World: Compute new World state
+    World->>Scene: buildUpdate() calls computeScene(world)
+    Scene-->>World: SceneModel (positions, visibility, transforms)
+    World-->>Handler: WorldUpdate { world, scene }
     Handler->>WH: applyUpdate(update, options)
     WH->>WH: Store new World
     WH->>Subs: Multicast onSceneChanged(scene, options)
@@ -276,7 +276,9 @@ interface World {
     readonly overviewActive: boolean;
     readonly overviewInteractionState: OverviewInteractionState;
     readonly notificationState: NotificationState;
+    readonly notificationInteractionState: NotificationInteractionState;
     readonly quakeState: QuakeState;
+    readonly todoState: TodoOverlayState;
 }
 
 interface WorldUpdate {
@@ -321,7 +323,7 @@ interface Workspace {
 
 ```typescript
 interface QuakeState {
-    readonly slots: readonly (WindowId | null)[];   // 5 slots, null = empty
+    readonly slots: readonly (WindowId | null)[];   // 4 slots, null = empty
     readonly activeSlot: number | null;             // which slot is visible, null = all hidden
 }
 
@@ -339,6 +341,8 @@ interface QuakeWindowScene {
 
 ## 4. Port-Adapter Matrix
 
+Port interfaces exist only for adapters that need test mocking. Other adapters are referenced directly by concrete type.
+
 | Port Interface | Implementing Adapter | Key Responsibilities |
 |----------------|---------------------|---------------------|
 | `CloneLifecyclePort` | `output/clone-adapter.ts` | Clone creation/destruction, workspace containers |
@@ -346,15 +350,6 @@ interface QuakeWindowScene {
 | `OverviewRenderPort` | `output/clone-adapter.ts` | Overview zoom transform, workspace labels |
 | `OverviewFilterPort` | `output/clone-adapter.ts` | Filter/sort clones during overview |
 | `WindowPort` | `output/window-adapter.ts` | Real window positioning via `move_resize_frame()` |
-| `FocusPort` | `output/focus-adapter.ts` | Window activation, focus suppression |
-| `MonitorPort` | `input/monitor-adapter.ts` | Monitor geometry, layout change signals |
-| `KeybindingPort` | `input/keybinding-adapter.ts` | GNOME keybinding registration |
-| `ShellPort` | `shell-adapter.ts` | Overview hiding, animation interception |
-| `WindowEventPort` | `input/window-event-adapter.ts` | Window lifecycle signals (create/destroy) |
-| `StatePersistencePort` | `state-persistence.ts` | World state save/restore to dconf |
-| `ConflictDetectorPort` | `input/conflict-detector.ts` | Conflicting extension detection |
-| `NotificationPort` | `output/notification-overlay-adapter.ts` | Permission/notification/question card rendering |
-| `PanelIndicatorPort` | `output/panel-indicator-adapter.ts` | Top panel workspace indicator |
 
 ## 5. Extension Entry Point
 

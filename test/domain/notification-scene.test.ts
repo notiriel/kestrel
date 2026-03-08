@@ -1,14 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import type { WindowId } from '../../src/domain/types.js';
-import type { NotificationState, DomainNotification } from '../../src/domain/notification.js';
-import { createNotificationState, enterFocusMode, registerSession, setSessionStatus, setSessionMessage } from '../../src/domain/notification.js';
+import type { WindowId } from '../../src/domain/world/types.js';
+import type { NotificationState, DomainNotification } from '../../src/domain/world/notification.js';
 import {
-    createNotificationInteractionState,
-    expandStack, collapseStack, expandCard, collapseCard,
+    createNotificationState, enterFocusMode,
+    createNotificationInteractionState, expandStack, collapseStack, expandCard, collapseCard,
+} from '../../src/domain/world/notification.js';
+import { registerSession, setSessionStatus, setSessionMessage } from '../../src/domain/world/notification-status.js';
+import {
     computeOverlayScene, computeFocusModeScene, computeStatusBadgeScenes,
     type NotificationMonitorInfo,
     type OverviewTransformInfo, type ClonePositionInfo,
-} from '../../src/domain/notification-scene.js';
+} from '../../src/domain/scene/notification-scene.js';
 
 const MONITOR: NotificationMonitorInfo = { x: 0, y: 0, width: 1920, height: 1080 };
 const PANEL_HEIGHT = 32;
@@ -153,14 +155,14 @@ describe('computeOverlayScene', () => {
         expect(scene.y).toBe(PANEL_HEIGHT + 12);
     });
 
-    it('question card uses full width, no translationX offset', () => {
+    it('question card uses collapsed width with translationX offset', () => {
         const n1 = makeDomainNotification({ id: 'n1', type: 'question', timestamp: 1000 });
         const state = stateWithNotifications(n1);
         const interaction = createNotificationInteractionState();
         const scene = computeOverlayScene(state, interaction, MONITOR, PANEL_HEIGHT);
 
-        expect(scene.cards[0]!.translationX).toBe(0);
-        expect(scene.cards[0]!.width).toBe(600);
+        expect(scene.cards[0]!.translationX).toBe(200);
+        expect(scene.cards[0]!.width).toBe(400);
     });
 
     it('permission card has translationX offset in collapsed state', () => {

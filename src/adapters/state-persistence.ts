@@ -1,10 +1,9 @@
-import type { WindowId, WorkspaceColorId, KestrelConfig, MonitorInfo } from '../domain/types.js';
-import type { World, RestoreWorkspaceData, RestoreColumnData } from '../domain/world.js';
-import type { StatePersistencePort } from '../ports/state-persistence-port.js';
-import { restoreWorld, updateNotificationState } from '../domain/world.js';
-import { createTiledWindow } from '../domain/window.js';
-import { extractWindowStatuses, restoreWindowStatuses } from '../domain/notification.js';
-import type { SavedWindowStatus } from '../domain/notification.js';
+import type { WindowId, WorkspaceColorId, KestrelConfig, MonitorInfo } from '../domain/world/types.js';
+import type { World, RestoreWorkspaceData, RestoreColumnData } from '../domain/world/world.js';
+import { restoreWorld, updateNotificationState } from '../domain/world/world.js';
+import { createTiledWindow } from '../domain/world/window.js';
+import { extractWindowStatuses, restoreWindowStatuses } from '../domain/world/notification-status.js';
+import type { SavedWindowStatus } from '../domain/world/notification-status.js';
 import type Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
 
@@ -47,7 +46,7 @@ interface SavedState {
     windowStatuses?: SavedWindowStatusEntry[];
 }
 
-export class StatePersistence implements StatePersistencePort {
+export class StatePersistence {
     private _settings: Gio.Settings;
 
     constructor(settings: Gio.Settings) {
@@ -146,7 +145,7 @@ export class StatePersistence implements StatePersistencePort {
         if (entries.length === 0) return world;
         const statusMap = new Map<WindowId, SavedWindowStatus>(entries.map(e => [
             e.windowId as WindowId,
-            { status: e.status as import('../domain/notification-types.js').ClaudeStatus, message: e.message, timestamp: e.timestamp },
+            { status: e.status as import('../domain/world/notification-types.js').ClaudeStatus, message: e.message, timestamp: e.timestamp },
         ]));
         return updateNotificationState(world, restoreWindowStatuses(world.notificationState, statusMap));
     }

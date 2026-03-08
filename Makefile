@@ -21,6 +21,7 @@ coverage:
 lint:
 	npx eslint src/ test/
 	npx knip
+	npx jscpd src/ --min-tokens 100 --threshold 0
 
 # ── Install everything ──────────────────────────────────────────────
 install: build test lint

@@ -2,7 +2,8 @@ import type { WorldUpdate } from './types.js';
 import type { World } from './world.js';
 import { buildUpdate, adjustViewport } from './world.js';
 import { enterOverviewInteraction, exitOverviewInteraction, cancelOverviewInteraction } from './overview-state.js';
-import { isAgentWindow, getPendingEntries, enterFocusMode } from './notification.js';
+import { getPendingEntries, enterFocusMode } from './notification.js';
+import { isAgentWindow } from './notification-status.js';
 
 /**
  * Enter overview mode. Sets overviewActive flag and saves pre-overview state

@@ -1,4 +1,3 @@
-import type { ConflictDetectorPort } from '../../ports/conflict-detector-port.js';
 import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Source, Notification, NotificationDestroyedReason } from 'resource:///org/gnome/shell/ui/messageTray.js';
@@ -12,7 +11,7 @@ const CONFLICTING_EXTENSIONS = [
 /** Extension state value for ENABLED in GNOME Shell */
 const EXTENSION_STATE_ENABLED = 1;
 
-export class ConflictDetector implements ConflictDetectorPort {
+export class ConflictDetector {
     private _source: Source | null = null;
     private _signalId: number | null = null;
     private _notified = new Set<string>();

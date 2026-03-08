@@ -2,7 +2,7 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Pango from 'gi://Pango';
 
-import type { ClaudeStatus } from '../domain/notification-types.js';
+import type { ClaudeStatus } from '../domain/world/notification-types.js';
 
 interface Easeable {
     ease(params: Record<string, unknown>): void;

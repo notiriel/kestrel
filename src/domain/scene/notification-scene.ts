@@ -5,10 +5,10 @@
  * and status badges. Adapters consume these scene models to position/animate widgets.
  */
 
-import type { WindowId } from './types.js';
-import type { NotificationState, DomainNotification, NotificationType } from './notification.js';
-import { getPendingEntries } from './notification.js';
-import type { ClaudeStatus } from './notification-types.js';
+import type { WindowId } from '../world/types.js';
+import type { NotificationState, DomainNotification, NotificationType, NotificationInteractionState } from '../world/notification.js';
+import { getPendingEntries } from '../world/notification.js';
+import type { ClaudeStatus } from '../world/notification-types.js';
 
 // --- Layout constants (moved from adapters) ---
 
@@ -28,37 +28,6 @@ const CARD_RIGHT_OFFSET = QUESTION_CARD_WIDTH - CARD_WIDTH;
 const FOCUS_CARD_WIDTH = 600;
 const CLONE_SCALE = 0.8;
 
-// --- Interaction state ---
-
-export interface NotificationInteractionState {
-    readonly stackExpanded: boolean;
-    readonly expandedCardIds: ReadonlySet<string>;
-}
-
-export function createNotificationInteractionState(): NotificationInteractionState {
-    return { stackExpanded: false, expandedCardIds: new Set() };
-}
-
-export function expandStack(state: NotificationInteractionState): NotificationInteractionState {
-    return { ...state, stackExpanded: true };
-}
-
-export function collapseStack(state: NotificationInteractionState): NotificationInteractionState {
-    return { ...state, stackExpanded: false, expandedCardIds: new Set() };
-}
-
-export function expandCard(state: NotificationInteractionState, cardId: string): NotificationInteractionState {
-    const expandedCardIds = new Set(state.expandedCardIds);
-    expandedCardIds.add(cardId);
-    return { ...state, expandedCardIds };
-}
-
-export function collapseCard(state: NotificationInteractionState, cardId: string): NotificationInteractionState {
-    const expandedCardIds = new Set(state.expandedCardIds);
-    expandedCardIds.delete(cardId);
-    return { ...state, expandedCardIds };
-}
-
 // --- Scene model types ---
 
 export interface NotificationCardScene {
@@ -71,6 +40,7 @@ export interface NotificationCardScene {
     readonly opacity: number;
     readonly translationX: number;
     readonly reactive: boolean;
+    readonly hasInternalPadding: boolean;
 }
 
 export interface NotificationCountBadgeScene {
@@ -147,20 +117,23 @@ interface CardBehavior {
     readonly collapsedWidth: number;
     readonly expandedWidth: number;
     readonly collapsedTranslationX: number;
+    readonly hasInternalPadding: boolean;
 }
 
 function getCardBehavior(type: NotificationType): CardBehavior {
     if (type === 'question') {
         return {
-            collapsedWidth: QUESTION_CARD_WIDTH,
+            collapsedWidth: CARD_WIDTH,
             expandedWidth: QUESTION_CARD_WIDTH,
-            collapsedTranslationX: 0,
+            collapsedTranslationX: CARD_RIGHT_OFFSET,
+            hasInternalPadding: true,
         };
     }
     return {
         collapsedWidth: CARD_WIDTH,
         expandedWidth: CARD_WIDTH,
         collapsedTranslationX: CARD_RIGHT_OFFSET,
+        hasInternalPadding: false,
     };
 }
 
@@ -254,6 +227,7 @@ function computeExpandedCards(
             opacity: 255,
             translationX,
             reactive: true,
+            hasInternalPadding: behavior.hasInternalPadding,
         });
 
         y += cardHeight + STACK_OFFSET_Y;
@@ -287,6 +261,7 @@ function computeCollapsedCards(
             opacity,
             translationX: behavior.collapsedTranslationX,
             reactive: i === 0,
+            hasInternalPadding: behavior.hasInternalPadding,
         });
     }
 

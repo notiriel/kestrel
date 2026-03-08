@@ -1,22 +1,15 @@
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
-import type { WindowId, MonitorInfo } from './domain/types.js';
-import type { World } from './domain/world.js';
-import { createWorld, setFocus, updateMonitor, updateConfig, updateTodoState, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world.js';
-import { diffScene, computeScene } from './domain/scene.js';
-import type { SceneModel, CloneScene, RealWindowScene, FocusIndicatorScene, WorkspaceStripScene } from './domain/scene.js';
-import { focusRight, focusLeft, focusDown, focusUp } from './domain/navigation.js';
-import { moveLeft, moveRight, moveDown, moveUp, toggleSize, toggleStack } from './domain/window-operations.js';
-import { forceWorkspaceUp, forceWorkspaceDown } from './domain/navigation.js';
-import { allWindows } from './domain/workspace.js';
+import type { WindowId, MonitorInfo, WorldUpdate } from './domain/world/types.js';
+import type { World } from './domain/world/world.js';
+import { createWorld, setFocus, updateMonitor, updateConfig, updateTodoState, wsIdAt, renameCurrentWorkspace, findWorkspaceByName, switchToWorkspace } from './domain/world/world.js';
+import { diffScene, computeScene } from './domain/scene/scene.js';
+import type { SceneModel, CloneScene, RealWindowScene, FocusIndicatorScene, WorkspaceStripScene } from './domain/scene/scene.js';
+import { focusRight, focusLeft, focusDown, focusUp } from './domain/world/navigation.js';
+import { moveLeft, moveRight, moveDown, moveUp, toggleSize, toggleStack } from './domain/world/window-operations.js';
+import { forceWorkspaceUp, forceWorkspaceDown } from './domain/world/navigation.js';
+import { allWindows } from './domain/world/workspace.js';
 import type { ClonePort } from './ports/clone-port.js';
 import type { WindowPort } from './ports/window-port.js';
-import type { FocusPort } from './ports/focus-port.js';
-import type { MonitorPort } from './ports/monitor-port.js';
-import type { ShellPort } from './ports/shell-port.js';
-import type { KeybindingPort } from './ports/keybinding-port.js';
-import type { WindowEventPort } from './ports/window-event-port.js';
-import type { ConflictDetectorPort } from './ports/conflict-detector-port.js';
-import type { StatePersistencePort } from './ports/state-persistence-port.js';
 import { MonitorAdapter } from './adapters/input/monitor-adapter.js';
 import { ShellAdapter } from './adapters/shell-adapter.js';
 import { WindowEventAdapter } from './adapters/input/window-event-adapter.js';
@@ -39,14 +32,13 @@ import { NotificationCoordinator } from './adapters/notification-coordinator.js'
 import { HelpOverlayAdapter } from './ui-components/help-overlay.js';
 import { MouseInputAdapter } from './adapters/input/mouse-input-adapter.js';
 import { QuakeWindowAdapter } from './adapters/output/quake-window-adapter.js';
-import { toggleQuakeSlot, getUnoccupiedQuakeSlots } from './domain/quake.js';
-import { getWorkspaceClaudeStatus } from './domain/notification.js';
-import { toggleTodoOverlay, dismissTodoOverlay, syncTodoWorkspace, navigateUp, navigateDown, todoToggleComplete, startNewItem, startEditItem, confirmEdit, cancelEdit, requestDelete, confirmDelete, cancelDelete, pruneCompleted, visibleItems } from './domain/todo.js';
-import type { TodoItem } from './domain/todo.js';
+import { toggleQuakeSlot, getUnoccupiedQuakeSlots } from './domain/world/quake.js';
+import { getWorkspaceClaudeStatus } from './domain/world/notification-status.js';
+import { toggleTodoOverlay, dismissTodoOverlay, syncTodoWorkspace, navigateUp, navigateDown, todoToggleComplete, startNewItem, startEditItem, confirmEdit, cancelEdit, requestDelete, confirmDelete, cancelDelete, pruneCompleted, visibleItems } from './domain/world/todo.js';
+import type { TodoItem } from './domain/world/todo.js';
 import type { TodoKeyAction } from './adapters/output/todo-overlay-adapter.js';
 import { TodoOverlayAdapter } from './adapters/output/todo-overlay-adapter.js';
 import { TodoPersistenceAdapter } from './adapters/output/todo-persistence-adapter.js';
-import type { TodoPersistencePort } from './ports/todo-persistence-port.js';
 import { safeWindow } from './adapters/safe-window.js';
 import type Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -54,18 +46,18 @@ import Meta from 'gi://Meta';
 
 export default class KestrelExtension extends Extension {
     private _worldHolder: WorldHolder = new WorldHolder();
-    private _monitorAdapter: MonitorPort | null = null;
-    private _windowEventAdapter: WindowEventPort | null = null;
+    private _monitorAdapter: MonitorAdapter | null = null;
+    private _windowEventAdapter: WindowEventAdapter | null = null;
     private _cloneAdapter: ClonePort | null = null;
     private _windowAdapter: WindowPort | null = null;
-    private _focusAdapter: FocusPort | null = null;
-    private _keybindingAdapter: KeybindingPort | null = null;
-    private _conflictDetector: ConflictDetectorPort | null = null;
+    private _focusAdapter: FocusAdapter | null = null;
+    private _keybindingAdapter: KeybindingAdapter | null = null;
+    private _conflictDetector: ConflictDetector | null = null;
     private _guard: ReconciliationGuard | null = null;
     private _overviewHandler: OverviewHandler | null = null;
     private _settlementRetry: SettlementRetry | null = null;
-    private _statePersistence: StatePersistencePort | null = null;
-    private _shellAdapter: ShellPort | null = null;
+    private _statePersistence: StatePersistence | null = null;
+    private _shellAdapter: ShellAdapter | null = null;
     private _navigationHandler: NavigationHandler | null = null;
     private _windowLifecycleHandler: WindowLifecycleHandler | null = null;
     private _panelIndicator: PanelIndicatorAdapter | null = null;
@@ -74,12 +66,25 @@ export default class KestrelExtension extends Extension {
     private _mouseInputAdapter: MouseInputAdapter | null = null;
     private _quakeAdapter: QuakeWindowAdapter | null = null;
     private _todoAdapter: TodoOverlayAdapter | null = null;
-    private _todoPersistence: TodoPersistencePort | null = null;
+    private _todoPersistence: TodoPersistenceAdapter | null = null;
     private _debugMode: boolean = false;
     private _overviewDismissTimeout: ReturnType<typeof setTimeout> | null = null;
     private _settingsChangedId: number = 0;
     private _sceneSubscribers: SceneSubscriber[] = [];
     private _worldSubscribers: WorldSubscriber[] = [];
+
+    /** Apply a world update with scroll transfer detection for cross-workspace transitions. */
+    private _applyWithScrollTransfer(update: WorldUpdate, animate: boolean = true): void {
+        const world = this._worldHolder.world;
+        if (!world) return;
+        const oldScrollX = world.viewport.scrollX;
+        const oldWsId = wsIdAt(world, world.viewport.workspaceIndex);
+        const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
+        const scrollTransfer = (newWsId && newWsId !== oldWsId)
+            ? { workspaceId: newWsId, oldScrollX }
+            : undefined;
+        this._worldHolder.applyUpdate(update, { animate, scrollTransfer });
+    }
 
     enable(): void {
         try {
@@ -140,14 +145,8 @@ export default class KestrelExtension extends Extension {
             this._panelIndicator.init((wsIndex) => {
                 try {
                     if (!this._worldHolder.world) return;
-                    const oldScrollX = this._worldHolder.world.viewport.scrollX;
-                    const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
                     const update = switchToWorkspace(this._worldHolder.world, wsIndex);
-                    const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
-                    const scrollTransfer = (newWsId && newWsId !== oldWsId)
-                        ? { workspaceId: newWsId, oldScrollX }
-                        : undefined;
-                    this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
+                    this._applyWithScrollTransfer(update);
                 } catch (e) {
                     console.error('[Kestrel] Error switching workspace from panel:', e);
                 }
@@ -609,14 +608,7 @@ export default class KestrelExtension extends Extension {
         if (!this._worldHolder.world) return;
         const wid = this._worldHolder.world.notificationState.sessionWindows.get(sessionId) ?? null;
         if (!wid) return;
-        const oldScrollX = this._worldHolder.world.viewport.scrollX;
-        const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
-        const update = setFocus(this._worldHolder.world, wid);
-        const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
-        const scrollTransfer = (newWsId && newWsId !== oldWsId)
-            ? { workspaceId: newWsId, oldScrollX }
-            : undefined;
-        this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
+        this._applyWithScrollTransfer(setFocus(this._worldHolder.world, wid));
     }
 
     private _debugState(): string {
@@ -738,15 +730,7 @@ export default class KestrelExtension extends Extension {
             const wsIndex = findWorkspaceByName(this._worldHolder.world, name);
             if (wsIndex === -1) return '{"error":"workspace not found"}';
 
-            const oldScrollX = this._worldHolder.world.viewport.scrollX;
-            const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
-
-            const update = switchToWorkspace(this._worldHolder.world, wsIndex);
-            const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
-            const scrollTransfer = (newWsId && newWsId !== oldWsId)
-                ? { workspaceId: newWsId, oldScrollX }
-                : undefined;
-            this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
+            this._applyWithScrollTransfer(switchToWorkspace(this._worldHolder.world, wsIndex));
             return '{"ok":true}';
         } catch (e) {
             return `{"error":"${String(e)}"}`;
@@ -835,7 +819,7 @@ export default class KestrelExtension extends Extension {
             if (!this._worldHolder.world || !this._todoAdapter) return;
             const wsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
             if (!wsId) return;
-            const loadItems = (id: import('./domain/types.js').WorkspaceId) => this._todoPersistence!.loadItems(id);
+            const loadItems = (id: import('./domain/world/types.js').WorkspaceId) => this._todoPersistence!.loadItems(id);
             const newTodoState = toggleTodoOverlay(this._worldHolder.world.todoState, wsId, loadItems);
             this._updateTodoState(newTodoState);
         } catch (e) {
@@ -869,7 +853,7 @@ export default class KestrelExtension extends Extension {
         }
     }
 
-    private _updateTodoState(newState: import('./domain/todo.js').TodoOverlayState): void {
+    private _updateTodoState(newState: import('./domain/world/todo.js').TodoOverlayState): void {
         if (!this._worldHolder.world) return;
         const prevTodoState = this._worldHolder.world.todoState;
         this._setWorld(updateTodoState(this._worldHolder.world, newState));
@@ -899,7 +883,7 @@ export default class KestrelExtension extends Extension {
         }
     }
 
-    private _currentWorkspaceId(): import('./domain/types.js').WorkspaceId | null {
+    private _currentWorkspaceId(): import('./domain/world/types.js').WorkspaceId | null {
         if (!this._worldHolder.world) return null;
         return wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
     }
@@ -949,15 +933,7 @@ export default class KestrelExtension extends Extension {
             if (!this._guard?.check('externalFocus')) return;
             if (this._worldHolder.world.focusedWindow === windowId) return;
 
-            const oldScrollX = this._worldHolder.world.viewport.scrollX;
-            const oldWsId = wsIdAt(this._worldHolder.world, this._worldHolder.world.viewport.workspaceIndex);
-
-            const update = setFocus(this._worldHolder.world, windowId);
-            const newWsId = wsIdAt(update.world, update.world.viewport.workspaceIndex);
-            const scrollTransfer = (newWsId && newWsId !== oldWsId)
-                ? { workspaceId: newWsId, oldScrollX }
-                : undefined;
-            this._worldHolder.applyUpdate(update, { animate: true, scrollTransfer });
+            this._applyWithScrollTransfer(setFocus(this._worldHolder.world, windowId));
         } catch (e) {
             console.error('[Kestrel] Error handling external focus:', e);
         }

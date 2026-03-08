@@ -1,8 +1,8 @@
-import type { WindowId, WorkspaceId, WorkspaceColorId, KestrelConfig } from '../domain/types.js';
-import type { SceneModel } from '../domain/scene.js';
-import type { OverviewTransform } from '../domain/overview-state.js';
+import type { WindowId, WorkspaceId, WorkspaceColorId, KestrelConfig } from '../domain/world/types.js';
+import type { SceneModel } from '../domain/scene/scene.js';
+import type { OverviewTransform } from '../domain/world/overview-state.js';
 
-export type { OverviewTransform } from '../domain/overview-state.js';
+export type { OverviewTransform } from '../domain/world/overview-state.js';
 
 /** Tiled clone lifecycle: create, remove, reparent, fullscreen visibility. */
 export interface CloneLifecyclePort {

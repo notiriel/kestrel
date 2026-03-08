@@ -6,8 +6,6 @@
 
 import type { WindowId } from './types.js';
 import type { ClaudeStatus } from './notification-types.js';
-import type { Workspace } from './workspace.js';
-import { allWindows } from './workspace.js';
 
 // --- Types ---
 export type NotificationStatus = 'pending' | 'responded' | 'dismissed' | 'expired';
@@ -66,14 +64,6 @@ export interface NotificationState {
     focusMode: FocusModeState;
 }
 
-// --- Saved status (persisted across enable/disable cycles) ---
-
-export interface SavedWindowStatus {
-    status: ClaudeStatus;
-    message: string;
-    timestamp: number;
-}
-
 // --- Factory ---
 
 export function createNotificationState(): NotificationState {
@@ -86,36 +76,6 @@ export function createNotificationState(): NotificationState {
         windowStatusMessages: new Map(),
         focusMode: { active: false, entryIds: [], currentIndex: 0 },
     };
-}
-
-/** Restore window status data into a notification state (e.g. after screen lock). */
-export function restoreWindowStatuses(
-    state: NotificationState,
-    statuses: ReadonlyMap<WindowId, SavedWindowStatus>,
-): NotificationState {
-    if (statuses.size === 0) return state;
-    const windowStatuses = new Map(state.windowStatuses);
-    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
-    const windowStatusMessages = new Map(state.windowStatusMessages);
-    for (const [windowId, saved] of statuses) {
-        windowStatuses.set(windowId, saved.status);
-        windowStatusTimestamps.set(windowId, saved.timestamp);
-        windowStatusMessages.set(windowId, saved.message);
-    }
-    return { ...state, windowStatuses, windowStatusTimestamps, windowStatusMessages };
-}
-
-/** Extract window status data for persistence. */
-export function extractWindowStatuses(state: NotificationState): Map<WindowId, SavedWindowStatus> {
-    const result = new Map<WindowId, SavedWindowStatus>();
-    for (const [windowId, status] of state.windowStatuses) {
-        result.set(windowId, {
-            status,
-            message: state.windowStatusMessages.get(windowId) ?? '...',
-            timestamp: state.windowStatusTimestamps.get(windowId) ?? Date.now(),
-        });
-    }
-    return result;
 }
 
 // --- Domain notification factory ---
@@ -149,11 +109,6 @@ export function createDomainNotification(
         timestamp: Date.now(),
         questionState: { currentPage: 0, answers: new Map(), otherTexts: new Map(), otherActive: new Map() },
     };
-}
-
-/** Format the title for a question notification based on question count. */
-export function formatQuestionTitle(questionCount: number): string {
-    return `Claude asks ${questionCount} question${questionCount !== 1 ? 's' : ''}`;
 }
 
 // --- Question parsing ---
@@ -259,87 +214,11 @@ export function dismissForSession(state: NotificationState, sessionId: string): 
     return { ...state, notifications };
 }
 
-// --- Session/window management ---
-
-/** Register a Claude session → window mapping and set initial 'done' status. */
-export function registerSession(state: NotificationState, sessionId: string, windowId: WindowId): NotificationState {
-    const sessionWindows = new Map(state.sessionWindows);
-    sessionWindows.set(sessionId, windowId);
-    const windowStatuses = new Map(state.windowStatuses);
-    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
-    if (!windowStatuses.has(windowId)) {
-        windowStatuses.set(windowId, 'done');
-        windowStatusTimestamps.set(windowId, Date.now());
-    }
-    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps };
-}
-
-/** Remove all sessions and status for a destroyed window. */
-export function unregisterWindow(state: NotificationState, windowId: WindowId): NotificationState {
-    const sessionWindows = new Map(state.sessionWindows);
-    for (const [sid, wid] of sessionWindows) {
-        if (wid === windowId) sessionWindows.delete(sid);
-    }
-    const windowStatuses = new Map(state.windowStatuses);
-    windowStatuses.delete(windowId);
-    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
-    windowStatusTimestamps.delete(windowId);
-    const windowStatusMessages = new Map(state.windowStatusMessages);
-    windowStatusMessages.delete(windowId);
-    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps, windowStatusMessages };
-}
-
-/** Update window status via session → window lookup. Resets message to "..." and dismisses stale notifications when working. */
-export function setSessionStatus(state: NotificationState, sessionId: string, status: ClaudeStatus): NotificationState {
-    const windowId = state.sessionWindows.get(sessionId);
-    if (!windowId) return state;
-    const currentStatus = state.windowStatuses.get(windowId);
-    if (currentStatus === status) return state;
-    const windowStatuses = new Map(state.windowStatuses);
-    windowStatuses.set(windowId, status);
-    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
-    windowStatusTimestamps.set(windowId, Date.now());
-    const windowStatusMessages = new Map(state.windowStatusMessages);
-    windowStatusMessages.set(windowId, '...');
-    let result = { ...state, windowStatuses, windowStatusTimestamps, windowStatusMessages };
-    if (status !== 'done') {
-        result = dismissForSession(result, sessionId);
-    }
-    return result;
-}
-
-/** Update the status message for a session's window. Does not change status or timestamp. */
-export function setSessionMessage(state: NotificationState, sessionId: string, message: string): NotificationState {
-    const windowId = state.sessionWindows.get(sessionId);
-    if (!windowId) return state;
-    const current = state.windowStatusMessages.get(windowId);
-    if (current === message) return state;
-    const windowStatusMessages = new Map(state.windowStatusMessages);
-    windowStatusMessages.set(windowId, message);
-    return { ...state, windowStatusMessages };
-}
-
-/** Remove session mapping and window status (for 'end' status). */
-export function clearSession(state: NotificationState, sessionId: string): NotificationState {
-    const windowId = state.sessionWindows.get(sessionId);
-    if (!windowId) return state;
-    const sessionWindows = new Map(state.sessionWindows);
-    sessionWindows.delete(sessionId);
-    const windowStatuses = new Map(state.windowStatuses);
-    windowStatuses.delete(windowId);
-    const windowStatusTimestamps = new Map(state.windowStatusTimestamps);
-    windowStatusTimestamps.delete(windowId);
-    const windowStatusMessages = new Map(state.windowStatusMessages);
-    windowStatusMessages.delete(windowId);
-    return { ...state, sessionWindows, windowStatuses, windowStatusTimestamps, windowStatusMessages };
-}
-
 /**
  * Dismiss non-interactive notifications for all sessions mapped to a window.
  * Used when focus changes to auto-dismiss "done" notifications.
  */
 export function dismissNotificationsForWindow(state: NotificationState, windowId: WindowId): NotificationState {
-    // Find all sessions for this window
     const sessions: string[] = [];
     for (const [sid, wid] of state.sessionWindows) {
         if (wid === windowId) sessions.push(sid);
@@ -351,23 +230,6 @@ export function dismissNotificationsForWindow(state: NotificationState, windowId
         result = dismissForSession(result, sid);
     }
     return result;
-}
-
-/** True if the session's window is the currently focused window. */
-export function shouldSuppressNotification(state: NotificationState, sessionId: string, focusedWindowId: WindowId | null): boolean {
-    if (!focusedWindowId) return false;
-    const windowId = state.sessionWindows.get(sessionId);
-    return windowId === focusedWindowId;
-}
-
-/** Look up which window a session is mapped to. */
-export function getWindowForSession(state: NotificationState, sessionId: string): WindowId | null {
-    return state.sessionWindows.get(sessionId) ?? null;
-}
-
-/** Get the window → status map (read-only). */
-export function getWindowStatusMap(state: NotificationState): ReadonlyMap<WindowId, ClaudeStatus> {
-    return state.windowStatuses;
 }
 
 // --- Response lookup ---
@@ -585,21 +447,6 @@ export function classifyPermissionPayload(payload: Record<string, unknown>): {
     return { isQuestion: false, questions: [] };
 }
 
-// --- Workspace status ---
-
-/** Get the highest-priority Claude status across all windows in a workspace. */
-export function getWorkspaceClaudeStatus(state: NotificationState, ws: Workspace): ClaudeStatus | null {
-    const priority: Record<string, number> = { 'needs-input': 3, 'working': 2, 'done': 1 };
-    let best: ClaudeStatus | null = null;
-    for (const win of allWindows(ws)) {
-        const status = state.windowStatuses.get(win.id);
-        if (status && (priority[status] ?? 0) > (priority[best ?? ''] ?? 0)) {
-            best = status;
-        }
-    }
-    return best;
-}
-
 // --- Key action mapping ---
 
 /** Map a key number (1-3) to an action string based on notification type. */
@@ -622,15 +469,38 @@ export function canSubmitQuestion(notification: DomainNotification): boolean {
     );
 }
 
-// --- Focus mode ---
+// --- Notification interaction state ---
 
-/** Check if a window has a Claude session. */
-export function isAgentWindow(state: NotificationState, windowId: WindowId): boolean {
-    for (const [, wid] of state.sessionWindows) {
-        if (wid === windowId) return true;
-    }
-    return false;
+export interface NotificationInteractionState {
+    readonly stackExpanded: boolean;
+    readonly expandedCardIds: ReadonlySet<string>;
 }
+
+export function createNotificationInteractionState(): NotificationInteractionState {
+    return { stackExpanded: false, expandedCardIds: new Set() };
+}
+
+export function expandStack(state: NotificationInteractionState): NotificationInteractionState {
+    return { ...state, stackExpanded: true };
+}
+
+export function collapseStack(state: NotificationInteractionState): NotificationInteractionState {
+    return { ...state, stackExpanded: false, expandedCardIds: new Set() };
+}
+
+export function expandCard(state: NotificationInteractionState, cardId: string): NotificationInteractionState {
+    const expandedCardIds = new Set(state.expandedCardIds);
+    expandedCardIds.add(cardId);
+    return { ...state, expandedCardIds };
+}
+
+export function collapseCard(state: NotificationInteractionState, cardId: string): NotificationInteractionState {
+    const expandedCardIds = new Set(state.expandedCardIds);
+    expandedCardIds.delete(cardId);
+    return { ...state, expandedCardIds };
+}
+
+// --- Focus mode (simple setters — complex ops in focus-mode.ts) ---
 
 /** Enter focus mode with a list of entry IDs. No-op when overview is active. */
 export function enterFocusMode(state: NotificationState, entryIds: string[], overviewActive: boolean = false): NotificationState {
@@ -638,48 +508,8 @@ export function enterFocusMode(state: NotificationState, entryIds: string[], ove
     return { ...state, focusMode: { active: true, entryIds: [...entryIds], currentIndex: 0 } };
 }
 
-/** Enter focus mode starting from a specific notification, including all pending entries. */
-export function enterFocusModeForNotification(state: NotificationState, notificationId: string): NotificationState {
-    const pending = getPendingEntries(state);
-    if (pending.length === 0) return state;
-    const entryIds = pending.map(n => n.id);
-    const startIndex = Math.max(0, entryIds.indexOf(notificationId));
-    return { ...state, focusMode: { active: true, entryIds, currentIndex: startIndex } };
-}
-
 /** Exit focus mode, clearing all focus mode state. */
 export function exitFocusMode(state: NotificationState): NotificationState {
     return { ...state, focusMode: { active: false, entryIds: [], currentIndex: 0 } };
 }
 
-/** Navigate within focus mode entries. Wraps around at both ends. */
-export function navigateFocusMode(state: NotificationState, delta: number): NotificationState {
-    const fm = state.focusMode;
-    if (!fm.active || fm.entryIds.length <= 1) return state;
-    const newIndex = ((fm.currentIndex + delta) % fm.entryIds.length + fm.entryIds.length) % fm.entryIds.length;
-    return { ...state, focusMode: { ...fm, currentIndex: newIndex } };
-}
-
-/** Remove an entry from focus mode (e.g. after responding). Adjusts currentIndex. */
-export function removeFromFocusMode(state: NotificationState, entryId: string): NotificationState {
-    const fm = state.focusMode;
-    const idx = fm.entryIds.indexOf(entryId);
-    if (idx === -1) return state;
-    const newEntryIds = fm.entryIds.filter(id => id !== entryId);
-    const newIndex = Math.min(fm.currentIndex, Math.max(0, newEntryIds.length - 1));
-    return { ...state, focusMode: { ...fm, entryIds: newEntryIds, currentIndex: newIndex } };
-}
-
-/** Sync focus mode entries with current pending IDs. Removes resolved, adds new. */
-export function syncFocusModeEntries(state: NotificationState, currentPendingIds: string[]): NotificationState {
-    const fm = state.focusMode;
-    if (!fm.active) return state;
-    const pendingSet = new Set(currentPendingIds);
-    // Keep existing entries that are still pending, add new ones
-    const kept = fm.entryIds.filter(id => pendingSet.has(id));
-    for (const id of currentPendingIds) {
-        if (!kept.includes(id)) kept.push(id);
-    }
-    const newIndex = Math.min(fm.currentIndex, Math.max(0, kept.length - 1));
-    return { ...state, focusMode: { ...fm, entryIds: kept, currentIndex: newIndex } };
-}

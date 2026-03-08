@@ -1,4 +1,4 @@
-import type { WorkspaceId, MonitorInfo } from './types.js';
+import type { WorkspaceId } from './types.js';
 
 export interface TodoItem {
     readonly uuid: string;
@@ -150,18 +150,3 @@ export function todosDir(homeDir: string, wsId: WorkspaceId): string {
     return `${homeDir}/.kestrel/${wsId}`;
 }
 
-interface TodoGeometry {
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-}
-
-export function computeTodoGeometry(monitor: MonitorInfo): TodoGeometry {
-    const width = Math.round(monitor.totalWidth * 0.5);
-    const height = Math.round(monitor.totalHeight * 0.6);
-    const marginY = Math.round(monitor.totalHeight * 0.1);
-    const x = Math.round((monitor.totalWidth - width) / 2) + monitor.stageOffsetX;
-    const y = marginY + monitor.workAreaY;
-    return { x, y, width, height };
-}

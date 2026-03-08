@@ -6,9 +6,6 @@ const SURFACE_HOVER = '#0f1612';
 const BORDER_HOVER = '#243138';
 const ACCENT = '#62af85';
 
-const CARD_WIDTH = 400;
-export const QUESTION_CARD_WIDTH = 600;
-export const CARD_RIGHT_OFFSET = QUESTION_CARD_WIDTH - CARD_WIDTH;
 
 /** Create the notification overlay container. */
 export function buildNotificationContainer(): St.Widget {

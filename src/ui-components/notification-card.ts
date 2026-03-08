@@ -1,4 +1,4 @@
-import type { OverlayNotification } from '../domain/notification-types.js';
+import type { OverlayNotification } from '../domain/world/notification-types.js';
 import type { NotificationCardDelegate, VisitableCardOptions } from './notification-adapter-types.js';
 import St from 'gi://St';
 import type Clutter from 'gi://Clutter';

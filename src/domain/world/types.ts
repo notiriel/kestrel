@@ -8,11 +8,6 @@ export interface QuakeSlotConfig {
     readonly appId: string;  // desktop app ID, empty = disabled
 }
 
-export interface QuakeState {
-    readonly slots: readonly (WindowId | null)[];  // 4 slots
-    readonly activeSlot: number | null;
-}
-
 export interface KestrelConfig {
     readonly gapSize: number;
     readonly edgeGap: number;
@@ -78,4 +73,4 @@ export function resolveWorkspaceColor(colorId: WorkspaceColorId, config: Kestrel
 
 // Forward declaration to avoid circular import — imported as type only
 import type { World } from './world.js';
-import type { SceneModel } from './scene.js';
+import type { SceneModel } from '../scene/scene.js';

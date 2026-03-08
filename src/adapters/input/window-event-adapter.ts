@@ -1,5 +1,12 @@
-import type { WindowId } from '../../domain/types.js';
-import type { WindowEventPort, WindowEventCallbacks } from '../../ports/window-event-port.js';
+import type { WindowId } from '../../domain/world/types.js';
+interface WindowEventCallbacks {
+    onWindowReady: (windowId: WindowId, metaWindow: unknown) => void;
+    onWindowDestroyed: (windowId: WindowId) => void;
+    onFloatWindowReady: (windowId: WindowId, metaWindow: unknown) => void;
+    onFloatWindowDestroyed: (windowId: WindowId) => void;
+    onWindowFullscreenChanged: (windowId: WindowId, isFullscreen: boolean) => void;
+    onWindowMaximized: (windowId: WindowId) => void;
+}
 import { safeDisconnect } from '../signal-utils.js';
 import Meta from 'gi://Meta';
 import GLib from 'gi://GLib';
@@ -64,7 +71,7 @@ function getWindowId(metaWindow: Meta.Window): WindowId {
     return String(metaWindow.get_stable_sequence()) as WindowId;
 }
 
-export class WindowEventAdapter implements WindowEventPort {
+export class WindowEventAdapter {
     private _windowCreatedId: number | null = null;
     private _actorDestroyIds: Map<WindowId, number> = new Map();
     private _fullscreenSignalIds: Map<WindowId, { metaWindow: Meta.Window; signalId: number }> = new Map();

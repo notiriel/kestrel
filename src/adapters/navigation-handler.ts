@@ -1,6 +1,6 @@
-import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/types.js';
-import type { World } from '../domain/world.js';
-import { findWorkspaceIdForWindow } from '../domain/world.js';
+import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/world/types.js';
+import type { World } from '../domain/world/world.js';
+import { findWorkspaceIdForWindow } from '../domain/world/world.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { SceneApplyOptions } from './world-holder.js';

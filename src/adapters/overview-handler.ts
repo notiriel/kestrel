@@ -1,13 +1,14 @@
-import type { WindowId, WorkspaceColorId, WorldUpdate } from '../domain/types.js';
-import { nextWorkspaceColor } from '../domain/types.js';
-import type { SceneModel } from '../domain/scene.js';
-import type { World } from '../domain/world.js';
-import { setFocus, filterWorkspaces, renameCurrentWorkspace, setCurrentWorkspaceColor, switchToWorkspace } from '../domain/world.js';
-import { computeScene } from '../domain/scene.js';
-import { focusRight, focusLeft, focusDown, focusUp } from '../domain/navigation.js';
-import { moveLeft, moveRight } from '../domain/window-operations.js';
-import { enterOverview, exitOverview, cancelOverview, focusModeFromOverview } from '../domain/overview.js';
-import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename } from '../domain/overview-state.js';
+import type { WindowId, WorkspaceColorId, WorldUpdate } from '../domain/world/types.js';
+import { nextWorkspaceColor } from '../domain/world/types.js';
+import type { SceneModel } from '../domain/scene/scene.js';
+import type { World } from '../domain/world/world.js';
+import { setFocus, filterWorkspaces, renameCurrentWorkspace, setCurrentWorkspaceColor, switchToWorkspace } from '../domain/world/world.js';
+import { computeScene } from '../domain/scene/scene.js';
+import { focusRight, focusLeft, focusDown, focusUp } from '../domain/world/navigation.js';
+import { moveLeft, moveRight } from '../domain/world/window-operations.js';
+import { enterOverview, exitOverview, cancelOverview, focusModeFromOverview } from '../domain/world/overview.js';
+import { appendFilter, backspaceFilter, clearFilter, updateFilteredIndices, startRename, finishRename, cancelRename, OVERVIEW_LABEL_WIDTH } from '../domain/world/overview-state.js';
+import { computeOverviewTransform, computeMaxWorkspaceWidth } from '../domain/scene/layout.js';
 import type { OverviewRenderPort, CloneRenderPort, OverviewTransform, OverviewFilterPort, CloneLifecyclePort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { SceneApplyOptions } from './world-holder.js';
@@ -298,7 +299,7 @@ export class OverviewHandler {
 
     private _reverseMapX(x: number): number {
         const { scale, offsetX } = this._overviewTransform!;
-        const OVERVIEW_LABEL_WIDTH = 56;
+
         return (x - offsetX) / scale - OVERVIEW_LABEL_WIDTH;
     }
 
@@ -346,7 +347,7 @@ export class OverviewHandler {
         if (!this._overviewTransform) return null;
         const { scale, offsetX, offsetY } = this._overviewTransform;
 
-        const OVERVIEW_LABEL_WIDTH = 56;
+
         const reverseX = (x - offsetX) / scale - OVERVIEW_LABEL_WIDTH;
         const reverseY = (y - offsetY) / scale;
         const visualSlot = Math.floor(reverseY / world.monitor.totalHeight);
@@ -612,40 +613,11 @@ export class OverviewHandler {
     }
 
     private _computeTransform(world: World, numWorkspaces: number): OverviewTransform {
-        const monitor = world.monitor;
-        const stripHeight = numWorkspaces * monitor.totalHeight;
-        const maxWsWidth = this._computeMaxWorkspaceWidth(world);
-
-        const OVERVIEW_LABEL_WIDTH = 56;
-        const totalWidth = maxWsWidth + OVERVIEW_LABEL_WIDTH;
-        const scaleX = monitor.totalWidth / totalWidth;
-        const scaleY = monitor.totalHeight / stripHeight;
-        const scale = Math.min(scaleX, scaleY, 1);
-
-        const scaledWidth = totalWidth * scale;
-        const scaledHeight = stripHeight * scale;
-        const offsetX = Math.round((monitor.totalWidth - scaledWidth) / 2);
-        const offsetY = Math.round((monitor.totalHeight - scaledHeight) / 2);
-        return { scale, offsetX, offsetY };
-    }
-
-    private _computeMaxWorkspaceWidth(world: World): number {
-        let maxWsWidth = world.monitor.totalWidth;
-        for (const ws of world.workspaces) {
-            if (ws.columns.length === 0) continue;
-            const w = this._computeWorkspaceWidth(world, ws);
-            if (w > maxWsWidth) maxWsWidth = w;
-        }
-        return maxWsWidth;
-    }
-
-    private _computeWorkspaceWidth(world: World, ws: { columns: readonly { slotSpan: number }[] }): number {
-        const { gapSize, edgeGap } = world.config;
-        let width = edgeGap;
-        for (const col of ws.columns) {
-            width += col.slotSpan * world.monitor.slotWidth - gapSize + gapSize;
-        }
-        return width + edgeGap - gapSize;
+        const maxWsWidth = computeMaxWorkspaceWidth(world);
+        return computeOverviewTransform(
+            world.monitor.totalWidth, world.monitor.totalHeight,
+            numWorkspaces, maxWsWidth,
+        );
     }
 
     destroy(): void {

@@ -1,5 +1,5 @@
-import type { WindowId, KestrelConfig } from '../../domain/types.js';
-import type { QuakeWindowScene } from '../../domain/scene.js';
+import type { WindowId, KestrelConfig } from '../../domain/world/types.js';
+import type { QuakeWindowScene } from '../../domain/scene/scene.js';
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';

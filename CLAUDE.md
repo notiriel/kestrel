@@ -36,10 +36,16 @@ Hexagonal/ports-and-adapters architecture with a pure domain core and GNOME Shel
 ### Core data flow
 
 ```
-Reality -(events)-> Domain -(new world model)-> Adapter -(animates)-> Reality
+Events -> World Model -> Scene Model -> Adapter -> Reality
 ```
 
-Adapters detect changes in reality (window created, destroyed, key pressed, focus changed) and inform the domain. The domain computes the complete new world model. The adapter turns that model into reality (positions clones, animates transitions, activates focus). **The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the domain's output.
+The domain has two levels:
+
+1. **World model** — the logical state of the application. Which workspaces exist, which window in which slot, which notifications exist and in what order and if partially answered what answers exist, what quake windows exist and if they're expanded, if we're in overview mode and what's focused, if we're in focus mode and on what notification.
+
+2. **Scene model** — the complete physical description of reality. Location and visibility of every window and focus border, location and visibility of notification cards, overview overlays, status badges, etc. Computed as a pure function of the world model.
+
+The scene model drives the real world through adapters that observe scene changes and apply them. **The domain is always the source of truth.** Adapters never compute layout, focus, or workspace state — they only translate between GNOME signals and domain calls, then apply the scene model's output.
 
 **HARD RULE: ALL mutable application state and logic belongs in the domain, NEVER in adapters.** This means:
 - Item collections (todos, notifications, etc.) must be fields on `World`, mutated via domain functions
@@ -71,7 +77,9 @@ B is focused. WS2 has D, E.
 
 ### Domain core
 
-`src/domain/` — Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return `WorldUpdate { world, scene }`.
+`src/domain/` — Pure TypeScript, no `gi://` imports, fully testable with Vitest. All operations are immutable and return `WorldUpdate { world, scene }`. Split into two subdirectories matching the two-level architecture:
+
+**`src/domain/world/`** — Logical state (16 files):
 
 | File | Purpose |
 |------|---------|
@@ -80,35 +88,40 @@ B is focused. WS2 has D, E.
 | `window.ts` | `TiledWindow` interface and `createTiledWindow` factory (slotSpan, fullscreen state) |
 | `workspace.ts` | `Workspace` type and operations: `addWindow`, `removeWindow`, `replaceWindow`, `windowAfter`, `windowBefore`, `slotIndexOf`, `windowAtSlot` |
 | `viewport.ts` | `Viewport` type: tracks current workspace index, scrollX, widthPx |
-| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — turns workspace + config + monitor into pixel positions |
-| `scene.ts` | `computeScene(world)` — pure function computing the complete physical scene (`SceneModel`) from world state. Produces `CloneScene[]`, `RealWindowScene[]`, `FocusIndicatorScene`, `WorkspaceStripScene` |
 | `navigation.ts` | `focusRight`, `focusLeft`, `focusDown`, `focusUp` |
 | `window-operations.ts` | `moveLeft`, `moveRight`, `moveDown`, `moveUp`, `toggleSize` |
 | `overview.ts` | Overview mode domain logic: `enterOverview`, `exitOverview`, `cancelOverview`, filter management |
 | `overview-state.ts` | `OverviewInteractionState`: filter text, workspace rename, focused indices |
-| `notification.ts` | Notification domain: `addNotification`, `respondToNotification`, `dismissNotificationsForWindow`, session/status tracking, focus mode |
+| `notification.ts` | Notification lifecycle: `addNotification`, `respondToNotification`, `dismissForSession`, question interaction, interaction state (`expandStack`, `collapseStack`), simple focus mode setters |
 | `notification-types.ts` | Type definitions for notifications (`QuestionOption`, `OverlayNotification`, `FocusModeState`) |
+| `notification-status.ts` | Session/window status tracking: `registerSession`, `setSessionStatus`, `clearSession`, `getWorkspaceClaudeStatus`, persistence (`restoreWindowStatuses`, `extractWindowStatuses`) |
+| `focus-mode.ts` | Focus mode navigation: `enterFocusModeForNotification`, `navigateFocusMode`, `removeFromFocusMode`, `syncFocusModeEntries` |
 | `fuzzy-match.ts` | Fuzzy search for overview workspace filter |
-| `quake.ts` | QuakeState lifecycle: assign, toggle, dismiss, release quake windows |
-| `todo.ts` | Workspace TODOs: `TodoItem`, `TodoOverlayState`, toggle/dismiss, navigation, edit/delete, completion with 10s fade, file paths, geometry |
+| `quake.ts` | `QuakeState` type and lifecycle: assign, toggle, dismiss, release quake windows |
+| `todo.ts` | Workspace TODOs: `TodoItem`, `TodoOverlayState`, toggle/dismiss, navigation, edit/delete, completion with 10s fade, file paths |
+
+**`src/domain/scene/`** — Physical description computed from world (3 files):
+
+| File | Purpose |
+|------|---------|
+| `scene.ts` | `computeScene(world)` — pure function computing the complete physical scene (`SceneModel`) from world state. Produces `CloneScene[]`, `RealWindowScene[]`, `FocusIndicatorScene`, `WorkspaceStripScene` |
+| `layout.ts` | `computeWindowPositions()`, `computeFocusedWindowPosition()` — turns workspace + config + monitor into pixel positions |
+| `notification-scene.ts` | Notification overlay, focus mode, and status badge scene computation |
+
+**`src/domain/`** — Shared utilities (1 file):
+
+| File | Purpose |
+|------|---------|
+| `elapsed-time.ts` | Pure elapsed-time formatting utility |
 
 ### Ports
 
-`src/ports/` — Adapter interfaces (no `gi://` imports). Extension depends on ports, not concrete adapters.
+`src/ports/` — Adapter interfaces used for test mocking (no `gi://` imports). Only ports with mock implementations in tests are kept; other adapters are referenced directly by concrete type.
 
 | File | Purpose |
 |------|---------|
 | `clone-port.ts` | `ClonePort` — clone lifecycle, layout rendering, overview transforms, filter/sort |
 | `window-port.ts` | `WindowPort` — position real windows, check settlement |
-| `focus-port.ts` | `FocusPort` — focus activation, feedback loop suppression |
-| `monitor-port.ts` | `MonitorPort` — monitor geometry reading |
-| `keybinding-port.ts` | `KeybindingPort` — register/unregister keybindings (includes quake slot toggle callbacks) |
-| `shell-port.ts` | `ShellPort` — GNOME Shell interaction (hide overview, intercept animations) |
-| `window-event-port.ts` | `WindowEventPort` — window lifecycle signals, enumerate existing windows |
-| `state-persistence-port.ts` | `StatePersistencePort` — save/load world state across enable/disable cycles |
-| `conflict-detector-port.ts` | `ConflictDetectorPort` — detect conflicting GNOME extensions |
-| `notification-port.ts` | `NotificationPort` — render permission/notification/question cards |
-| `panel-indicator-port.ts` | `PanelIndicatorPort` — workspace indicator in top panel |
 
 ### Adapters
 
@@ -176,7 +189,6 @@ B is focused. WS2 has D, E.
 | `permission-card.ts` | Permission card UI component |
 | `question-card.ts` | Question card UI component |
 | `card-builders.ts` | Shared card skeleton/styling builders |
-| `card-behavior.ts` | Card hover/focus/animation behavior |
 | `clone-ui-builders.ts` | Clone-related UI builders |
 | `status-badge-builders.ts` | Status badge widget builders |
 | `panel-indicator-builders.ts` | Panel indicator widget builders |
@@ -240,7 +252,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 
 - **Clone-based rendering**: Real `WindowActor`s can't be reparented from `global.window_group`. `Clutter.Clone` allows free positioning on a custom layer for horizontal scrolling. Works on both Wayland and X11.
 - **Single GNOME workspace**: All windows on one GNOME workspace; Kestrel workspaces are virtual (domain-managed) to avoid GNOME workspace animation conflicts.
-- **Scene model**: `computeScene()` produces a complete physical-state snapshot (`SceneModel`) from domain state. Keeps rendering logic testable without GNOME. Adapters consume the scene model rather than computing positions themselves.
+- **Scene model**: `computeScene()` produces a complete physical-state snapshot (`SceneModel`) from domain state. Keeps rendering logic testable without GNOME. Adapters consume the scene model rather than computing positions themselves. **Scene models must be self-contained: adapters must never branch on domain type enums (e.g. `=== 'question'`, `notification.type`) to determine layout, styling, or behavior. If different types need different rendering, add the computed value as a field on the scene model.** The adapter reads fields; it never interprets types. This is enforced by architecture tests.
 - **Target-state model**: Domain computes only final positions, not transitions. Adapters handle animation (`Clutter.ease`) separately.
 - **GObject subclassing**: Use `GObject.registerClass()` + `_init()`, not `constructor()`.
 - **`gi://` ambient types**: Declared in `src/ambient.d.ts`; runtime types from `@girs/*` packages.
@@ -259,7 +271,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 |-----------|----------|
 | `test/domain/` | Unit tests for all domain modules (world, navigation, layout, scene, workspace, window-operations, overview, notifications, fullscreen, fuzzy-match, filter-workspaces, workspace-naming, quake) |
 | `test/adapters/` | Integration tests for handlers and extension (overview-handler, navigation-handler, window-lifecycle-handler, extension) |
-| `test/arch/` | Architecture boundary tests — domain has no `gi://` imports, adapter UI code in ui-components/, input/output adapters don't cross-reference |
+| `test/arch/` | Architecture boundary tests — domain has no `gi://` imports, adapter UI code in ui-components/, input/output adapters don't cross-reference, adapters don't branch on domain type enums (scene completeness), no duplicate exports across domain/ui-components, world/scene boundary enforcement |
 | `test/adapters/mock-ports.ts` | Mock implementations of all ports for adapter testing |
 
 ## Design Docs

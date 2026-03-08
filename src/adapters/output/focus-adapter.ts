@@ -1,10 +1,9 @@
-import type { WindowId } from '../../domain/types.js';
-import type { FocusPort } from '../../ports/focus-port.js';
+import type { WindowId } from '../../domain/world/types.js';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-export class FocusAdapter implements FocusPort {
+export class FocusAdapter {
     private _windows: Map<WindowId, Meta.Window> = new Map();
     private _focusChangedId: number | null = null;
     private _suppressCallback: boolean = false;

@@ -1,6 +1,7 @@
-import type { WindowId } from './types.js';
-import type { World } from './world.js';
-import type { Workspace } from './workspace.js';
+import type { WindowId } from '../world/types.js';
+import type { World } from '../world/world.js';
+import type { Workspace } from '../world/workspace.js';
+import { OVERVIEW_LABEL_WIDTH, type OverviewTransform } from '../world/overview-state.js';
 
 interface WindowPosition {
     readonly windowId: WindowId;
@@ -108,4 +109,58 @@ export function computeFocusedWindowPosition(world: World): { x: number; width: 
     if (!focused) return null;
 
     return { x: focused.x, width: focused.width };
+}
+
+// --- Overview layout ---
+
+/** Compute the total pixel width of a workspace from its columns and config. */
+function computeWorkspaceWidth(
+    columns: readonly { slotSpan: number }[],
+    slotWidth: number,
+    gapSize: number,
+    edgeGap: number,
+): number {
+    let width = edgeGap;
+    for (const col of columns) {
+        width += col.slotSpan * slotWidth - gapSize + gapSize;
+    }
+    return width + edgeGap - gapSize;
+}
+
+/** Compute the width of the widest workspace in pixels. */
+export function computeMaxWorkspaceWidth(world: World): number {
+    const { slotWidth } = world.monitor;
+    const { gapSize, edgeGap } = world.config;
+    let maxWsWidth = world.monitor.totalWidth;
+    for (const ws of world.workspaces) {
+        if (ws.columns.length === 0) continue;
+        const w = computeWorkspaceWidth(ws.columns, slotWidth, gapSize, edgeGap);
+        if (w > maxWsWidth) maxWsWidth = w;
+    }
+    return maxWsWidth;
+}
+
+/**
+ * Compute the scale and offset to fit all workspaces vertically on screen.
+ * Pure coordinate math with no GNOME dependencies.
+ */
+export function computeOverviewTransform(
+    monitorWidth: number,
+    monitorHeight: number,
+    numWorkspaces: number,
+    maxWorkspaceWidth: number,
+): OverviewTransform {
+    const stripHeight = numWorkspaces * monitorHeight;
+    const totalWidth = maxWorkspaceWidth + OVERVIEW_LABEL_WIDTH;
+
+    const scaleX = monitorWidth / totalWidth;
+    const scaleY = monitorHeight / stripHeight;
+    const scale = Math.min(scaleX, scaleY, 1);
+
+    const scaledWidth = totalWidth * scale;
+    const scaledHeight = stripHeight * scale;
+    const offsetX = Math.round((monitorWidth - scaledWidth) / 2);
+    const offsetY = Math.round((monitorHeight - scaledHeight) / 2);
+
+    return { scale, offsetX, offsetY };
 }

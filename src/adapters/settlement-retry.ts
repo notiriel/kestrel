@@ -1,6 +1,6 @@
-import type { WorldUpdate } from '../domain/types.js';
-import type { World } from '../domain/world.js';
-import { buildUpdate } from '../domain/world.js';
+import type { WorldUpdate } from '../domain/world/types.js';
+import type { World } from '../domain/world/world.js';
+import { buildUpdate } from '../domain/world/world.js';
 import type { WindowPort } from '../ports/window-port.js';
 import type { SceneApplyOptions } from './world-holder.js';
 import GLib from 'gi://GLib';

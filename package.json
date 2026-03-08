@@ -22,7 +22,8 @@
     "build": "tsc",
     "test": "vitest run",
     "lint:dead": "knip",
-    "lint:eslint": "eslint src/ test/"
+    "lint:eslint": "eslint src/ test/",
+    "lint:cpd": "jscpd src/ --min-tokens 100 --threshold 0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
@@ -33,6 +34,7 @@
     "@girs/gobject-2.0": "2.84.4-4.0.0-beta.36",
     "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.39.3",
+    "jscpd": "^4.0.8",
     "knip": "^5.83.1",
     "typescript": "^5.7",
     "typescript-eslint": "^8.56.1",

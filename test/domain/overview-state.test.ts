@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { WindowId } from '../../src/domain/types.js';
-import { nextWorkspaceColor } from '../../src/domain/types.js';
+import type { WindowId } from '../../src/domain/world/types.js';
+import { nextWorkspaceColor } from '../../src/domain/world/types.js';
 import {
     createOverviewInteractionState,
     enterOverviewInteraction,
@@ -13,9 +13,8 @@ import {
     startRename,
     finishRename,
     cancelRename,
-    computeOverviewTransform,
-    overviewHitTest,
-} from '../../src/domain/overview-state.js';
+} from '../../src/domain/world/overview-state.js';
+import { computeOverviewTransform } from '../../src/domain/scene/layout.js';
 
 function wid(n: number): WindowId { return n as unknown as WindowId; }
 
@@ -198,54 +197,6 @@ describe('OverviewInteractionState — transform computation', () => {
         const scaledHeight = stripHeight * transform.scale;
         const expectedOffsetY = Math.round((1080 - scaledHeight) / 2);
         expect(transform.offsetY).toBe(expectedOffsetY);
-    });
-});
-
-describe('OverviewInteractionState — hit testing', () => {
-    it('finds correct window', () => {
-        const transform = { scale: 0.5, offsetX: 100, offsetY: 50 };
-        const LABEL_WIDTH = 56;
-        const MONITOR_HEIGHT = 1080;
-
-        // Window at (200, 100) with size 400x300 on workspace 0
-        const positions = [
-            { windowId: wid(1), x: 200, y: 100, width: 400, height: 300, wsIndex: 0 },
-            { windowId: wid(2), x: 700, y: 100, width: 400, height: 300, wsIndex: 0 },
-        ];
-
-        // Click in the center of window 1:
-        // overview-space x = 200 + 200 = 400 (center of window)
-        // with label: 400 + 56 = 456
-        // scaled: 456 * 0.5 = 228
-        // with offset: 228 + 100 = 328
-        const clickX = (200 + 200 + LABEL_WIDTH) * 0.5 + 100;
-        // overview-space y = 100 + 150 = 250 (center of window)
-        // scaled: 250 * 0.5 = 125
-        // with offset: 125 + 50 = 175
-        const clickY = (100 + 150) * 0.5 + 50;
-
-        const result = overviewHitTest(
-            positions, clickX, clickY, transform,
-            null, MONITOR_HEIGHT, LABEL_WIDTH,
-        );
-        expect(result).toBe(wid(1));
-    });
-
-    it('returns null outside bounds', () => {
-        const transform = { scale: 0.5, offsetX: 100, offsetY: 50 };
-        const LABEL_WIDTH = 56;
-        const MONITOR_HEIGHT = 1080;
-
-        const positions = [
-            { windowId: wid(1), x: 200, y: 100, width: 400, height: 300, wsIndex: 0 },
-        ];
-
-        // Click far outside any window
-        const result = overviewHitTest(
-            positions, 5000, 5000, transform,
-            null, MONITOR_HEIGHT, LABEL_WIDTH,
-        );
-        expect(result).toBeNull();
     });
 });
 

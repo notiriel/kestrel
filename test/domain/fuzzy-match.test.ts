@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fuzzyMatch } from '../../src/domain/fuzzy-match.js';
+import { fuzzyMatch } from '../../src/domain/world/fuzzy-match.js';
 
 describe('fuzzyMatch', () => {
     it('returns null for empty query', () => {

@@ -1,11 +1,11 @@
-import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/types.js';
-import type { World } from '../domain/world.js';
-import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, buildUpdate } from '../domain/world.js';
-import { allWindows } from '../domain/workspace.js';
-import { isQuakeWindow, releaseQuakeWindow, assignQuakeWindow } from '../domain/quake.js';
+import type { WindowId, WorkspaceId, WorldUpdate } from '../domain/world/types.js';
+import type { World } from '../domain/world/world.js';
+import { addWindow, removeWindow, enterFullscreen, exitFullscreen, widenWindow, findWorkspaceIdForWindow, wsIdAt, buildUpdate } from '../domain/world/world.js';
+import { allWindows } from '../domain/world/workspace.js';
+import { isQuakeWindow, releaseQuakeWindow, assignQuakeWindow } from '../domain/world/quake.js';
 import type { CloneLifecyclePort, CloneRenderPort } from '../ports/clone-port.js';
 import type { WindowPort } from '../ports/window-port.js';
-import type { FocusPort } from '../ports/focus-port.js';
+import type { FocusAdapter } from './output/focus-adapter.js';
 import type { SceneApplyOptions } from './world-holder.js';
 import Meta from 'gi://Meta';
 import { safeWindow } from './safe-window.js';
@@ -18,7 +18,7 @@ export interface WindowLifecycleDeps {
     log(msg: string): void;
     getCloneAdapter(): (CloneLifecyclePort & CloneRenderPort) | null;
     getWindowAdapter(): WindowPort | null;
-    getFocusAdapter(): FocusPort | null;
+    getFocusAdapter(): FocusAdapter | null;
     startSettlement(): void;
     watchWindow(windowId: WindowId, metaWindow: unknown): void;
     unwatchWindow(windowId: WindowId): void;

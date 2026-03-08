@@ -5,6 +5,7 @@ import {
     addNotification,
     respondToNotification,
     dismissForSession,
+    dismissNotificationsForWindow,
     getResponse,
     getPendingEntries,
     navigateQuestion,
@@ -14,35 +15,38 @@ import {
     formatQuestionResponse,
     parseAllowResponse,
     classifyPermissionPayload,
+    resolveKeyAction,
+    canSubmitQuestion,
+    enterFocusMode,
+    exitFocusMode,
+} from '../../src/domain/world/notification.js';
+import type {
+    NotificationState,
+    DomainNotification,
+    ParsedQuestion,
+} from '../../src/domain/world/notification.js';
+import {
     registerSession,
     unregisterWindow,
     setSessionStatus,
     setSessionMessage,
     clearSession,
-    dismissNotificationsForWindow,
     shouldSuppressNotification,
     getWindowForSession,
     getWindowStatusMap,
     getWorkspaceClaudeStatus,
-    resolveKeyAction,
-    canSubmitQuestion,
-    enterFocusMode,
-    exitFocusMode,
+    extractWindowStatuses,
+    restoreWindowStatuses,
+} from '../../src/domain/world/notification-status.js';
+import {
     navigateFocusMode,
     removeFromFocusMode,
     syncFocusModeEntries,
-    extractWindowStatuses,
-    restoreWindowStatuses,
-} from '../../src/domain/notification.js';
-import type {
-    NotificationState,
-    DomainNotification,
-    ParsedQuestion,
-} from '../../src/domain/notification.js';
-import type { WindowId } from '../../src/domain/types.js';
-import { createWorkspace, createColumn, addColumn } from '../../src/domain/workspace.js';
-import { createTiledWindow } from '../../src/domain/window.js';
-import type { WorkspaceId } from '../../src/domain/types.js';
+} from '../../src/domain/world/focus-mode.js';
+import type { WindowId } from '../../src/domain/world/types.js';
+import { createWorkspace, createColumn, addColumn } from '../../src/domain/world/workspace.js';
+import { createTiledWindow } from '../../src/domain/world/window.js';
+import type { WorkspaceId } from '../../src/domain/world/types.js';
 
 function makeDomainNotification(overrides: Partial<DomainNotification> = {}): DomainNotification {
     return {

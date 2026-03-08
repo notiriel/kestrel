@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { WorkspaceId, MonitorInfo } from '../../src/domain/types.js';
+import type { WorkspaceId, MonitorInfo } from '../../src/domain/world/types.js';
 import {
     createTodoState,
     openTodoOverlay,
@@ -20,9 +20,9 @@ import {
     pruneCompleted,
     todosFilePath,
     todosDir,
-    computeTodoGeometry,
-} from '../../src/domain/todo.js';
-import type { TodoItem, TodoOverlayState } from '../../src/domain/todo.js';
+} from '../../src/domain/world/todo.js';
+import type { TodoItem, TodoOverlayState } from '../../src/domain/world/todo.js';
+import { computeTodoGeometry } from '../../src/domain/scene/scene.js';
 
 function wsId(n: number): WorkspaceId {
     return `ws-${n}` as WorkspaceId;

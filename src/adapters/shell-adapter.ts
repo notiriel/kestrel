@@ -1,8 +1,7 @@
-import type { ShellPort } from '../ports/shell-port.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import type Meta from 'gi://Meta';
 
-export class ShellAdapter implements ShellPort {
+export class ShellAdapter {
     private _wmDestroyId: number | null = null;
     private _wmMinimizeId: number | null = null;
     private _wmUnminimizeId: number | null = null;

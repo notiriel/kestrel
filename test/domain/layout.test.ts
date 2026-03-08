@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import type { KestrelConfig, MonitorInfo, WindowId } from '../../src/domain/types.js';
-import { computeWindowPositions } from '../../src/domain/layout.js';
-import type { WorkspaceId } from '../../src/domain/types.js';
-import { createWorkspace, addColumn, createColumn } from '../../src/domain/workspace.js';
-import { createTiledWindow } from '../../src/domain/window.js';
+import type { KestrelConfig, MonitorInfo, WindowId } from '../../src/domain/world/types.js';
+import { computeWindowPositions } from '../../src/domain/scene/layout.js';
+import type { WorkspaceId } from '../../src/domain/world/types.js';
+import { createWorkspace, addColumn, createColumn } from '../../src/domain/world/workspace.js';
+import { createTiledWindow } from '../../src/domain/world/window.js';
 
 const config: KestrelConfig = { gapSize: 8, edgeGap: 8, focusBorderWidth: 3, focusBorderColor: 'rgba(125,214,164,0.8)', focusBorderRadius: 8, focusBgColor: 'rgba(125,214,164,0.05)', columnCount: 2, quakeSlots: [], quakeWidthPercent: 80, quakeHeightPercent: 80 };
 const monitor: MonitorInfo = {

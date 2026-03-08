@@ -1,14 +1,13 @@
-import type { World } from '../../domain/world.js';
-import { allWindows } from '../../domain/workspace.js';
-import type { PanelIndicatorPort } from '../../ports/panel-indicator-port.js';
-import type { ClaudeStatus } from '../../domain/notification-types.js';
+import type { World } from '../../domain/world/world.js';
+import { allWindows } from '../../domain/world/workspace.js';
+import type { ClaudeStatus } from '../../domain/world/notification-types.js';
 import { STATUS_ICONS, buildIndicatorBox } from '../../ui-components/panel-indicator-builders.js';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-export class PanelIndicatorAdapter implements PanelIndicatorPort {
+export class PanelIndicatorAdapter {
     private _indicator: InstanceType<typeof PanelMenu.Button> | null = null;
     private _label: St.Label | null = null;
     private _statusDot: St.Label | null = null;

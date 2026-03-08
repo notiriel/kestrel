@@ -1,5 +1,5 @@
-import type { WindowId } from '../domain/types.js';
-import type { SceneModel } from '../domain/scene.js';
+import type { WindowId } from '../domain/world/types.js';
+import type { SceneModel } from '../domain/scene/scene.js';
 
 export interface WindowPort {
     setWorkAreaY(workAreaY: number): void;

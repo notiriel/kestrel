@@ -1,7 +1,6 @@
-import type { WindowId, WorkspaceId, WorkspaceColorId } from './types.js';
-import type { World } from './world.js';
+import type { WindowId, WorkspaceId, WorkspaceColorId, MonitorInfo, KestrelConfig } from '../world/types.js';
+import type { World } from '../world/world.js';
 import { computeWindowPositions } from './layout.js';
-import { computeQuakeGeometry } from './quake.js';
 
 interface SceneMismatch {
     readonly entity: 'clone' | 'realWindow' | 'focusIndicator' | 'workspaceStrip';
@@ -258,4 +257,39 @@ export function diffScene(expected: SceneModel, actual: SceneModel): SceneMismat
     }
 
     return mismatches;
+}
+
+// --- Geometry computations ---
+
+interface QuakeGeometry {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}
+
+export function computeQuakeGeometry(monitor: MonitorInfo, config: KestrelConfig): QuakeGeometry {
+    const widthFraction = config.quakeWidthPercent / 100;
+    const heightFraction = config.quakeHeightPercent / 100;
+    const width = Math.round(monitor.totalWidth * widthFraction);
+    const height = Math.round(monitor.totalHeight * heightFraction);
+    const x = monitor.stageOffsetX + Math.round((monitor.totalWidth - width) / 2);
+    const y = monitor.workAreaY;
+    return { x, y, width, height };
+}
+
+interface TodoGeometry {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}
+
+export function computeTodoGeometry(monitor: MonitorInfo): TodoGeometry {
+    const width = Math.round(monitor.totalWidth * 0.5);
+    const height = Math.round(monitor.totalHeight * 0.6);
+    const marginY = Math.round(monitor.totalHeight * 0.1);
+    const x = Math.round((monitor.totalWidth - width) / 2) + monitor.stageOffsetX;
+    const y = marginY + monitor.workAreaY;
+    return { x, y, width, height };
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { WindowId, KestrelConfig, MonitorInfo } from '../../src/domain/types.js';
-import { createWorld, restoreWorld } from '../../src/domain/world.js';
-import type { World } from '../../src/domain/world.js';
+import type { WindowId, KestrelConfig, MonitorInfo } from '../../src/domain/world/types.js';
+import { createWorld, restoreWorld } from '../../src/domain/world/world.js';
+import type { World } from '../../src/domain/world/world.js';
 import {
     createQuakeState,
     restoreQuakeState,
@@ -10,10 +10,9 @@ import {
     dismissQuake,
     releaseQuakeWindow,
     isQuakeWindow,
-    computeQuakeGeometry,
     getUnoccupiedQuakeSlots,
-} from '../../src/domain/quake.js';
-import { computeScene } from '../../src/domain/scene.js';
+} from '../../src/domain/world/quake.js';
+import { computeScene, computeQuakeGeometry } from '../../src/domain/scene/scene.js';
 
 const config: KestrelConfig = {
     gapSize: 8, edgeGap: 8, focusBorderWidth: 3,

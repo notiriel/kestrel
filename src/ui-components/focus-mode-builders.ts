@@ -11,7 +11,7 @@ const GREEN = '#7dd6a4';
 const RED = '#c95a5a';
 const BLUE = '#5a8ec9';
 
-export const FOCUS_CARD_WIDTH = 600;
+const FOCUS_CARD_WIDTH = 600;
 
 interface MonitorRect {
     x: number;

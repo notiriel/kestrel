@@ -1,18 +1,19 @@
-import type { WindowId } from '../domain/types.js';
-import type { World } from '../domain/world.js';
-import type { OverlayNotification } from '../domain/notification-types.js';
+import type { WindowId } from '../domain/world/types.js';
+import type { World } from '../domain/world/world.js';
+import type { OverlayNotification } from '../domain/world/notification-types.js';
 import type { QuestionState } from '../ui-components/notification-adapter-types.js';
 import { QuestionCard } from '../ui-components/question-card.js';
 import {
-    enterFocusMode, exitFocusMode, navigateFocusMode,
-    removeFromFocusMode, syncFocusModeEntries,
+    enterFocusMode, exitFocusMode,
     resolveKeyAction,
     canSubmitQuestion,
-} from '../domain/notification.js';
-import type { NotificationType } from '../domain/notification.js';
-import { computeFocusModeScene, type FocusModeScene } from '../domain/notification-scene.js';
+} from '../domain/world/notification.js';
 import {
-    FOCUS_CARD_WIDTH,
+    navigateFocusMode, removeFromFocusMode, syncFocusModeEntries,
+} from '../domain/world/focus-mode.js';
+import type { NotificationType } from '../domain/world/notification.js';
+import { computeFocusModeScene, type FocusModeScene } from '../domain/scene/notification-scene.js';
+import {
     buildFocusModeBackdrop, buildPreviewContainer, buildCardContainer,
     buildCounterLabel, buildHintLabel,
     buildFocusCardRoot, buildFocusCardHeader, buildFocusCardMessage, buildFocusCardCommand,
@@ -213,6 +214,11 @@ export class NotificationFocusMode {
         return world?.notificationState.focusMode ?? { active: false, entryIds: [], currentIndex: 0 };
     }
 
+    /** Get the card width from the current scene. */
+    private _sceneCardWidth(): number {
+        return this._computeScene().card?.width ?? 600;
+    }
+
     /** Compute focus mode scene from current domain state. */
     private _computeScene(cardHeight?: number): FocusModeScene {
         const world = this._deps.getWorld();
@@ -366,7 +372,7 @@ export class NotificationFocusMode {
         this._currentCard = card;
         this._cardContainer!.add_child(card);
 
-        const [, cardNatH] = card.get_preferred_height(FOCUS_CARD_WIDTH);
+        const [, cardNatH] = card.get_preferred_height(this._sceneCardWidth());
         const scene = this._computeScene(cardNatH);
         if (scene.card) {
             card.set_position(scene.card.x, scene.card.y);
@@ -388,7 +394,7 @@ export class NotificationFocusMode {
 
     private _positionCounter(): void {
         if (!this._counterLabel || !this._currentCard) return;
-        const [, cardNatH] = this._currentCard.get_preferred_height(FOCUS_CARD_WIDTH);
+        const [, cardNatH] = this._currentCard.get_preferred_height(this._sceneCardWidth());
         const scene = this._computeScene(cardNatH);
         this._counterLabel.set_position(scene.counter.x, scene.counter.y);
         this._counterLabel.width = scene.counter.width;
@@ -758,7 +764,7 @@ export class NotificationFocusMode {
 
     private _repositionCard(): void {
         if (!this._currentCard || !this._cardContainer) return;
-        const [, cardNatH] = this._currentCard.get_preferred_height(FOCUS_CARD_WIDTH);
+        const [, cardNatH] = this._currentCard.get_preferred_height(this._sceneCardWidth());
         const scene = this._computeScene(cardNatH);
         if (scene.card) {
             this._currentCard.set_position(scene.card.x, scene.card.y);

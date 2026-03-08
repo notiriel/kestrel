@@ -1,4 +1,4 @@
-import type { OverlayNotification, QuestionDefinition } from '../domain/notification-types.js';
+import type { OverlayNotification, QuestionDefinition } from '../domain/world/notification-types.js';
 import {
     parseQuestion as domainParseQuestion,
     selectQuestionOption as domainSelectOption,
@@ -9,7 +9,7 @@ import {
     type DomainNotification,
     type ParsedOption,
     type ParsedQuestion,
-} from '../domain/notification.js';
+} from '../domain/world/notification.js';
 import type { NotificationCardDelegate, VisitableCardOptions, QuestionState } from './notification-adapter-types.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
@@ -32,7 +32,7 @@ const GREEN = '#7dd6a4';
 const RED = '#c95a5a';
 const WARNING = '#f59e0b';
 
-const QUESTION_CARD_WIDTH = 600;
+const CARD_WIDTH = 400;
 const FOCUS_MODE_CARD_WIDTH = 480;
 const AUTO_ADVANCE_DELAY = 300;
 const PERMISSION_TIMEOUT_SECS = 600;
@@ -90,7 +90,7 @@ export class QuestionCard implements NotificationCardDelegate {
             vertical: true,
             style: `background-color: ${SURFACE}; border: 1px solid ${BORDER}; border-radius: 12px; padding: 0;`,
             reactive: true,
-            width: this._focusMode ? FOCUS_MODE_CARD_WIDTH : QUESTION_CARD_WIDTH,
+            width: this._focusMode ? FOCUS_MODE_CARD_WIDTH : CARD_WIDTH,
             opacity: this._focusMode ? 255 : 0,
             clip_to_allocation: !this._focusMode,
         });

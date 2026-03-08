@@ -1,12 +1,11 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import type { WorkspaceId } from '../../domain/types.js';
-import type { TodoItem } from '../../domain/todo.js';
-import { todosFilePath, todosDir } from '../../domain/todo.js';
-import type { TodoPersistencePort } from '../../ports/todo-persistence-port.js';
+import type { WorkspaceId } from '../../domain/world/types.js';
+import type { TodoItem } from '../../domain/world/todo.js';
+import { todosFilePath, todosDir } from '../../domain/world/todo.js';
 
-export class TodoPersistenceAdapter implements TodoPersistencePort {
+export class TodoPersistenceAdapter {
     loadItems(wsId: WorkspaceId): readonly TodoItem[] {
         try {
             const filePath = todosFilePath(GLib.get_home_dir(), wsId);

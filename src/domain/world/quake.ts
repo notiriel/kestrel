@@ -1,6 +1,11 @@
-import type { WindowId, MonitorInfo, KestrelConfig, QuakeState, WorldUpdate } from './types.js';
+import type { WindowId, WorldUpdate } from './types.js';
 import type { World } from './world.js';
 import { buildUpdate } from './world.js';
+
+export interface QuakeState {
+    readonly slots: readonly (WindowId | null)[];  // 4 slots
+    readonly activeSlot: number | null;
+}
 
 const SLOT_COUNT = 4;
 
@@ -79,21 +84,4 @@ export function getUnoccupiedQuakeSlots(world: World): Array<{ slotIndex: number
 
 export function isQuakeWindow(world: World, windowId: WindowId): boolean {
     return world.quakeState.slots.includes(windowId);
-}
-
-interface QuakeGeometry {
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-}
-
-export function computeQuakeGeometry(monitor: MonitorInfo, config: KestrelConfig): QuakeGeometry {
-    const widthFraction = config.quakeWidthPercent / 100;
-    const heightFraction = config.quakeHeightPercent / 100;
-    const width = Math.round(monitor.totalWidth * widthFraction);
-    const height = Math.round(monitor.totalHeight * heightFraction);
-    const x = monitor.stageOffsetX + Math.round((monitor.totalWidth - width) / 2);
-    const y = monitor.workAreaY;
-    return { x, y, width, height };
 }

@@ -1,7 +1,7 @@
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
-import type { WorkspaceColorId } from '../domain/types.js';
-import { WORKSPACE_COLORS } from '../domain/types.js';
+import type { WorkspaceColorId } from '../domain/world/types.js';
+import { WORKSPACE_COLORS } from '../domain/world/types.js';
 
 const SWATCH_SIZE = 24;
 const SELECTED_BORDER = 'border: 2px solid white;';

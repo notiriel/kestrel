@@ -169,7 +169,7 @@ interface CardSkeleton {
 }
 
 /** Build the shared card skeleton: root, header, message label, expand wrapper. */
-export function buildCardSkeleton(notification: import('../domain/notification-types.js').OverlayNotification, onFocus?: () => void): CardSkeleton {
+export function buildCardSkeleton(notification: import('../domain/world/notification-types.js').OverlayNotification, onFocus?: () => void): CardSkeleton {
     const actor = buildCardRoot(CARD_WIDTH, notification.workspaceColor);
     actor.add_child(buildCardHeader(notification.workspaceName, notification.title, onFocus));
     const msgLabel = buildCardMessage(notification.message || '');
