@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Context
+
+This is a GNOME Shell extension written in TypeScript (GJS/GObject). Key constraints:
+- Runs on Wayland (xdotool won't work)
+- Uses Mutter APIs — check actual Mutter source for available methods before assuming APIs exist
+- Uses hexagonal/domain-driven architecture: domain logic must NOT leak into adapters
+- Test with `make test`, build/install with `make install`
+
 ## Vision
 
 Kestrel exists to support agentic development across multiple projects simultaneously. As agentic tasks grow longer, developers spend less time writing code directly and more time supervising multiple AI agents working in parallel. The idle time between interactions grows, and context-switching between projects becomes the bottleneck. Kestrel gives each project and its context — agent terminal, browser, files — a separate workspace in a scrollable strip, making task-switching effortless and keeping an overview easy. It is an attempt to facilitate context engineering for humans in an agentic multitasking world.
@@ -274,6 +282,8 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 | `test/arch/` | Architecture boundary tests — domain has no `gi://` imports, adapter UI code in ui-components/, input/output adapters don't cross-reference, adapters don't branch on domain type enums (scene completeness), no duplicate exports across domain/ui-components, world/scene boundary enforcement |
 | `test/adapters/mock-ports.ts` | Mock implementations of all ports for adapter testing |
 
+Always run `make test` after code changes. All tests must pass before considering a task complete. Current test suite has 280+ tests.
+
 ## Design Docs
 
 | File | Content |
@@ -284,6 +294,14 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
 | `docs/claude-code-plugin.md` | Claude Code integration (DBus interface, hooks, data flow) |
 | `docs/build.md` | Build system, testing, development workflow, GSettings schema |
 | `docs/historic/` | Archived design documents from earlier development phases |
+
+## Refactoring & Architecture
+
+When asked to implement a refactoring plan or design doc, focus on the ARCHITECTURAL INTENT (e.g., moving logic to domain layer, hexagonal boundaries) — not just mechanical extraction. Ask clarifying questions if unsure whether the goal is structural reorganization or simple method decomposition.
+
+## General Behavior
+
+When exploring a codebase to answer a question, set a time-box: produce a concrete output (diff, summary, or diagnosis) within the first few tool calls. Do NOT spend an entire session reading files without producing actionable results.
 
 ## General Principles
 
@@ -314,6 +332,7 @@ Claude Code -(event)-> hook script -(gdbus)-> extension DBus
   ```
   Note: Shell.Eval output is GVariant-escaped — the JSON is wrapped in multiple quoting layers.
 - **Deployed vs source**: DBus methods and `global._kestrel` properties reflect the deployed code, not the current source. After `make install`, a session restart is required for JS changes to take effect (log out/in on Wayland, or Alt+F2 → `r` → Enter on X11). Use `gdbus introspect --session --dest org.gnome.Shell --object-path /io/kestrel/Extension` to verify which methods are available on the running instance.
+- When a first fix attempt fails or breaks something, STOP and re-analyze the root cause before trying another guess. Do not chain speculative fixes — each failed fix introduces new bugs.
 
 ## Clutter / Mutter / St API Reference
 
