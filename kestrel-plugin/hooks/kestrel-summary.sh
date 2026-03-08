@@ -33,7 +33,7 @@ esac
 [ -z "$TEXT" ] || [ "$TEXT" = "null" ] && { log "No text to summarize"; exit 0; }
 
 export KESTREL_SUMMARIZING=1
-SUMMARY=$(env -u CLAUDECODE claude -p --model haiku "$SYSTEM_PROMPT: $TEXT" 2>/dev/null)
+SUMMARY=$(env -u CLAUDECODE claude -p --model haiku --no-session-persistence "$SYSTEM_PROMPT: $TEXT" 2>/dev/null)
 EXIT_CODE=$?
 log "claude -p exit=$EXIT_CODE summary='$SUMMARY'"
 

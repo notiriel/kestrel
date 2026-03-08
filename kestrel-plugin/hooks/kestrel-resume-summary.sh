@@ -41,7 +41,7 @@ log "last_user=${#LAST_USER} chars, last_assistant=${#LAST_ASSISTANT} chars"
 [ -z "$LAST_USER" ] && [ -z "$LAST_ASSISTANT" ] && { log "No messages found"; exit 0; }
 
 export KESTREL_SUMMARIZING=1
-SUMMARY=$(env -u CLAUDECODE claude -p --model haiku \
+SUMMARY=$(env -u CLAUDECODE claude -p --model haiku --no-session-persistence \
   "A Claude Code session was just resumed. Summarize the state in 3-6 words (what was being worked on and where it left off). Reply with ONLY the summary.
 
 Last user request: $LAST_USER
